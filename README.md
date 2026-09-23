@@ -1680,9 +1680,13 @@ internal/app          state, key handling, rendering
 
 ## Releasing
 
-`ci.yml` runs the formatter, `golangci-lint` and the tests on macOS and Linux, and separately runs the
-project's own `task all` — the tool exists to run Taskfiles, so running its own is a test
-of both.
+`ci.yml` checks the formatting and runs `golangci-lint` and the tests, with and without
+the race detector, on macOS and Linux. A second job points taskui at its own Taskfile —
+the tool exists to run Taskfiles, so running its own is a test of both. It lists the tasks
+and graphs `all`, then runs the `probe` pipeline, which fails on purpose, and checks that
+`--run` exits non-zero and that `--timeline` and `--diff` read the archive back. The
+Neovim plugin's lint and tests have a job of their own, and one more runs
+`goreleaser check` against the release config.
 
 `release.yml` fires on a `v*` tag. goreleaser builds darwin and linux binaries for amd64
 and arm64, runs the test suite before it builds anything, attaches the archives and their
