@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/romanidis/taskui/internal/diff"
+	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/store"
 )
 
@@ -287,4 +288,42 @@ func (a *App) DiffSummary() string {
 		return "no change"
 	}
 	return strings.Join(parts, " ")
+}
+
+func (a *App) handleTimelineKey(k Key) bool {
+	act := func() keys.Action { return a.action(k, ScreenTimeline) }
+
+	switch {
+	case k.kind == keyEsc:
+		a.CloseTimeline()
+
+	// What changed between this run and the one before it — the question the list is
+	// arranged to make you ask.
+	case act() == keys.Diff:
+		a.DiffTimelinePoint()
+
+	case k.kind == keyEnter:
+		a.OpenTimelineRun()
+	}
+	return false
+}
+
+func (a *App) handleDiffKey(k Key) bool {
+	act := func() keys.Action { return a.action(k, ScreenDiff) }
+
+	switch {
+	case k.kind == keyEsc:
+		a.CloseDiff()
+
+	// More or less of the unchanged output around each change.
+	case act() == keys.ContextMore:
+		a.SetDiffContext(1)
+	case act() == keys.ContextLess:
+		a.SetDiffContext(-1)
+
+	// A line that just appeared often names the file it appeared about.
+	case act() == keys.Edit:
+		a.EditUnderCursor()
+	}
+	return false
 }

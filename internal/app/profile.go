@@ -4,6 +4,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/run"
 )
 
@@ -181,3 +182,22 @@ func (a *App) GotoProfiledTask() {
 // RefreshLive brings whatever is on screen up to date with the run behind it. The Bubble
 // Tea loop does this on every tick; the headless driver has its own loop and needs the same.
 func (a *App) RefreshLive() { a.refreshProfile() }
+
+func (a *App) handleProfileKey(k Key) bool {
+	act := func() keys.Action { return a.action(k, ScreenProfile) }
+
+	switch {
+	case k.kind == keyEsc:
+		a.CloseProfile()
+
+	// The point of finding the slow step is going to look at it.
+	case k.kind == keyEnter:
+		a.GotoProfiledTask()
+
+	case act() == keys.Edit:
+		if cost, ok := a.SelectedCost(); ok {
+			a.EditDefinition(cost.Name)
+		}
+	}
+	return false
+}

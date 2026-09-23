@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/romanidis/taskui/internal/graph"
+	"github.com/romanidis/taskui/internal/keys"
 )
 
 // OpenDetail shows what the task under the cursor actually is: its description, what it
@@ -28,4 +29,28 @@ func (a *App) CloseDetail() {
 
 func (a *App) DetailScroll(delta int) {
 	a.DetailOffset = max(0, a.DetailOffset+delta)
+}
+
+func (a *App) handleDetailKey(k Key) bool {
+	act := func() keys.Action { return a.action(k, ScreenDetail) }
+
+	switch {
+	case k.kind == keyEsc, act() == keys.Detail:
+		a.CloseDetail()
+	// Running it is the point of having read this.
+	case k.kind == keyEnter:
+		if name := a.DetailOf; name != "" {
+			a.CloseDetail()
+			a.RequestRun(name, nil)
+		}
+	case act() == keys.Args:
+		if name := a.DetailOf; name != "" {
+			a.CloseDetail()
+			a.BeginArgs(name)
+		}
+	// Reading what a task will run is the moment you most want to change it.
+	case act() == keys.Edit:
+		a.EditDefinition(a.DetailOf)
+	}
+	return false
 }

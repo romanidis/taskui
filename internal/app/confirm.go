@@ -141,3 +141,15 @@ func (a *App) ConfirmNo() {
 		a.Status = "left running"
 	}
 }
+
+// handleConfirmKey: something is waiting on a yes; nothing else gets through until it is
+// answered.
+func (a *App) handleConfirmKey(k Key) bool {
+	// Only ConfirmYes knows what was being asked, and only the quit answer ends the loop —
+	// so the teardown hangs off its return value rather than off the key.
+	if k.isChar('y') || k.isChar('Y') {
+		return a.ConfirmYes()
+	}
+	a.ConfirmNo()
+	return false
+}

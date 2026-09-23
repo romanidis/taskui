@@ -150,3 +150,20 @@ func subsequence(pattern, target string) bool {
 	}
 	return false
 }
+
+func (a *App) handleJumpKey(k Key) {
+	switch {
+	case k.kind == keyEsc:
+		a.CancelJump()
+	case k.kind == keyEnter:
+		a.AcceptJump()
+	case k.kind == keyBackspace:
+		a.PopJump()
+	case k.kind == keyDown, k.kind == keyTab:
+		a.JumpStep(1)
+	case k.kind == keyUp, k.kind == keyBackTab:
+		a.JumpStep(-1)
+	case k.typed():
+		a.PushJump(k.ch)
+	}
+}

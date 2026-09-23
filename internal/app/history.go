@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 
+	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/search"
 	"github.com/romanidis/taskui/internal/store"
@@ -283,4 +284,44 @@ func (a *App) firstFailure() (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func (a *App) handleHistoryKey(k Key) bool {
+	if a.HistorySearching {
+		switch {
+		case k.kind == keyEsc:
+			a.ClearHistorySearch()
+		case k.kind == keyEnter:
+			// Keep the query; it carries into the run you open.
+			a.HistorySearching = false
+		case k.kind == keyBackspace:
+			a.PopHistorySearch()
+		case k.kind == keyDown:
+			a.HistoryMoveCursor(1)
+		case k.kind == keyUp:
+			a.HistoryMoveCursor(-1)
+		case k.typed():
+			a.PushHistorySearch(k.ch)
+		}
+		return false
+	}
+
+	act := func() keys.Action { return a.action(k, ScreenHistory) }
+
+	switch {
+	case k.kind == keyEsc:
+		a.Screen = ScreenPicker
+		a.Status = ""
+
+	// Widen to every project, or narrow back to this one.
+	case act() == keys.AllProjects:
+		a.ToggleHistoryScope()
+
+	case act() == keys.Search:
+		a.BeginHistorySearch()
+
+	case k.kind == keyEnter:
+		a.OpenStoredRun()
+	}
+	return false
 }

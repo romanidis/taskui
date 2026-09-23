@@ -288,3 +288,27 @@ func (a *App) ClearQuery() {
 	a.Filtering = false
 	a.Rebuild(keep)
 }
+
+// handleFilterKey returns true if the key was consumed by filter mode.
+func (a *App) handleFilterKey(k Key) bool {
+	switch {
+	case k.kind == keyEsc:
+		a.ClearQuery()
+		return true
+	case k.kind == keyEnter:
+		// Keep the filter applied, leave the input — you filter to narrow the tree, then
+		// navigate what is left.
+		a.Filtering = false
+		return true
+	case k.kind == keyBackspace:
+		a.PopQuery()
+		return true
+	case k.kind == keyDown, k.kind == keyUp:
+		return false
+	case k.typed():
+		a.PushQuery(k.ch)
+		return true
+	default:
+		return false
+	}
+}

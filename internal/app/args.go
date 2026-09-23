@@ -126,3 +126,38 @@ func (a *App) ArgsHint() (string, bool) {
 	}
 	return "", false
 }
+
+func (a *App) handleArgsKey(k Key) {
+	// ⇥ walks the completion; everything else ends the cycle it was walking, so the list
+	// can never outlive the word it was built for.
+	if k.kind == keyTab || k.kind == keyBackTab {
+		delta := 1
+		if k.kind == keyBackTab {
+			delta = -1
+		}
+		a.CompleteArgs(delta)
+		return
+	}
+	a.argsComp = nil
+
+	switch {
+	case k.kind == keyEsc:
+		a.CancelArgs()
+	case k.kind == keyEnter:
+		a.ConfirmArgs()
+	case k.kind == keyBackspace:
+		a.ArgsBackspace()
+	case k.kind == keyDelete:
+		a.ArgsDelete()
+	case k.kind == keyLeft:
+		a.ArgsMove(-1)
+	case k.kind == keyRight:
+		a.ArgsMove(1)
+	case k.kind == keyHome:
+		a.ArgsHome()
+	case k.kind == keyEnd:
+		a.ArgsEnd()
+	case k.typed():
+		a.ArgsInsert(k.ch)
+	}
+}

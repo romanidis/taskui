@@ -1,5 +1,7 @@
 package app
 
+import "github.com/romanidis/taskui/internal/keys"
+
 // ToggleHelp is `?` from anywhere; `esc` comes back to where you were.
 func (a *App) ToggleHelp() {
 	if a.inHelp {
@@ -48,4 +50,46 @@ func (a *App) ClearHelpFind() {
 
 func (a *App) HelpScroll(delta int) {
 	a.HelpOffset = max(0, a.HelpOffset+delta)
+}
+
+func (a *App) handleHelpKey(k Key) bool {
+	act := func() keys.Action { return a.action(k, ScreenHelp) }
+
+	// The find prompt owns every key that is not a way out of it or a way to scroll what it
+	// left — `q` and `?` are bindings out there and letters in here, and typing `quit` to
+	// look up how to quit must not quit.
+	if a.HelpFinding {
+		switch {
+		case k.kind == keyEsc:
+			a.ClearHelpFind()
+			return false
+		case k.kind == keyEnter:
+			// Keep what it narrowed to and give the scroll keys back, as the picker's
+			// filter does: you search to find the line, then you read it.
+			a.HelpFinding = false
+			return false
+		case k.kind == keyBackspace:
+			a.PopHelpFind()
+			return false
+		case k.typed():
+			a.PushHelpFind(k.ch)
+			return false
+		}
+	}
+
+	switch {
+	// `esc` drops the query first and closes the screen second, so backing out of a search
+	// does not also throw away the keymap you were reading.
+	case k.kind == keyEsc && a.HelpQuery != "":
+		a.ClearHelpFind()
+	case k.kind == keyEsc:
+		a.ToggleHelp()
+
+	// Find a binding in the keymap itself. The same key that finds a task in the picker,
+	// because "show me the one I mean" should not change name with the screen — and
+	// rebinding `jump` moves both, because Rebind reaches every screen that offers it.
+	case act() == keys.Jump:
+		a.BeginHelpFind()
+	}
+	return false
 }
