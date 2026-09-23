@@ -73,7 +73,7 @@ func TestABrokenTaskfileKeepsTheLastGoodList(t *testing.T) {
 
 	ch := make(chan reloaded, 1)
 	ch <- reloaded{err: os.ErrInvalid}
-	a.reloadCh = ch
+	a.reload = pending[reloaded]{ch: ch}
 	a.collectReload()
 
 	if len(a.Tasks) != before {
@@ -89,17 +89,17 @@ func TestABrokenTaskfileKeepsTheLastGoodList(t *testing.T) {
 func TestASaveDuringAReloadIsNotLost(t *testing.T) {
 	a := appWith(t, []string{"fmt"})
 	held := make(chan reloaded, 1)
-	a.reloadCh = held
+	a.reload = pending[reloaded]{ch: held}
 	a.reloadPending = true
 
 	held <- reloaded{tasks: tasksNamed("fmt", "lint")}
 	a.collectReload()
 
-	if a.reloadCh == nil {
+	if !a.reload.running() {
 		t.Error("the save that arrived mid-read was dropped")
 	}
 	// Drain the re-read this started so it cannot outlive the test.
-	<-a.reloadCh
+	<-a.reload.ch
 }
 
 // The root Taskfile is watched before go-task has been asked anything, and the listing adds

@@ -242,3 +242,27 @@ func TestBackspaceTakesOffOneCharacter(t *testing.T) {
 		}
 	}
 }
+
+func TestAPendingResultIsTakenOnceItLands(t *testing.T) {
+	release := make(chan struct{})
+	p := begin(func() (int, bool) { <-release; return 7, true })
+	if _, ok := p.take(); ok || !p.running() {
+		t.Fatal("taken before it landed")
+	}
+	// A grace that runs out leaves it pending, for the poll loop.
+	if _, ok := p.await(10 * time.Millisecond); ok || !p.running() {
+		t.Fatal("a timed-out wait dropped the job")
+	}
+	close(release)
+	if v, ok := p.await(time.Second); !ok || v != 7 || p.running() {
+		t.Fatalf("got %d, %v, running %v", v, ok, p.running())
+	}
+	if _, ok := p.take(); ok {
+		t.Error("taken twice")
+	}
+
+	none := begin(func() (int, bool) { return 0, false })
+	if _, ok := none.await(time.Second); ok || none.running() {
+		t.Error("a job with no answer gave one, or stayed pending")
+	}
+}

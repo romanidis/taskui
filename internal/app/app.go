@@ -207,7 +207,7 @@ type App struct {
 	taskfileWatch    *watch.Watch
 	watchedTaskfiles []string
 	watchingTaskfile bool
-	reloadCh         chan reloaded
+	reload           pending[reloaded]
 	reloadPending    bool
 	// enriching and covering say the two background lookups were asked for, so a reload
 	// knows to start them again — and, just as importantly, knows not to start them on a
@@ -252,8 +252,8 @@ type App struct {
 	// is written, and whether go-task thinks it is up to date. Filled in from a background
 	// goroutine, because computing it can take seconds on a workspace with a lot of
 	// `sources:` globs and the UI is usable without it.
-	Details  map[string]task.Detail
-	detailCh chan map[string]task.Detail
+	Details map[string]task.Detail
+	details pending[map[string]task.Detail]
 
 	// Reaches is which aggregates run each namespace: `backend` is run by `fmt`, `lint`,
 	// `test`. From `internal/cover`, on a background goroutine, because working it out means
@@ -261,7 +261,7 @@ type App struct {
 	// that. Nil until it lands, which the header rows read as "nothing to say yet" rather
 	// than as "nothing runs this".
 	Reaches map[string][]string
-	reachCh chan map[string][]string
+	reaches pending[map[string][]string]
 
 	// Where the run on screen spent its time, slowest first.
 	ProfileRows   []Cost

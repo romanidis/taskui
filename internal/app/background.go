@@ -15,25 +15,18 @@ import (
 // tests that build an App from a fixture have no Taskfile to shell out to and no interest
 // in one.
 func (a *App) StartEnrichment() {
-	if a.detailCh != nil {
+	if a.details.running() {
 		return
 	}
 	a.enriching = true
-	ch := make(chan map[string]task.Detail, 1)
-	a.detailCh = ch
 	root := a.Root
-	go func() {
+	a.details = begin(func() (map[string]task.Detail, bool) {
 		details, err := task.Details(root)
-		if err != nil {
-			// A listing that cannot be had costs two conveniences and nothing else. Saying
-			// so in the status bar would push a real message off it for a feature the user
-			// has not asked for yet.
-			close(ch)
-			return
-		}
-		ch <- details
-		close(ch)
-	}()
+		// A listing that cannot be had costs two conveniences and nothing else. Saying so in
+		// the status bar would push a real message off it for a feature the user has not
+		// asked for yet.
+		return details, err == nil
+	})
 }
 
 // StartCoverage works out which aggregates reach which namespaces, in the background.
@@ -52,39 +45,28 @@ func (a *App) StartEnrichment() {
 // `--summary` is a process spawn, an aggregate's graph is dozens of them, and a Taskfile
 // with a dozen aggregates is dozens of dozens. Nothing on screen waits for it.
 func (a *App) StartCoverage() {
-	if a.reachCh != nil {
+	if a.reaches.running() {
 		return
 	}
 	a.covering = true
-	ch := make(chan map[string][]string, 1)
-	a.reachCh = ch
 	root, tasks := a.Root, slices.Clone(a.Tasks)
-	go func() {
+	a.reaches = begin(func() (map[string][]string, bool) {
 		reach := func(name string) []string { return graph.Resolve(root, name).Reachable(name) }
 		// No exemptions: `.taskui-cover` says which gaps are deliberate, and a gap is not
 		// what this projection reads. A namespace is annotated with what reaches it.
-		ch <- cover.BuildGrid(tasks, reach, nil).Reaches()
-		close(ch)
-	}()
+		return cover.BuildGrid(tasks, reach, nil).Reaches(), true
+	})
 }
 
 // collectCoverage takes the answer if it has arrived. Non-blocking, like collectDetails: it
 // is called from the poll loop, which must not wait for anything.
 func (a *App) collectCoverage() bool {
-	if a.reachCh == nil {
+	reaches, ok := a.reaches.take()
+	if !ok || len(reaches) == 0 {
 		return false
 	}
-	select {
-	case reaches, ok := <-a.reachCh:
-		a.reachCh = nil
-		if !ok || len(reaches) == 0 {
-			return false
-		}
-		a.Reaches = reaches
-		return true
-	default:
-		return false
-	}
+	a.Reaches = reaches
+	return true
 }
 
 // AwaitCoverage blocks until the walk lands or the grace runs out.
@@ -93,38 +75,20 @@ func (a *App) collectCoverage() bool {
 // loaded UI, and one taken mid-walk would show a different thing every time depending on how
 // the race went.
 func (a *App) AwaitCoverage(grace time.Duration) {
-	if a.reachCh == nil {
-		return
-	}
-	select {
-	case reaches, ok := <-a.reachCh:
-		a.reachCh = nil
-		if ok {
-			a.Reaches = reaches
-		}
-	case <-time.After(grace):
-		// Leave the channel in place — the poll loop picks it up if this is not a one-frame
-		// process after all.
+	if reaches, ok := a.reaches.await(grace); ok {
+		a.Reaches = reaches
 	}
 }
 
 // collectDetails takes the JSON listing if it has arrived. Non-blocking: it is called from
 // the poll loop, which must not wait for anything.
 func (a *App) collectDetails() bool {
-	if a.detailCh == nil {
+	details, ok := a.details.take()
+	if !ok || details == nil {
 		return false
 	}
-	select {
-	case details, ok := <-a.detailCh:
-		a.detailCh = nil
-		if !ok || details == nil {
-			return false
-		}
-		a.applyDetails(details)
-		return true
-	default:
-		return false
-	}
+	a.applyDetails(details)
+	return true
 }
 
 // AwaitDetails blocks until the listing lands or the grace runs out.
@@ -133,18 +97,8 @@ func (a *App) collectDetails() bool {
 // and one taken before the listing arrived would show a different thing every time
 // depending on how the race went — which is the opposite of what `--screenshot` is for.
 func (a *App) AwaitDetails(grace time.Duration) {
-	if a.detailCh == nil {
-		return
-	}
-	select {
-	case details, ok := <-a.detailCh:
-		a.detailCh = nil
-		if ok {
-			a.applyDetails(details)
-		}
-	case <-time.After(grace):
-		// Leave the channel in place — the poll loop will pick it up if this is not a
-		// one-frame process after all.
+	if details, ok := a.details.await(grace); ok {
+		a.applyDetails(details)
 	}
 }
 
@@ -187,4 +141,60 @@ func (a *App) WhereIs(name string) (task.Where, bool) {
 func (a *App) UpToDate(name string) bool {
 	d, ok := a.Details[name]
 	return ok && d.UpToDate
+}
+
+// pending is a result being worked out on another goroutine, to be taken once it lands.
+//
+// Three background jobs have this shape — the JSON listing, the coverage walk and a
+// Taskfile re-read — and each carried its own copy of the take that must not wait and the
+// take that waits out a grace. The zero value has nothing pending.
+type pending[T any] struct{ ch chan T }
+
+// begin runs work on a goroutine of its own. A work that reports false has no answer to
+// give, and taking it then reports nothing.
+func begin[T any](work func() (T, bool)) pending[T] {
+	ch := make(chan T, 1)
+	go func() {
+		if v, ok := work(); ok {
+			ch <- v
+		}
+		close(ch)
+	}()
+	return pending[T]{ch: ch}
+}
+
+// running reports whether there is a result still to take.
+func (p pending[T]) running() bool { return p.ch != nil }
+
+// take is the result if it has landed, and never waits: it is called from the poll loop,
+// which must not wait for anything. Once it has landed nothing is pending, answer or not.
+func (p *pending[T]) take() (T, bool) {
+	var zero T
+	if p.ch == nil {
+		return zero, false
+	}
+	select {
+	case v, ok := <-p.ch:
+		p.ch = nil
+		return v, ok
+	default:
+		return zero, false
+	}
+}
+
+// await is take, waiting up to grace for the result — for the paths that draw one frame and
+// exit. Past the grace it is left pending, for the poll loop to take if the process turns
+// out not to be a one-frame one after all.
+func (p *pending[T]) await(grace time.Duration) (T, bool) {
+	var zero T
+	if p.ch == nil {
+		return zero, false
+	}
+	select {
+	case v, ok := <-p.ch:
+		p.ch = nil
+		return v, ok
+	case <-time.After(grace):
+		return zero, false
+	}
 }

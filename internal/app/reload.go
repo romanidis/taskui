@@ -106,7 +106,7 @@ func (a *App) PollTaskfile() bool {
 	// One re-read at a time, and never a dropped one: a save that lands while the last read
 	// is still running is remembered rather than ignored, because the whole point of this
 	// is that the list agrees with the file.
-	if a.reloadCh != nil {
+	if a.reload.running() {
 		a.reloadPending = true
 		return false
 	}
@@ -115,39 +115,32 @@ func (a *App) PollTaskfile() bool {
 }
 
 func (a *App) startReload() {
-	ch := make(chan reloaded, 1)
-	a.reloadCh = ch
 	root := a.Root
-	go func() {
+	a.reload = begin(func() (reloaded, bool) {
 		tasks, err := task.Discover(root)
-		ch <- reloaded{tasks: tasks, err: err}
-		close(ch)
-	}()
+		return reloaded{tasks: tasks, err: err}, true
+	})
 }
 
 // collectReload takes a finished re-read, if there is one. Non-blocking, like
 // collectDetails: it is called from the poll loop, which must not wait for anything.
 func (a *App) collectReload() {
-	if a.reloadCh == nil {
+	result, ok := a.reload.take()
+	if !ok {
 		return
 	}
-	select {
-	case result := <-a.reloadCh:
-		a.reloadCh = nil
-		if a.reloadPending {
-			a.reloadPending = false
-			a.startReload()
-		}
-		if result.err != nil {
-			// A Taskfile is unparseable for as long as it takes to finish typing one, and
-			// blanking the list every time a save lands mid-edit would be worse than being
-			// briefly out of date. The last good list stays on screen.
-			a.Status = "the Taskfile does not parse — keeping the last list that did"
-			return
-		}
-		a.ReplaceTasks(result.tasks)
-	default:
+	if a.reloadPending {
+		a.reloadPending = false
+		a.startReload()
 	}
+	if result.err != nil {
+		// A Taskfile is unparseable for as long as it takes to finish typing one, and
+		// blanking the list every time a save lands mid-edit would be worse than being
+		// briefly out of date. The last good list stays on screen.
+		a.Status = "the Taskfile does not parse — keeping the last list that did"
+		return
+	}
+	a.ReplaceTasks(result.tasks)
 }
 
 // ReplaceTasks swaps in a freshly read task list, keeping what the old one was carrying.
@@ -194,8 +187,8 @@ func (a *App) ReplaceTasks(tasks []task.Task) {
 	// Where each task is written and what reaches what are both answers about the list that
 	// just changed. Restarted rather than dropped: they are what `e` and the coverage
 	// annotations run on, and stale ones are worse than late ones.
-	a.detailCh = nil
-	a.reachCh = nil
+	a.details = pending[map[string]task.Detail]{}
+	a.reaches = pending[map[string][]string]{}
 	if a.enriching {
 		a.StartEnrichment()
 	}
