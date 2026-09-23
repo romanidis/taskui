@@ -57,11 +57,7 @@ func (a *App) trend() string {
 	}
 	var b strings.Builder
 	for _, p := range slices.Backward(points) {
-		if p.Ok() {
-			b.WriteString(a.Theme.Glyphs.StatusOk)
-		} else {
-			b.WriteString(a.Theme.Glyphs.StatusFailed)
-		}
+		b.WriteString(statusGlyph(outcome(p.Ok()), a.Theme))
 	}
 	return b.String()
 }
@@ -109,18 +105,15 @@ func (a *App) drawTimeline(width, height int) []string {
 	out := make([]string, 0, height)
 	for i := a.TimelineOffset; i < len(a.Timeline) && len(out) < height; i++ {
 		p := a.Timeline[i]
-		glyph, colour := t.Glyphs.StatusOk, t.Colors.StatusOk
-		if !p.Ok() {
-			glyph, colour = t.Glyphs.StatusFailed, t.Colors.StatusFailed
-		}
-
+		status := outcome(p.Ok())
 		l := line{
-			styled(glyph+" ", fgBold(colour)),
+			statusMark(status, t),
 			styled(padRight(Ago(p.WhenUnix), 10), fg(t.Colors.Dim)),
 			styled(fmt.Sprintf("%8s  ", duration(millis(p.DurationMs))), fg(t.Colors.Dim)),
 		}
 		if barWidth > 0 {
-			l = append(l, styled(padRight(bar(p.DurationMs, slowest, barWidth, t.Glyphs.Bar), barWidth+2), fg(colour)))
+			drawn := padRight(bar(p.DurationMs, slowest, barWidth, t.Glyphs.Bar), barWidth+2)
+			l = append(l, styled(drawn, fg(statusStyle(status, t))))
 		}
 		l = append(l, styled(fmt.Sprintf("%6d lines  ", p.Lines), fg(t.Colors.Dim)))
 		if showCommit && p.Commit != "" {
@@ -351,7 +344,7 @@ func (a *App) drawProfile(width, height int) []string {
 		}
 
 		l := line{
-			styled(statusGlyph(c.Status, t)+" ", fgBold(statusStyle(c.Status, t))),
+			statusMark(c.Status, t),
 			styled(fmt.Sprintf("%8s ", duration(c.Self)), fg(t.Colors.Text)),
 			styled(share+"  ", fg(t.Colors.Dim)),
 		}

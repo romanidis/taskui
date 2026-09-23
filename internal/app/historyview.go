@@ -43,10 +43,6 @@ func (a *App) drawHistory(width, height int) []string {
 	out := make([]string, 0, height)
 	for i := a.HistoryOffset; i < len(a.History) && len(out) < height; i++ {
 		m := a.History[i]
-		glyph, colour := t.Glyphs.StatusOk, t.Colors.StatusOk
-		if m.Failed() {
-			glyph, colour = t.Glyphs.StatusFailed, t.Colors.StatusFailed
-		}
 		lines := 0
 		for _, e := range m.Tasks {
 			lines += e.Lines
@@ -56,7 +52,7 @@ func (a *App) drawHistory(width, height int) []string {
 			commandStyle = fg(t.Colors.StatusFailed)
 		}
 		l := line{
-			styled(glyph+" ", fgBold(colour)),
+			statusMark(outcome(!m.Failed()), t),
 			styled(padRight(Ago(m.StartedUnix), 10), fg(t.Colors.Dim)),
 			// Cut as well as padded: a longer command pushed that row's duration and line
 			// count out of the columns every other row keeps them in.

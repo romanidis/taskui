@@ -245,6 +245,21 @@ func statusGlyph(status run.Status, t theme.Theme) string {
 	}
 }
 
+// statusMark is a status as the rows draw it: the theme's glyph, bold in the status's colour,
+// with the space that keeps it off whatever follows.
+func statusMark(status run.Status, t theme.Theme) span {
+	return styled(statusGlyph(status, t)+" ", fgBold(statusStyle(status, t)))
+}
+
+// outcome is a pass or a fail as the status it ended in, so a result read back from the
+// archive is drawn with the same glyph and colour as a live one.
+func outcome(ok bool) run.Status {
+	if ok {
+		return run.Ok
+	}
+	return run.Failed
+}
+
 // projectPlaceholder is what a wordmark writes to mean "whatever this project is called",
 // and framePlaceholder is where the wordmark's animation goes.
 const (

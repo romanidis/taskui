@@ -27,7 +27,7 @@ func (a *App) drawSlotBar() line {
 		}
 		l = append(l,
 			styled(fmt.Sprintf("%d ", i+1), fg(t.Colors.Dim)),
-			styled(statusGlyph(slot.Status, t)+" ", fgBold(statusStyle(slot.Status, t))),
+			statusMark(slot.Status, t),
 			styled(slot.Root, nameStyle),
 			styled(" "+duration(slot.Elapsed), fg(t.Colors.Dim)),
 		)
@@ -158,7 +158,7 @@ func (a *App) runRowLines(r *run.Run, row RunRow, gutter string, width int) []li
 		l := line{
 			styled(gutter, fg(t.Colors.Faint)),
 			styled(glyph, fg(t.Colors.Faint)),
-			styled(statusGlyph(status, t)+" ", fgBold(statusStyle(status, t))),
+			statusMark(status, t),
 			styled(row.Name, nameStyle),
 		}
 
@@ -247,7 +247,7 @@ func (a *App) runRowLines(r *run.Run, row RunRow, gutter string, width int) []li
 			st = tr.CommandStatus(row.Index)
 		}
 		marker = []span{
-			styled(statusGlyph(st, t)+" ", fgBold(statusStyle(st, t))),
+			statusMark(st, t),
 			styled(t.Glyphs.Command+" ", fg(t.Colors.Faint)),
 		}
 	case isFailure(text):

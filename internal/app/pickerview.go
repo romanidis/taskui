@@ -235,7 +235,7 @@ func (a *App) slotBadge(name string) ([]span, bool) {
 		took = r.Duration
 	}
 	return []span{
-		styled(statusGlyph(status, t)+" ", fgBold(statusStyle(status, t))),
+		statusMark(status, t),
 		styled(duration(took), fg(t.Colors.Dim)),
 	}, true
 }
@@ -360,11 +360,7 @@ func (a *App) treeItem(i, width int) []line {
 		if slot, ok := a.slotBadge(task.Name); ok {
 			badges = append(badges, slot...)
 		} else if o, ok := a.Outcomes[task.Name]; ok {
-			glyph, colour := g.StatusFailed+" ", t.Colors.StatusFailed
-			if o.Ok {
-				glyph, colour = g.StatusOk+" ", t.Colors.StatusOk
-			}
-			badges = append(badges, styled(glyph, fgBold(colour)), styled(Ago(o.WhenUnix), fg(t.Colors.Dim)))
+			badges = append(badges, statusMark(outcome(o.Ok), t), styled(Ago(o.WhenUnix), fg(t.Colors.Dim)))
 		}
 		signals = append(badges, signals...)
 		// Reserve the count's columns on a row that has no count, so that the ✓/✗ ends in the

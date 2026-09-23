@@ -10,11 +10,7 @@ func (a *App) detailHeader() line {
 	t := a.Theme
 	var state []span
 	if o, ok := a.Outcomes[a.DetailOf]; ok {
-		glyph, colour := t.Glyphs.StatusFailed+" ", t.Colors.StatusFailed
-		if o.Ok {
-			glyph, colour = t.Glyphs.StatusOk+" ", t.Colors.StatusOk
-		}
-		state = []span{styled(glyph, fgBold(colour)), styled(Ago(o.WhenUnix), fg(t.Colors.Dim))}
+		state = []span{statusMark(outcome(o.Ok), t), styled(Ago(o.WhenUnix), fg(t.Colors.Dim))}
 	}
 	return a.header(a.DetailOf, state)
 }
