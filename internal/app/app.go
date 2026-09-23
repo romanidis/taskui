@@ -42,6 +42,11 @@ const (
 )
 
 type App struct {
+	// The run on screen, and how you are looking at it. Embedded, so its fields read as the
+	// app's own — a.Run, a.RunCursor, a.Following — which to everything drawing the run view
+	// is what they are. Never nil: with nothing open it is an empty slot, in no list.
+	*slot
+
 	Tasks []task.Task
 	// Pivots is every grouping available, in the order `p` cycles them. The two built-ins
 	// plus `file`, plus whatever the config added.
@@ -87,11 +92,10 @@ type App struct {
 	Keymap      *keys.Keymap
 
 	Screen Screen
-	// Run is the run on screen. The live view fields below belong to this run; the others
-	// are in Parked with a copy of theirs.
-	Run *run.Run
-	// Parked holds runs that are open but not on screen, still going.
-	Parked []Parked
+	// Parked holds the slots that are open but not on screen. Their capture goroutines keep
+	// draining and their processes keep going: parking is a state of the UI, not of the
+	// child.
+	Parked []*slot
 	// Bell says when a finished run should ring the terminal.
 	Bell theme.BellMode
 	// belled remembers which runs have already rung, so a run that stays finished does not
@@ -110,26 +114,10 @@ type App struct {
 	// so finishing writes it again rather than leaving the record cut off where it was.
 	partial map[*run.Run]bool
 
-	// FocusSeq is which slot Run occupies. Zero before anything has ever run.
-	FocusSeq  uint64
-	nextSeq   uint64
-	RunRows   []RunRow
-	RunCursor int
-	RunOffset int
-	// runFolds is how much of each task's output this slot is showing. Absent means the
-	// default, which is a peek.
-	runFolds map[string]Fold
+	// nextSeq is the last slot number handed out.
+	nextSeq uint64
 	// PeekLines is how many lines a peeking task shows. Configurable.
 	PeekLines int
-	// followedOpen is the task following opened by itself, so it can be given back when
-	// following moves on.
-	followedOpen string
-	// Following: while true the view tracks whatever is running. Any manual cursor move
-	// turns it off — once you have gone looking for something, the view should stop moving
-	// under you.
-	Following bool
-	// focusedFailure exists so a failure yanks the view exactly once, not on every poll.
-	focusedFailure string
 
 	// Search is the output search. Distinct from Query, which filters task names in the
 	// picker — a couple of hundred short strings versus potentially megabytes of output,
@@ -142,8 +130,6 @@ type App struct {
 	// FilterMatches shows only matching lines, grouped under the task that produced them.
 	FilterMatches bool
 	SearchError   string
-	// SavedTo is where the finished run was written, if it was.
-	SavedTo string
 
 	// Outcomes says how each task went last time, so browsing answers "what is broken
 	// right now" without opening anything.
@@ -361,6 +347,7 @@ type App struct {
 
 func New(tasks []task.Task, root string) *App {
 	a := &App{
+		slot:          newSlot(nil, 0),
 		Tasks:         tasks,
 		Pivots:        pivot.Builtins(),
 		Tree:          &pivot.Tree{},
@@ -369,10 +356,8 @@ func New(tasks []task.Task, root string) *App {
 		Theme:         theme.DefaultTheme(),
 		Keymap:        keys.NewKeymap(),
 		Screen:        ScreenPicker,
-		runFolds:      map[string]Fold{},
 		PeekLines:     theme.DefaultPeekLines,
 		Mouse:         theme.DefaultMouse,
-		Following:     true,
 		Outcomes:      map[string]store.Outcome{},
 		HistoryHits:   map[string]int{},
 		Viewport:      20,

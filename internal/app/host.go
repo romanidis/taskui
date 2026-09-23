@@ -26,8 +26,8 @@ func (a *App) emit() {
 		return
 	}
 	live := map[*run.Run]bool{}
-	for _, slot := range a.slotRuns() {
-		r := slot.run
+	for _, s := range a.openSlots() {
+		r := s.Run
 		// A run read off disk is history being browsed, not something happening: telling
 		// the host it started and exited would be news of a run that ended long ago.
 		if r.IsStored() {
@@ -42,29 +42,9 @@ func (a *App) emit() {
 		d.Start(a.events, r, a.Root)
 		d.Flush(a.events, r)
 		if r.Finished() && !d.Done() {
-			d.Finish(a.events, r, slot.savedTo)
+			d.Finish(a.events, r, s.SavedTo)
 		}
 	}
 	// A closed or replaced run's tracker goes with it.
 	maps.DeleteFunc(a.deltas, func(r *run.Run, _ *events.Deltas) bool { return !live[r] })
-}
-
-// slotRunInfo pairs a run with where its slot archived it.
-type slotRunInfo struct {
-	run     *run.Run
-	savedTo string
-}
-
-// slotRuns is every open slot's run with its own archive path. The focused run's lives on
-// the app and a parked one's in its view, so reading a.SavedTo for all of them told the
-// host a background run was saved wherever the one on screen was.
-func (a *App) slotRuns() []slotRunInfo {
-	out := make([]slotRunInfo, 0, len(a.Parked)+1)
-	for _, p := range a.Parked {
-		out = append(out, slotRunInfo{p.Run, p.view.savedTo})
-	}
-	if a.Run != nil {
-		out = append(out, slotRunInfo{a.Run, a.SavedTo})
-	}
-	return out
 }

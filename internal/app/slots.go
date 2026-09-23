@@ -2,7 +2,7 @@ package app
 
 import (
 	"fmt"
-	"maps"
+	"slices"
 	"sort"
 	"time"
 
@@ -17,30 +17,49 @@ import (
 // Six is past what fits legibly in the slot bar anyway.
 const MaxSlots = 6
 
-// slotView is the view state that belongs to a run rather than to the app: where you had
-// scrolled, what you had unfolded, whether you were following.
+// slot is one open run and how you were looking at it: where you had scrolled, what you had
+// unfolded, whether you were following.
 //
-// Kept per slot because the whole point of leaving `docker compose logs -f` in one slot is
-// to come back to it — and coming back to the top of a 20,000-line buffer is not coming
-// back to it.
-type slotView struct {
-	cursor         int
-	offset         int
-	folds          map[string]Fold
-	followedOpen   string
-	following      bool
-	focusedFailure string
-	savedTo        string
-}
-
-// Parked is a run that is not the one on screen. Its capture goroutine keeps draining and
-// its process keeps going: parking is a state of the UI, not of the child.
-type Parked struct {
+// The view belongs to the run rather than to the screen, because the whole point of leaving
+// `docker compose logs -f` in one slot is to come back to it — and coming back to the top of
+// a 20,000-line buffer is not coming back to it.
+//
+// The slot on screen is the app's own, embedded; the rest are parked, and switching moves
+// the pointer. The view used to be loose fields on the app, copied out into the slot being
+// left and back in from the one arriving, and each of the four places that opened a slot
+// afresh reset its own subset of them.
+type slot struct {
 	Run *run.Run
 	// Seq is creation order, so a run keeps its position in the slot bar for as long as it
 	// is open — a bar whose entries reshuffle when you switch is unusable as a switcher.
-	Seq  uint64
-	view slotView
+	// Zero for the empty slot the app holds while nothing is open.
+	Seq uint64
+	// RunRows is the run walked into rows the way this slot shows it, and RunCursor indexes
+	// it. The rows stay with the slot while it is parked because a rebuild finds the
+	// cursor's row again by identity, and it can only do that among the rows the cursor was
+	// in — anchoring against another run's rows put it on whatever that run had there.
+	RunRows   []RunRow
+	RunCursor int
+	RunOffset int
+	// runFolds is how much of each task's output this slot is showing. Absent means the
+	// default, which is a peek.
+	runFolds map[string]Fold
+	// followedOpen is the task following opened by itself, so it can be given back when
+	// following moves on.
+	followedOpen string
+	// Following: while true the view tracks whatever is running. Any manual cursor move
+	// turns it off — once you have gone looking for something, the view should stop moving
+	// under you.
+	Following bool
+	// focusedFailure exists so a failure yanks the view exactly once, not on every poll.
+	focusedFailure string
+	// SavedTo is where the finished run was written, if it was.
+	SavedTo string
+}
+
+// newSlot is a fresh view of a run: at the top, nothing opened, following what runs.
+func newSlot(r *run.Run, seq uint64) *slot {
+	return &slot{Run: r, Seq: seq, runFolds: map[string]Fold{}, Following: true}
 }
 
 // SlotInfo is one entry in the slot bar.
@@ -72,14 +91,14 @@ func (a *App) noteFinished() {
 	if a.belled == nil {
 		a.belled = map[*run.Run]bool{}
 	}
-	for _, slot := range a.Slots() {
-		r := a.runInSlot(slot.Seq)
-		if r == nil || !r.Finished() || a.belled[r] {
+	for _, s := range a.openSlots() {
+		r := s.Run
+		if !r.Finished() || a.belled[r] {
 			continue
 		}
 		a.belled[r] = true
 		// Watching it happen is not news.
-		if a.Screen == ScreenRun && a.FocusSeq == slot.Seq {
+		if a.Screen == ScreenRun && s == a.slot {
 			continue
 		}
 		if a.Bell == theme.BellFailed && r.Outcome() == run.Ok {
@@ -89,14 +108,21 @@ func (a *App) noteFinished() {
 	}
 }
 
+// openSlots is every open slot: the parked ones in the order they were parked, then the one
+// on screen. That is the order a host hears about them in, so when two runs end on the same
+// poll, the one you are looking at is the one the host ends up speaking for.
+func (a *App) openSlots() []*slot {
+	if a.Run == nil {
+		return a.Parked
+	}
+	return append(slices.Clip(a.Parked), a.slot)
+}
+
 // runInSlot is whichever run occupies a slot, focused or parked.
 func (a *App) runInSlot(seq uint64) *run.Run {
-	if a.FocusSeq == seq {
-		return a.Run
-	}
-	for _, p := range a.Parked {
-		if p.Seq == seq {
-			return p.Run
+	for _, s := range a.openSlots() {
+		if s.Seq == seq {
+			return s.Run
 		}
 	}
 	return nil
@@ -114,7 +140,7 @@ func (a *App) claimSlot(name string) (uint64, string) {
 	// Restarting the run already on screen. The caller replaces it and retires the old
 	// one, which is what a restart is.
 	if a.Run != nil && a.Run.Root == name {
-		return a.FocusSeq, ""
+		return a.slot.Seq, ""
 	}
 	// Restarting one that was parked: take its slot back so it does not move.
 	for i, p := range a.Parked {
@@ -127,7 +153,7 @@ func (a *App) claimSlot(name string) (uint64, string) {
 		}
 	}
 	// A genuinely new slot.
-	if a.openSlots() >= MaxSlots && !a.recycleSlot() {
+	if len(a.openSlots()) >= MaxSlots && !a.recycleSlot() {
 		return 0, fmt.Sprintf("all %d run slots are busy — stop one with `x` first", MaxSlots)
 	}
 	a.parkFocused()
@@ -140,7 +166,7 @@ func (a *App) claimSlot(name string) (uint64, string) {
 // counting free slots up front, because the count kept disagreeing with the claim: a
 // task already in a slot reuses it, and a finished slot is given up on demand.
 func (a *App) slotAvailable(name string) bool {
-	return a.slotRun(name) != nil || a.openSlots() < MaxSlots || a.recyclable() >= 0
+	return a.slotRun(name) != nil || len(a.openSlots()) < MaxSlots || a.recyclable() >= 0
 }
 
 // recyclable is the parked slot a new run may take when every slot is open — the first
@@ -168,7 +194,7 @@ func (a *App) recycleSlot() bool {
 	case i < 0:
 		return false
 	case i == len(a.Parked):
-		a.Run = nil
+		a.slot = newSlot(nil, 0)
 	default:
 		a.Parked = append(a.Parked[:i], a.Parked[i+1:]...)
 	}
@@ -182,7 +208,7 @@ func (a *App) recycleSlot() bool {
 // instead reuses one slot, so paging through twenty old runs does not bury the live ones.
 func (a *App) claimStoredSlot() (uint64, string) {
 	if a.Run != nil && a.Run.IsStored() {
-		return a.FocusSeq, ""
+		return a.slot.Seq, ""
 	}
 	for i, p := range a.Parked {
 		if p.Run.IsStored() {
@@ -192,7 +218,7 @@ func (a *App) claimStoredSlot() (uint64, string) {
 			return seq, ""
 		}
 	}
-	if a.openSlots() >= MaxSlots && !a.recycleSlot() {
+	if len(a.openSlots()) >= MaxSlots && !a.recycleSlot() {
 		return 0, fmt.Sprintf("all %d run slots are busy — stop one with `x` first", MaxSlots)
 	}
 	a.parkFocused()
@@ -200,55 +226,22 @@ func (a *App) claimStoredSlot() (uint64, string) {
 	return a.nextSeq, ""
 }
 
-func (a *App) openSlots() int {
-	n := len(a.Parked)
-	if a.Run != nil {
-		n++
-	}
-	return n
-}
-
-// parkFocused moves the run on screen into the parking lot, keeping its view state with it.
+// parkFocused moves the slot on screen into the parking lot, view and all.
 func (a *App) parkFocused() {
 	if a.Run == nil {
 		return
 	}
-	a.Parked = append(a.Parked, Parked{Run: a.Run, Seq: a.FocusSeq, view: a.snapshotView()})
-	a.Run = nil
+	a.Parked = append(a.Parked, a.slot)
+	a.slot = newSlot(nil, 0)
 }
 
-func (a *App) snapshotView() slotView {
-	folds := make(map[string]Fold, len(a.runFolds))
-	maps.Copy(folds, a.runFolds)
-	return slotView{
-		cursor:         a.RunCursor,
-		offset:         a.RunOffset,
-		folds:          folds,
-		followedOpen:   a.followedOpen,
-		following:      a.Following,
-		focusedFailure: a.focusedFailure,
-		savedTo:        a.SavedTo,
-	}
-}
-
-func (a *App) restoreView(v slotView) {
-	// The rows on hand are the slot being left. RebuildRunRows anchors the cursor to the row
-	// it is on, and anchoring the restored index against another run's rows put it on
-	// whatever that run had there — `lint` in one slot came back as `test`.
-	a.RunRows = nil
-	a.RunCursor = v.cursor
-	a.RunOffset = v.offset
-	a.runFolds = v.folds
-	if a.runFolds == nil {
-		a.runFolds = map[string]Fold{}
-	}
-	a.followedOpen = v.followedOpen
-	a.Following = v.following
-	a.focusedFailure = v.focusedFailure
-	a.SavedTo = v.savedTo
-	// The query survives a switch but its hits cannot: they are indices into the run you
-	// just left. Re-running it against the new one is both cheap and what you meant by
-	// keeping the query.
+// show puts a slot on screen.
+//
+// Its rows come with it, so the rebuild finds the cursor's row again among the rows it was
+// on. The search hits cannot: they are indices into the run just left, and running the
+// query again against this one is both cheap and what keeping the query meant.
+func (a *App) show(s *slot) {
+	a.slot = s
 	a.refreshSearch()
 	a.RebuildRunRows()
 }
@@ -263,12 +256,10 @@ func (a *App) Slots() []SlotInfo {
 		}
 		return SlotInfo{Seq: seq, Root: r.Root, Status: status, Elapsed: elapsed, Focused: focused}
 	}
-	out := make([]SlotInfo, 0, a.openSlots())
-	for _, p := range a.Parked {
-		out = append(out, describe(p.Run, p.Seq, false))
-	}
-	if a.Run != nil {
-		out = append(out, describe(a.Run, a.FocusSeq, true))
+	open := a.openSlots()
+	out := make([]SlotInfo, 0, len(open))
+	for _, s := range open {
+		out = append(out, describe(s.Run, s.Seq, s == a.slot))
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
 	return out
@@ -276,7 +267,7 @@ func (a *App) Slots() []SlotInfo {
 
 // FocusSlot puts a slot on screen, parking the one that was.
 func (a *App) FocusSlot(seq uint64) {
-	if a.Run != nil && seq == a.FocusSeq {
+	if a.Run != nil && seq == a.slot.Seq {
 		return
 	}
 	at := -1
@@ -292,9 +283,7 @@ func (a *App) FocusSlot(seq uint64) {
 	target := a.Parked[at]
 	a.Parked = append(a.Parked[:at], a.Parked[at+1:]...)
 	a.parkFocused()
-	a.Run = target.Run
-	a.FocusSeq = target.Seq
-	a.restoreView(target.view)
+	a.show(target)
 	a.Screen = ScreenRun
 	a.Status = ""
 }
@@ -320,7 +309,7 @@ func (a *App) CycleSlot(delta int) {
 	}
 	at := 0
 	for i, s := range slots {
-		if s.Seq == a.FocusSeq {
+		if s.Seq == a.slot.Seq {
 			at = i
 		}
 	}
@@ -351,7 +340,6 @@ func (a *App) CloseSlot() {
 		a.Status = "still running — stop it with `x` before closing it"
 		return
 	}
-	a.Run = nil
 
 	newest := -1
 	for i, p := range a.Parked {
@@ -360,13 +348,7 @@ func (a *App) CloseSlot() {
 		}
 	}
 	if newest < 0 {
-		a.FocusSeq = 0
-		a.RunRows = nil
-		a.RunCursor = 0
-		a.RunOffset = 0
-		a.runFolds = map[string]Fold{}
-		a.focusedFailure = ""
-		a.SavedTo = ""
+		a.slot = newSlot(nil, 0)
 		a.ClearSearch()
 		a.Screen = ScreenPicker
 		a.Status = "no runs open"
@@ -374,9 +356,7 @@ func (a *App) CloseSlot() {
 	}
 	target := a.Parked[newest]
 	a.Parked = append(a.Parked[:newest], a.Parked[newest+1:]...)
-	a.Run = target.Run
-	a.FocusSeq = target.Seq
-	a.restoreView(target.view)
+	a.show(target)
 }
 
 // slotRun is the slot holding this task, whether it is on screen or parked.

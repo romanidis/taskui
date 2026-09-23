@@ -245,7 +245,7 @@ func TestDetachingTakesARunOutOfWhatQuittingStops(t *testing.T) {
 	}
 	press(a, Char('A'))
 
-	if !a.IsDetached(a.FocusSeq) {
+	if !a.IsDetached(a.slot.Seq) {
 		t.Fatal("not detached")
 	}
 	if a.InFlightCount() != 0 {
@@ -293,7 +293,7 @@ func TestDetachingAFinishedRunSaysThereIsNothingToLetGoOf(t *testing.T) {
 	a.Screen = ScreenRun
 	press(a, Char('A'))
 
-	if a.IsDetached(a.FocusSeq) {
+	if a.IsDetached(a.slot.Seq) {
 		t.Error("detached a run that had already finished")
 	}
 	if !strings.Contains(a.Status, "already finished") {

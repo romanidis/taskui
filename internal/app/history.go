@@ -245,15 +245,10 @@ func (a *App) OpenStoredRun() {
 		return
 	}
 	a.retire(a.Run)
-	a.Run = r
-	a.FocusSeq = seq
-	a.Screen = ScreenRun
-	a.RunCursor = 0
-	a.RunOffset = 0
-	a.runFolds = map[string]Fold{}
+	a.slot = newSlot(r, seq)
 	a.Following = false
-	a.focusedFailure = ""
 	a.SavedTo = store.RunDir(a.stateDir, manifest.ID)
+	a.Screen = ScreenRun
 	a.ClearSearch()
 	a.Status = ""
 	// Open the failure straight away: reopening a run is nearly always about the thing

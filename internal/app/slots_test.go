@@ -79,7 +79,7 @@ func TestARestartDoesNotInheritTheOldRunsBellOrDetach(t *testing.T) {
 	a.OpenRunForTest(old)
 	a.Screen = ScreenRun
 	press(a, Char('A'))
-	if !a.IsDetached(a.FocusSeq) {
+	if !a.IsDetached(a.slot.Seq) {
 		t.Fatal("not detached")
 	}
 	a.Screen = ScreenPicker
@@ -91,7 +91,7 @@ func TestARestartDoesNotInheritTheOldRunsBellOrDetach(t *testing.T) {
 
 	restarted := oneTaskRun("up")
 	a.Run = restarted
-	if a.IsDetached(a.FocusSeq) {
+	if a.IsDetached(a.slot.Seq) {
 		t.Error("the restarted run was left detached, so quitting would leave it running")
 	}
 	restarted.Finish(0)
@@ -143,8 +143,8 @@ func TestSixFinishedSlotsStillTakeANewRun(t *testing.T) {
 		r.Finish(0)
 		a.OpenRunForTest(r)
 	}
-	if a.openSlots() != MaxSlots {
-		t.Fatalf("open = %d", a.openSlots())
+	if len(a.openSlots()) != MaxSlots {
+		t.Fatalf("open = %d", len(a.openSlots()))
 	}
 	if !a.slotAvailable("new") {
 		t.Error("a finished slot is recyclable")
@@ -152,7 +152,7 @@ func TestSixFinishedSlotsStillTakeANewRun(t *testing.T) {
 
 	a.Parked = a.Parked[:0]
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
-		a.Parked = append(a.Parked, Parked{Run: oneTaskRun(name), Seq: uint64(len(a.Parked) + 1)})
+		a.Parked = append(a.Parked, newSlot(oneTaskRun(name), uint64(len(a.Parked)+1)))
 	}
 	// Five live parked runs; the one on screen is the only finished slot, and it counts.
 	if !a.slotAvailable("new") {
@@ -193,7 +193,7 @@ func TestSwitchingBackToASlotFindsItsOwnRow(t *testing.T) {
 	mine := run.Detached("b", run.GraphFrom(run.Edge{Parent: "b", Children: []string{"test", "lint"}}))
 	a.OpenRunForTest(mine)
 	a.cursorToTask("lint")
-	seq, want := a.FocusSeq, a.RunRows[a.RunCursor].Name
+	seq, want := a.slot.Seq, a.RunRows[a.RunCursor].Name
 
 	other := run.Detached("a", run.GraphFrom(run.Edge{Parent: "a", Children: []string{"y", "test"}}))
 	a.OpenRunForTest(other)
@@ -201,6 +201,35 @@ func TestSwitchingBackToASlotFindsItsOwnRow(t *testing.T) {
 
 	if got := a.RunRows[a.RunCursor].Name; got != want {
 		t.Errorf("cursor on %q, want %q", got, want)
+	}
+}
+
+// A run that kept printing while you were in another slot has moved every row below what it
+// printed. Coming back finds the line you were reading, not whatever slid into its place.
+func TestComingBackToASlotFindsTheLineItWasOn(t *testing.T) {
+	a := sample(t)
+	r := run.Detached("b", run.GraphFrom(run.Edge{Parent: "b", Children: []string{"early", "late"}}))
+	r.Feed("early", "e0")
+	for _, l := range []string{"l0", "l1", "l2"} {
+		r.Feed("late", l)
+	}
+	a.OpenRunForTest(r)
+	a.RunSetFold("early", FoldFull)
+	for i, row := range a.RunRows {
+		if !row.IsTask && row.Task == "late" && row.Index == 1 {
+			a.RunCursor = i
+		}
+	}
+	seq := a.slot.Seq
+
+	a.OpenRunForTest(oneTaskRun("other"))
+	for _, l := range []string{"e1", "e2", "e3"} {
+		r.Feed("early", l)
+	}
+	a.FocusSlot(seq)
+
+	if row := a.RunRows[a.RunCursor]; row.IsTask || row.Task != "late" || row.Index != 1 {
+		t.Errorf("cursor on %+v, want the second line of late", row)
 	}
 }
 

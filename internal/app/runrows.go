@@ -395,10 +395,7 @@ func (a *App) RunToggleFold() {
 func (a *App) OpenRunForTest(r *run.Run) {
 	a.parkFocused()
 	a.nextSeq++
-	a.FocusSeq = a.nextSeq
-	a.Run = r
-	a.runFolds = map[string]Fold{}
-	a.RunCursor = 0
+	a.slot = newSlot(r, a.nextSeq)
 	a.RebuildRunRows()
 	a.RebuildPickerRows()
 }

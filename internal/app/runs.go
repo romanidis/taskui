@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/store"
@@ -160,17 +159,9 @@ func (a *App) start(inv invocation) error {
 	// group with it; here it has to be said out loud, or a restart silently orphans the
 	// run it was restarting.
 	a.retire(a.Run)
-	a.Run = r
-	a.FocusSeq = seq
-	a.RunCursor = 0
-	a.RunOffset = 0
-	a.runFolds = map[string]Fold{}
-	a.followedOpen = ""
-	a.Following = true
-	a.focusedFailure = ""
+	a.slot = newSlot(r, seq)
 	a.Status = ""
 	a.ClearSearch()
-	a.SavedTo = ""
 	a.RebuildRunRows()
 	// Starting a run no longer takes the screen. The list stays where it was and the run
 	// grows under the row it came from — which is what makes starting a second one, and a
@@ -198,19 +189,13 @@ func (a *App) retire(r *run.Run) {
 // back up would lose the output you came back for.
 func (a *App) PollRun() bool {
 	moved := false
-	var finished []int
-	for i := range a.Parked {
-		if a.Parked[i].Run.Poll() {
+	for _, p := range a.Parked {
+		if p.Run.Poll() {
 			moved = true
-			if a.Parked[i].Run.Finished() && a.needsSaving(a.Parked[i].Run, a.Parked[i].view.savedTo) {
-				finished = append(finished, i)
+			if p.Run.Finished() && a.needsSaving(p) {
+				a.saveParked(p)
 			}
 		}
-	}
-	// Reverse, so an earlier index is not invalidated by a later removal — nothing is
-	// removed here today, but this is one edit away from being wrong if that changes.
-	for _, f := range slices.Backward(finished) {
-		a.saveParked(f)
 	}
 
 	if a.Run == nil {
@@ -239,20 +224,13 @@ func (a *App) PollRun() bool {
 
 // saveParked archives a background run the moment it ends, and says so — otherwise the
 // only way to find out your build finished is to go and look at it.
-func (a *App) saveParked(i int) {
-	if i >= len(a.Parked) {
-		return
-	}
-	parked := a.Parked[i]
-	name := parked.Run.Root
-	ok := parked.Run.Outcome() == run.Ok
-	path, err := a.archive(parked.Run, parked.view.savedTo)
-	if err != nil {
+func (a *App) saveParked(p *slot) {
+	name := p.Run.Root
+	ok := p.Run.Outcome() == run.Ok
+	if err := a.archive(p); err != nil {
 		a.Status = fmt.Sprintf("could not save `task %s`: %v", name, err)
 		return
 	}
-	a.Parked[i].view.savedTo = path
-	a.Outcomes = store.LastOutcomes(a.stateDir, a.Root)
 	mark := "✗"
 	if ok {
 		mark = "✓"
@@ -260,36 +238,42 @@ func (a *App) saveParked(i int) {
 	a.Status = fmt.Sprintf("%s `task %s` finished in the background", mark, name)
 }
 
-// needsSaving reports whether a finished run still has to be archived: never saved, or
-// saved only as far as it had got when it was detached.
-func (a *App) needsSaving(r *run.Run, savedTo string) bool {
-	return savedTo == "" || a.partial[r]
+// needsSaving reports whether a slot's finished run still has to be archived: never saved,
+// or saved only as far as it had got when it was detached.
+func (a *App) needsSaving(s *slot) bool {
+	return s.SavedTo == "" || a.partial[s.Run]
 }
 
-// archive saves a finished run, rewriting the partial record a detach left rather than
-// adding a second one beside it.
-func (a *App) archive(r *run.Run, savedTo string) (string, error) {
-	if savedTo == "" || !a.partial[r] {
-		return store.Save(a.stateDir, a.Root, r)
+// archive saves a slot's finished run, rewriting the partial record a detach left rather
+// than adding a second one beside it.
+func (a *App) archive(s *slot) error {
+	var path string
+	var err error
+	if s.SavedTo == "" || !a.partial[s.Run] {
+		path, err = store.Save(a.stateDir, a.Root, s.Run)
+	} else {
+		delete(a.partial, s.Run)
+		path, err = store.Resave(a.stateDir, s.SavedTo, a.Root, s.Run)
 	}
-	delete(a.partial, r)
-	return store.Resave(a.stateDir, savedTo, a.Root, r)
+	if err != nil {
+		return err
+	}
+	s.SavedTo = path
+	// The picker's ✓/✗ column is only useful if it is current.
+	a.Outcomes = store.LastOutcomes(a.stateDir, a.Root)
+	return nil
 }
 
 // saveIfFinished persists the run once, the moment it ends.
 func (a *App) saveIfFinished() {
-	if a.Run == nil || !a.Run.Finished() || !a.needsSaving(a.Run, a.SavedTo) {
+	if a.Run == nil || !a.Run.Finished() || !a.needsSaving(a.slot) {
 		return
 	}
-	path, err := a.archive(a.Run, a.SavedTo)
-	if err != nil {
+	if err := a.archive(a.slot); err != nil {
 		a.Status = fmt.Sprintf("could not save this run: %v", err)
 		return
 	}
 	masked := a.Run.RedactedSecrets
-	a.SavedTo = path
-	// The picker's ✓/✗ column is only useful if it is current.
-	a.Outcomes = store.LastOutcomes(a.stateDir, a.Root)
 	switch masked {
 	case 0:
 		a.Status = "saved — no dotenv values found to mask"
@@ -393,8 +377,8 @@ func (a *App) InFlightCount() int { return len(a.attachedRuns()) }
 // CancelAll stops everything quitting is responsible for, on the way out — which is not
 // everything. `x` still reaches a detached run; this is the blanket that no longer covers it.
 func (a *App) CancelAll() {
-	for _, r := range a.attachedRuns() {
-		r.run.Cancel()
+	for _, s := range a.attachedRuns() {
+		s.Run.Cancel()
 	}
 }
 
@@ -402,8 +386,8 @@ func (a *App) CancelAll() {
 // been sent and given time to work: a process that ignored it is about to be orphaned, and
 // an orphaned container is worse than a skipped cleanup handler.
 func (a *App) KillAll() {
-	for _, r := range a.attachedRuns() {
-		r.run.Kill()
+	for _, s := range a.attachedRuns() {
+		s.Run.Kill()
 	}
 }
 

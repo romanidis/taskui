@@ -27,7 +27,7 @@ func (a *App) Detach() {
 		a.Status = "`" + a.Run.Root + "` has already finished — nothing to let go of"
 		return
 	}
-	if a.IsDetached(a.FocusSeq) {
+	if a.IsDetached(a.slot.Seq) {
 		a.Status = "`" + a.Run.Root + "` is already detached — `x` still stops it"
 		return
 	}
@@ -68,30 +68,21 @@ func (a *App) IsDetached(seq uint64) bool {
 func (a *App) DetachedCount() int {
 	n := 0
 	// A detached run that ended on its own is not something quitting has to warn about.
-	for _, slot := range a.slotRuns() {
-		if a.detached[slot.run] && !slot.run.Finished() {
+	for _, s := range a.openSlots() {
+		if a.detached[s.Run] && !s.Run.Finished() {
 			n++
 		}
 	}
 	return n
 }
 
-// attachedRuns is every live run that quitting is still responsible for.
-func (a *App) attachedRuns() []attached {
-	var out []attached
-	if a.Run != nil && !a.Run.Finished() && !a.detached[a.Run] {
-		out = append(out, attached{seq: a.FocusSeq, run: a.Run})
-	}
-	for _, p := range a.Parked {
-		if !p.Run.Finished() && !a.detached[p.Run] {
-			out = append(out, attached{seq: p.Seq, run: p.Run})
+// attachedRuns is every live slot that quitting is still responsible for.
+func (a *App) attachedRuns() []*slot {
+	var out []*slot
+	for _, s := range a.openSlots() {
+		if !s.Run.Finished() && !a.detached[s.Run] {
+			out = append(out, s)
 		}
 	}
 	return out
-}
-
-// attached pairs a live run with the slot it sits in.
-type attached struct {
-	seq uint64
-	run *run.Run
 }

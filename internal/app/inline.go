@@ -52,17 +52,11 @@ func (r PickerRow) IsRun() bool { return r.Tree < 0 }
 // to be on when you set it. Nil when no slot holds that task.
 func (a *App) slotFolds(name string) map[string]Fold {
 	if a.Run != nil && a.Run.Root == name {
-		if a.runFolds == nil {
-			a.runFolds = map[string]Fold{}
-		}
 		return a.runFolds
 	}
-	for i := range a.Parked {
-		if a.Parked[i].Run.Root == name {
-			if a.Parked[i].view.folds == nil {
-				a.Parked[i].view.folds = map[string]Fold{}
-			}
-			return a.Parked[i].view.folds
+	for _, p := range a.Parked {
+		if p.Run.Root == name {
+			return p.runFolds
 		}
 	}
 	return nil
