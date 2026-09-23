@@ -34,9 +34,11 @@ jobs:
       - name: Install go-task
         run: sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
-      - uses: goreleaser/goreleaser-action@v6
+      # Pinned, and to the version ci.yml checks the config with: a tag is the worst moment
+      # to find out that a new goreleaser reads it differently.
+      - uses: goreleaser/goreleaser-action@v7
         with:
-          version: latest
+          version: v2.18.2
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

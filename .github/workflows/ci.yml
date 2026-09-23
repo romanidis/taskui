@@ -127,7 +127,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: goreleaser/goreleaser-action@v6
+      # Pinned to the version release.yml builds with, so the config this passes is one a
+      # release will accept.
+      - uses: goreleaser/goreleaser-action@v7
         with:
-          version: latest
+          version: v2.18.2
           args: check
