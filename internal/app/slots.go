@@ -137,20 +137,17 @@ func (a *App) runInSlot(seq uint64) *run.Run {
 //
 // It returns the sequence number to give the new run, or the reason it cannot start.
 func (a *App) claimSlot(name string) (uint64, string) {
-	// Restarting the run already on screen. The caller replaces it and retires the old
-	// one, which is what a restart is.
-	if a.Run != nil && a.Run.Root == name {
-		return a.slot.Seq, ""
-	}
-	// Restarting one that was parked: take its slot back so it does not move.
-	for i, p := range a.Parked {
-		if p.Run.Root == name {
-			seq := p.Seq
-			a.retire(p.Run)
-			a.Parked = append(a.Parked[:i], a.Parked[i+1:]...)
-			a.parkFocused()
-			return seq, ""
-		}
+	switch s := a.taskSlot(name); {
+	case s == a.slot:
+		// Restarting the run already on screen. The caller replaces it and retires the old
+		// one, which is what a restart is.
+		return s.Seq, ""
+	case s != nil:
+		// Restarting one that was parked: take its slot back so it does not move.
+		a.retire(s.Run)
+		a.Parked = slices.DeleteFunc(a.Parked, func(p *slot) bool { return p == s })
+		a.parkFocused()
+		return s.Seq, ""
 	}
 	// A genuinely new slot.
 	if len(a.openSlots()) >= MaxSlots && !a.recycleSlot() {
@@ -290,11 +287,8 @@ func (a *App) FocusSlot(seq uint64) {
 
 // focusTask focuses whichever slot holds this task, if one does.
 func (a *App) focusTask(name string) {
-	for _, p := range a.Parked {
-		if p.Run.Root == name {
-			a.FocusSlot(p.Seq)
-			return
-		}
+	if s := a.taskSlot(name); s != nil {
+		a.FocusSlot(s.Seq)
 	}
 }
 
@@ -359,15 +353,32 @@ func (a *App) CloseSlot() {
 	a.show(target)
 }
 
-// slotRun is the slot holding this task, whether it is on screen or parked.
-func (a *App) slotRun(name string) *run.Run {
-	if a.Run != nil && a.Run.Root == name {
-		return a.Run
-	}
-	for _, p := range a.Parked {
-		if p.Run.Root == name {
-			return p.Run
+// taskSlot is the slot holding this task, on screen or parked: the one running it if there
+// is one, and otherwise an old run of it opened from history.
+//
+// A run read off disk is history being browsed rather than the task's slot, so it never
+// stands in for a live one. It used to, whenever it was the one on screen: with `up` going
+// in one slot and last week's `up` open in the other, the picker said `up` was not
+// running, `⏎` started a second copy beside the first, and `x` answered that it had
+// already finished.
+func (a *App) taskSlot(name string) *slot {
+	var stored *slot
+	for _, s := range a.openSlots() {
+		if s.Run.Root != name {
+			continue
 		}
+		if !s.Run.IsStored() {
+			return s
+		}
+		stored = s
+	}
+	return stored
+}
+
+// slotRun is the run in this task's slot, whether it is on screen or parked.
+func (a *App) slotRun(name string) *run.Run {
+	if s := a.taskSlot(name); s != nil {
+		return s.Run
 	}
 	return nil
 }

@@ -233,6 +233,94 @@ func TestComingBackToASlotFindsTheLineItWasOn(t *testing.T) {
 	}
 }
 
+// A run read off disk is history being browsed, not the task's slot. With `backend:lint`
+// going in one slot and an old run of it open in another, the task is still the one
+// running: `⏎` on it goes to that run rather than starting a second beside it, and `x`
+// stops it rather than answering that it has already finished.
+func TestAnOldRunOfATaskDoesNotStandInForTheLiveOne(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		liveLast bool
+	}{
+		{"with the old run on screen", false},
+		{"with the live run on screen", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := sample(t)
+			live := oneTaskRun("backend:lint")
+			old := run.FromStored(run.Stored{
+				Root:  "backend:lint",
+				Graph: run.GraphFrom(run.Edge{Parent: "backend:lint"}),
+			})
+			opened := []*run.Run{live, old}
+			if tc.liveLast {
+				opened = []*run.Run{old, live}
+			}
+			for _, r := range opened {
+				a.OpenRunForTest(r)
+			}
+			a.Screen = ScreenPicker
+			defer a.KillAll()
+
+			if _, running := a.RunningFor("backend:lint"); !running {
+				t.Error("the picker says the task is not running")
+			}
+			a.RequestRun("backend:lint", nil)
+			if !strings.Contains(a.Status, "already running") {
+				t.Errorf("status = %q", a.Status)
+			}
+			if a.Run != live {
+				t.Error("the run in focus is not the one going")
+			}
+			for _, s := range a.openSlots() {
+				if s.Run != live && !s.Run.IsStored() {
+					t.Error("a second run of the task was started beside the first")
+				}
+			}
+			a.CancelTask("backend:lint")
+			if !live.Cancelled() {
+				t.Errorf("`x` did not reach the live run: %q", a.Status)
+			}
+		})
+	}
+}
+
+// `r` on an old run of a task that is going again asks the restart question, and yes has to
+// restart the run it asked about — not leave it going and start a second copy in the old
+// run's slot.
+func TestRerunningAnOldRunRestartsTheLiveOne(t *testing.T) {
+	a := sample(t)
+	live := oneTaskRun("backend:lint")
+	a.OpenRunForTest(live)
+	old := run.FromStored(run.Stored{Root: "backend:lint", Graph: run.GraphFrom(run.Edge{Parent: "backend:lint"})})
+	a.OpenRunForTest(old)
+	a.Screen = ScreenRun
+	defer a.KillAll()
+
+	a.RerunSelected()
+	if a.Confirm == nil || a.Confirm.Kind != ConfirmRun || a.Confirm.Reason != WouldStopRunning {
+		t.Fatalf("confirm = %+v, want the restart question", a.Confirm)
+	}
+	a.ConfirmYes()
+
+	if !live.Cancelled() {
+		t.Error("the run the question was about is still going")
+	}
+	going := 0
+	for _, s := range a.openSlots() {
+		if s.Run == old {
+			continue
+		}
+		if s.Run == live {
+			t.Error("the restarted run is still in a slot")
+		}
+		going++
+	}
+	if going != 1 {
+		t.Errorf("%d runs of the task are open beside the old one, want the restart", going)
+	}
+}
+
 // A jump opens folds on its way to a match, which moves every row below them. `esc` has
 // to put the cursor back on the row it started on, not on whatever slid into its place.
 func TestCancellingAJumpReturnsToTheRowItLeft(t *testing.T) {

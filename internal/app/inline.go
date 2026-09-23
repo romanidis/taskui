@@ -51,13 +51,8 @@ func (r PickerRow) IsRun() bool { return r.Tree < 0 }
 // you switch to the run view. The fold belongs to the run, not to the screen you happened
 // to be on when you set it. Nil when no slot holds that task.
 func (a *App) slotFolds(name string) map[string]Fold {
-	if a.Run != nil && a.Run.Root == name {
-		return a.runFolds
-	}
-	for _, p := range a.Parked {
-		if p.Run.Root == name {
-			return p.runFolds
-		}
+	if s := a.taskSlot(name); s != nil {
+		return s.runFolds
 	}
 	return nil
 }
@@ -129,7 +124,7 @@ func (a *App) CycleTaskFold(root, task string) {
 
 // afterFoldChange rebuilds whatever is showing the run whose folds just moved.
 func (a *App) afterFoldChange(root string) {
-	if a.Run != nil && a.Run.Root == root {
+	if a.Run != nil && a.taskSlot(root) == a.slot {
 		// Following hands back a fold it opened itself; one you set is yours.
 		a.followedOpen = ""
 		a.RebuildRunRows()
