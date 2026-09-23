@@ -364,7 +364,7 @@ func (a *App) treeItem(i, width int) []line {
 			if o.Ok {
 				glyph, colour = g.StatusOk+" ", t.Colors.StatusOk
 			}
-			badges = append(badges, styled(glyph, fgBold(colour)), styled(ago(o.WhenUnix), fg(t.Colors.Dim)))
+			badges = append(badges, styled(glyph, fgBold(colour)), styled(Ago(o.WhenUnix), fg(t.Colors.Dim)))
 		}
 		signals = append(badges, signals...)
 		// Reserve the count's columns on a row that has no count, so that the ✓/✗ ends in the

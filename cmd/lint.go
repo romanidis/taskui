@@ -7,8 +7,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/romanidis/taskui/internal/cover"
@@ -16,28 +14,12 @@ import (
 	"github.com/romanidis/taskui/internal/task"
 )
 
-// coverPatterns reads `.taskui-cover`, or nothing if there is not one.
-func coverPatterns(dir string) []string {
-	data, err := os.ReadFile(filepath.Join(dir, cover.File))
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for line := range strings.SplitSeq(string(data), "\n") {
-		line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
-		if line != "" {
-			out = append(out, line)
-		}
-	}
-	return out
-}
-
 // printLint is `--lint`: walk every aggregate's graph and report what it claims and does not
 // reach. Returns the number of gaps, which is what the exit code is decided on — notes are
 // printed and not counted.
 func printLint(out io.Writer, root string, tasks []task.Task, matrix bool) int {
 	reach := func(name string) []string { return graph.Resolve(root, name).Reachable(name) }
-	g := cover.BuildGrid(tasks, reach, coverPatterns(root))
+	g := cover.BuildGrid(tasks, reach, cover.Exemptions(root))
 	if matrix {
 		return printMatrix(out, g)
 	}

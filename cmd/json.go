@@ -27,7 +27,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/romanidis/taskui/internal/events"
 	"github.com/romanidis/taskui/internal/run"
@@ -148,17 +147,7 @@ func streamRun(out io.Writer, dir, target string, argv []string) error {
 
 	deltas := events.NewDeltas()
 	deltas.Start(sink, r, dir)
-	for {
-		r.Poll()
-		deltas.Flush(sink, r)
-		if r.Finished() {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	// One more, for whatever landed between the last poll and the exit.
-	r.Poll()
-	deltas.Flush(sink, r)
+	r.Wait(func() { deltas.Flush(sink, r) })
 
 	exit := r.ExitCode()
 	// Saved like any other run: a run is a run whichever front end started it, and one that

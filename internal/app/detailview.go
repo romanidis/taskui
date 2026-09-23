@@ -14,7 +14,7 @@ func (a *App) detailHeader() line {
 		if o.Ok {
 			glyph, colour = t.Glyphs.StatusOk+" ", t.Colors.StatusOk
 		}
-		state = []span{styled(glyph, fgBold(colour)), styled(ago(o.WhenUnix), fg(t.Colors.Dim))}
+		state = []span{styled(glyph, fgBold(colour)), styled(Ago(o.WhenUnix), fg(t.Colors.Dim))}
 	}
 	return a.header(a.DetailOf, state)
 }

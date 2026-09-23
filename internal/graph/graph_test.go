@@ -322,3 +322,33 @@ func TestRenamingMergesTwoSpellingsOfOneTask(t *testing.T) {
 		t.Errorf("deps = %v", got.Deps)
 	}
 }
+
+// A diamond is shown in full once and marked on the second arrival; a cycle ends; and a
+// visit can stop the walk, which is what a closed pipe needs.
+func TestWalkVisitsEachTaskOnceInFullAndMarksRepeats(t *testing.T) {
+	g := New()
+	g.Edges["all"] = []string{"lint", "test"}
+	g.Edges["lint"] = []string{"shared"}
+	g.Edges["test"] = []string{"shared"}
+	g.Edges["shared"] = []string{"all"} // a cycle back to the top
+
+	var got []string
+	g.Walk("all", func(name string, depth int, repeat bool) bool {
+		mark := ""
+		if repeat {
+			mark = "*"
+		}
+		got = append(got, strings.Repeat(".", depth)+name+mark)
+		return true
+	})
+	want := []string{"all", ".lint", "..shared", "...all*", ".test", "..shared*"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("walk = %v, want %v", got, want)
+	}
+
+	visits := 0
+	g.Walk("all", func(string, int, bool) bool { visits++; return visits < 2 })
+	if visits != 2 {
+		t.Errorf("a visit that said stop was followed by %d more", visits-2)
+	}
+}

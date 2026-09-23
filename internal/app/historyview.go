@@ -57,7 +57,7 @@ func (a *App) drawHistory(width, height int) []string {
 		}
 		l := line{
 			styled(glyph+" ", fgBold(colour)),
-			styled(padRight(ago(m.StartedUnix), 10), fg(t.Colors.Dim)),
+			styled(padRight(Ago(m.StartedUnix), 10), fg(t.Colors.Dim)),
 			// Cut as well as padded: a longer command pushed that row's duration and line
 			// count out of the columns every other row keeps them in.
 			styled(padRight(clip(m.Command(), 30), 30), commandStyle),

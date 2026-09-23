@@ -889,6 +889,29 @@ func GraphFrom(edges ...Edge) graph.Graph {
 	return g
 }
 
+// Wait drains the run until it ends, calling tick after every poll: the loop a headless
+// caller runs where the UI would have its own. One more poll after the exit takes whatever
+// landed with it. tick may be nil.
+func (r *Run) Wait(tick func()) {
+	for {
+		r.Poll()
+		if tick != nil {
+			tick()
+		}
+		if r.Finished() {
+			break
+		}
+		time.Sleep(waitEvery)
+	}
+	r.Poll()
+	if tick != nil {
+		tick()
+	}
+}
+
+// waitEvery is how often Wait polls.
+const waitEvery = 20 * time.Millisecond
+
 // Poll drains whatever the capture goroutine has produced. It returns true if anything
 // changed, so the UI can skip redrawing when nothing has.
 func (r *Run) Poll() bool {

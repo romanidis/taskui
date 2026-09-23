@@ -18,14 +18,14 @@ func TestCoverPatternsReadsGlobsAndSkipsComments(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, cover.File), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := coverPatterns(dir); !slices.Equal(got, []string{"deploy:*", "site:build"}) {
+	if got := cover.Exemptions(dir); !slices.Equal(got, []string{"deploy:*", "site:build"}) {
 		t.Errorf("got %v", got)
 	}
 }
 
 // A repository with no such file is the normal case and loses nothing.
 func TestCoverPatternsIsEmptyWithoutTheFile(t *testing.T) {
-	if got := coverPatterns(t.TempDir()); len(got) != 0 {
+	if got := cover.Exemptions(t.TempDir()); len(got) != 0 {
 		t.Errorf("want none, got %v", got)
 	}
 }

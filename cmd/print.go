@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -211,33 +210,16 @@ func dumpPivot(mode string, a *app.App) error {
 }
 
 func printGraph(out io.Writer, root, rootTask string) {
-	g := graph.Resolve(root, rootTask)
 	// Print the tree, marking revisits rather than expanding them twice.
-	seen := map[string]bool{}
-	type frame struct {
-		name  string
-		depth int
-	}
-	stack := []frame{{rootTask, 0}}
-	for len(stack) > 0 {
-		top := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		repeat := seen[top.name]
-		seen[top.name] = true
+	graph.Resolve(root, rootTask).Walk(rootTask, func(name string, depth int, repeat bool) bool {
 		mark := ""
 		if repeat {
 			mark = "  (already shown)"
 		}
-		if _, err := fmt.Fprintf(out, "%s%s%s\n", strings.Repeat("  ", top.depth), top.name, mark); err != nil {
-			return // piping into `head` closes the pipe on us
-		}
-		if !repeat {
-			children := g.Children(top.name)
-			for _, c := range slices.Backward(children) {
-				stack = append(stack, frame{c, top.depth + 1})
-			}
-		}
-	}
+		// Piping into `head` closes the pipe on us, which ends the walk and nothing else.
+		_, err := fmt.Fprintf(out, "%s%s%s\n", strings.Repeat("  ", depth), name, mark)
+		return err == nil
+	})
 }
 
 // printTimeline is `--timeline`: one task's stored runs, newest first.
@@ -286,8 +268,8 @@ func printDiff(out io.Writer, root, taskName string) error {
 
 	edits := diff.Lines(store.Output(base, older), store.Output(base, newest))
 	stat := diff.Count(edits)
-	fmt.Fprintf(out, "--- %s  (%s, %s)\n", taskName, against, ago(older.WhenUnix))
-	fmt.Fprintf(out, "+++ %s  (%s)\n", taskName, ago(newest.WhenUnix))
+	fmt.Fprintf(out, "--- %s  (%s, %s)\n", taskName, against, app.Ago(older.WhenUnix))
+	fmt.Fprintf(out, "+++ %s  (%s)\n", taskName, app.Ago(newest.WhenUnix))
 	for _, e := range diff.Hunks(edits, 3) {
 		switch {
 		case diff.IsGap(e):
@@ -325,7 +307,7 @@ func printFlaky(out io.Writer, root string) error {
 			name += "\t"
 		}
 		fmt.Fprintf(out, "%s\t%s\t%d passed\t%d failed\t%s\n",
-			name, f.Short(), f.Passed, f.Failed, ago(f.LastUnix))
+			name, f.Short(), f.Passed, f.Failed, app.Ago(f.LastUnix))
 	}
 	fmt.Fprintf(out, "-- %d flaky\n", len(flakes))
 	return exitBecause(ExitFound, "%d %s went both ways at one commit",
@@ -371,20 +353,4 @@ func parseSince(text string) (time.Duration, error) {
 		return 0, fmt.Errorf("--since %q: cannot look forwards", text)
 	}
 	return d, nil
-}
-
-// ago is a rough "how long back", for the headless output. The TUI has its own; this one
-// only has to be readable in a pipe.
-func ago(unix int64) string {
-	d := time.Since(time.Unix(unix, 0))
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
-	}
 }

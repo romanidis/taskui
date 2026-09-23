@@ -23,6 +23,7 @@ package cover
 
 import (
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -37,6 +38,10 @@ import (
 // a local gate, a docs build, an artifact for another platform — and a check whose findings
 // are mostly correct-as-written is a check people stop reading.
 const File = ".taskui-cover"
+
+// Exemptions reads File in dir: the globs a gap is deliberate for, or nothing when there is
+// no such file.
+func Exemptions(dir string) []string { return task.ReadPatterns(filepath.Join(dir, File)) }
 
 // A Finding is one namespace an aggregate claims and does not reach.
 //

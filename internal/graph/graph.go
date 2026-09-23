@@ -92,6 +92,33 @@ func (g Graph) Names() []string {
 	return out
 }
 
+// Walk visits root and everything under it, depth first and in invocation order. A task
+// reached a second time is visited again with repeat set and not descended into, so a
+// diamond is shown in full once and a cycle ends. Returning false from visit stops the walk.
+func (g Graph) Walk(root string, visit func(name string, depth int, repeat bool) bool) {
+	type frame struct {
+		name  string
+		depth int
+	}
+	seen := map[string]bool{}
+	stack := []frame{{root, 0}}
+	for len(stack) > 0 {
+		top := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		repeat := seen[top.name]
+		seen[top.name] = true
+		if !visit(top.name, top.depth, repeat) {
+			return
+		}
+		if repeat {
+			continue
+		}
+		for _, c := range slices.Backward(g.Children(top.name)) {
+			stack = append(stack, frame{c, top.depth + 1})
+		}
+	}
+}
+
 // Reachable lists every task reachable from root, including root, depth first.
 func (g Graph) Reachable(root string) []string {
 	var out []string

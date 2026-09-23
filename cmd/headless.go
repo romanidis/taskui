@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,35 +24,25 @@ func runHeadless(dir, target string, argv []string, quickfix bool) error {
 		return err
 	}
 	stop := stopOnSignal(r)
-	for !r.Finished() {
-		r.Poll()
-		time.Sleep(20 * time.Millisecond)
-	}
-	r.Poll()
+	r.Wait(nil)
 	stop()
 
-	type frame struct {
-		name  string
-		depth int
-	}
-	stack := []frame{{target, 0}}
-	seen := map[string]bool{}
-	for len(stack) > 0 && !quickfix {
-		top := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if seen[top.name] {
-			continue
-		}
-		seen[top.name] = true
-
-		pad := strings.Repeat("  ", top.depth)
-		if t, ok := r.Tasks[top.name]; ok {
+	if !quickfix {
+		r.Graph.Walk(target, func(name string, depth int, repeat bool) bool {
+			if repeat {
+				return true
+			}
+			t, ok := r.Tasks[name]
+			if !ok {
+				return true
+			}
+			pad := strings.Repeat("  ", depth)
 			secs := ""
 			if d, ok := t.Elapsed(); ok {
 				secs = fmt.Sprintf("%.2fs", d.Seconds())
 			}
 			// Ignore write errors throughout: piping into `head` closes the pipe on us.
-			fmt.Printf("%s%s %s  %s\n", pad, t.Status.Glyph(), top.name, secs)
+			fmt.Printf("%s%s %s  %s\n", pad, t.Status.Glyph(), name, secs)
 			for _, l := range t.Lines {
 				marker := "│"
 				if l.IsCommand {
@@ -62,11 +51,8 @@ func runHeadless(dir, target string, argv []string, quickfix bool) error {
 				// Raw, so colour shows on a terminal and survives `cat -v` inspection.
 				fmt.Printf("%s  %s %s\n", pad, marker, l.Raw)
 			}
-		}
-		children := r.Graph.Children(top.name)
-		for _, c := range slices.Backward(children) {
-			stack = append(stack, frame{c, top.depth + 1})
-		}
+			return true
+		})
 	}
 	exit := r.ExitCode()
 	// With --quickfix the output is a list an editor parses, so nothing else may go to

@@ -465,9 +465,10 @@ func duration(d time.Duration) string {
 	}
 }
 
-// ago is whole minutes and hours, not a timestamp: what you want from a run list is how
-// long ago, and the exact clock time almost never matters.
-func ago(startedUnix int64) string {
+// Ago is whole minutes and hours, not a timestamp: what you want from a run list is how
+// long ago, and the exact clock time almost never matters. Exported for the headless
+// printers, which kept a copy of their own and said it the same way.
+func Ago(startedUnix int64) string {
 	now := time.Now().Unix()
 	if startedUnix > now {
 		return "just now"

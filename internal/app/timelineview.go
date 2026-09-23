@@ -116,7 +116,7 @@ func (a *App) drawTimeline(width, height int) []string {
 
 		l := line{
 			styled(glyph+" ", fgBold(colour)),
-			styled(padRight(ago(p.WhenUnix), 10), fg(t.Colors.Dim)),
+			styled(padRight(Ago(p.WhenUnix), 10), fg(t.Colors.Dim)),
 			styled(fmt.Sprintf("%8s  ", duration(millis(p.DurationMs))), fg(t.Colors.Dim)),
 		}
 		if barWidth > 0 {
@@ -181,7 +181,7 @@ func (a *App) diffHeader() line {
 	t := a.Theme
 	state := []span{
 		styled("vs "+a.DiffAgainstWhat, fg(t.Colors.Stored)),
-		styled("   "+ago(a.DiffAgainst.WhenUnix), fg(t.Colors.Dim)),
+		styled("   "+Ago(a.DiffAgainst.WhenUnix), fg(t.Colors.Dim)),
 	}
 	if a.DiffStat.Added > 0 {
 		state = append(state, styled(fmt.Sprintf("   +%d", a.DiffStat.Added), fg(t.Colors.DiffAdded)))

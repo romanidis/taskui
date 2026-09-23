@@ -222,7 +222,14 @@ func GlobMatch(pattern, name string) bool {
 // disagreeing about which tasks are dangerous is worse than either alone — once you have
 // written the list down, that list is the answer.
 func DangerPatterns(dir string) []string {
-	data, err := os.ReadFile(filepath.Join(dir, DangerFile))
+	return ReadPatterns(filepath.Join(dir, DangerFile))
+}
+
+// ReadPatterns reads a project's list of task globs: one per line, `#` starting a comment,
+// blank lines ignored, and a missing file the same as an empty one. `.taskui-danger` and
+// `.taskui-cover` are both this shape, and each had its own copy of reading it.
+func ReadPatterns(path string) []string {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
