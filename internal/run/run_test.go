@@ -1023,8 +1023,15 @@ func TestAVeryLongLineIsCapturedInLinearTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	pollUntil(r, 30*time.Second, r.Finished)
-	if took := time.Since(began); took > 5*time.Second {
-		t.Errorf("took %v", took)
+	// Two bounds, because one cannot fit both builds. Without the detector this takes
+	// 0.28s and the quadratic version took ten; the detector alone takes it to 2.3s
+	// locally and past five on a macOS runner, and only makes the quadratic one slower.
+	limit := 5 * time.Second
+	if raceDetector {
+		limit = 20 * time.Second
+	}
+	if took := time.Since(began); took > limit {
+		t.Errorf("took %v, over %v", took, limit)
 	}
 	got := 0
 	for _, l := range r.Tasks["blob"].Lines {
