@@ -130,6 +130,18 @@ func (a *App) hintBar(section *keys.Section) line {
 	return append(l, styled(help.Display(), fg(t.Colors.Accent)), styled(" keys", fg(t.Colors.Dim)))
 }
 
+// statusBar is the footer once no prompt or question wants the row: the notice while one is
+// showing, and the screen's keys otherwise.
+//
+// The notice wins because it is the one that leaves: expireStatus gives the row back after
+// statusLife, and until then every key is still listed on the help screen.
+func (a *App) statusBar(section *keys.Section) line {
+	if a.Status != "" {
+		return line{plain(" "), styled(a.Status, fg(a.Theme.Colors.Notice))}
+	}
+	return a.hintBar(section)
+}
+
 // argsPrompt is shared by both screens that can open it.
 func (a *App) argsPrompt() (line, bool) {
 	if !a.EnteringArgs {

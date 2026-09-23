@@ -165,14 +165,10 @@ func shortCommit(commit string) string {
 }
 
 func (a *App) timelineFooter() line {
-	t := a.Theme
 	if l, ok := a.confirmBar(); ok {
 		return l
 	}
-	if a.Status != "" {
-		return line{plain(" "), styled(a.Status, fg(t.Colors.Notice))}
-	}
-	return a.hintBar(&keys.TimelineSection)
+	return a.statusBar(&keys.TimelineSection)
 }
 
 // --- diff -------------------------------------------------------------------------
@@ -305,14 +301,10 @@ func (a *App) linkStyle(base lipgloss.Style) lipgloss.Style {
 }
 
 func (a *App) diffFooter() line {
-	t := a.Theme
 	if l, ok := a.confirmBar(); ok {
 		return l
 	}
-	if a.Status != "" {
-		return line{plain(" "), styled(a.Status, fg(t.Colors.Notice))}
-	}
-	return a.hintBar(&keys.DiffSection)
+	return a.statusBar(&keys.DiffSection)
 }
 
 // --- profile ------------------------------------------------------------------------
@@ -382,12 +374,8 @@ func (a *App) drawProfile(width, height int) []string {
 }
 
 func (a *App) profileFooter() line {
-	t := a.Theme
 	if l, ok := a.confirmBar(); ok {
 		return l
 	}
-	if a.Status != "" {
-		return line{plain(" "), styled(a.Status, fg(t.Colors.Notice))}
-	}
-	return a.hintBar(&keys.ProfileSection)
+	return a.statusBar(&keys.ProfileSection)
 }

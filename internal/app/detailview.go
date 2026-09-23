@@ -115,8 +115,5 @@ func (a *App) detailFooter() line {
 	// Through the table like every other screen. This footer used to be a literal, which is
 	// exactly the drift the table exists to prevent: `e` was added to the section and this
 	// line went on listing four keys, and it could not report a status either.
-	if a.Status != "" {
-		return line{plain(" "), styled(a.Status, fg(a.Theme.Colors.Notice))}
-	}
-	return a.hintBar(&keys.DetailSection)
+	return a.statusBar(&keys.DetailSection)
 }

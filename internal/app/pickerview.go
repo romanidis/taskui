@@ -550,11 +550,7 @@ func (a *App) pickerFooter() line {
 			styled("   ⏎ accept   esc clear", fg(t.Colors.Dim)),
 		}
 	}
-	if a.Status != "" {
-		return line{plain(" "), styled(a.Status, fg(t.Colors.Notice))}
-	}
-
 	// No pivot hint here any more: the header's `domain·verb` names both sides and which
 	// one you are in, which is more than this line ever said.
-	return a.hintBar(&keys.Picker)
+	return a.statusBar(&keys.Picker)
 }

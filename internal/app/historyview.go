@@ -91,8 +91,5 @@ func (a *App) historyFooter() line {
 			styled("   ⏎ keep   esc clear", fg(t.Colors.Dim)),
 		}
 	}
-	if a.Status != "" {
-		return line{plain(" "), styled(a.Status, fg(t.Colors.Notice))}
-	}
-	return a.hintBar(&keys.HistorySection)
+	return a.statusBar(&keys.HistorySection)
 }

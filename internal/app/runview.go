@@ -602,10 +602,7 @@ func (a *App) runFooter() line {
 		return append(l, styled("   ⏎ keep   esc clear", fg(t.Colors.Dim)))
 	}
 
-	if a.Status != "" {
-		return line{plain(" "), styled(a.Status, fg(t.Colors.Notice))}
-	}
-	return a.hintBar(&keys.Run)
+	return a.statusBar(&keys.Run)
 }
 
 func promptOf(r *run.Run) (string, bool) {
