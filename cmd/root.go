@@ -339,9 +339,9 @@ func rootRun(cmd *cobra.Command, args []string) error {
 	// it. Interactive only: a one-shot has nothing to keep up to date.
 	a.WatchTaskfile()
 
-	// Which aggregates run which namespace. The interactive path only, and for a stronger
-	// reason than the listing: this is a `task --summary` per node of every aggregate's
-	// graph, which is the most expensive thing taskui asks go-task for. A one-shot that
+	// Which aggregates run which namespace, and what every task calls. The interactive path
+	// only, and for a stronger reason than the listing: this is a `task --summary` for every
+	// task, which is the most expensive thing taskui asks go-task for. A one-shot that
 	// renders a frame and exits would pay all of it for one screen.
 	a.StartCoverage()
 

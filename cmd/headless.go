@@ -126,9 +126,9 @@ func drive(a *app.App, feed string) {
 // is the opposite of what `--screenshot` is for.
 const detailGrace = 5 * time.Second
 
-// coverGrace is the same budget for the coverage walk, which is a `task --summary` per node
-// of every aggregate's graph rather than one call — dozens of process spawns on a Taskfile
-// the check is worth running on at all.
+// coverGrace is the same budget for the coverage walk, which is a `task --summary` for every
+// task rather than one call — dozens of process spawns on a Taskfile the check is worth
+// running on at all.
 const coverGrace = 20 * time.Second
 
 // screenshotRun is `--run` with `--screenshot`: the run view of a real run, drawn once it

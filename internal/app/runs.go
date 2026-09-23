@@ -117,11 +117,9 @@ func (a *App) requestRun(inv invocation) {
 	}
 
 	if a.Confirm == nil {
-		for _, t := range a.Tasks {
-			if t.Name == name && t.Dangerous {
-				a.Confirm = inv.confirm(TouchesProduction)
-				return
-			}
+		if q, ok := a.productionQuestion(inv); ok {
+			a.Confirm = q
+			return
 		}
 	}
 	a.Confirm = nil
@@ -143,6 +141,40 @@ func (a *App) isDangerous(name string) bool {
 		}
 	}
 	return false
+}
+
+// dangerCalled is the tasks on the danger list that name calls, at any depth.
+//
+// As far as the coverage walk knows, which is nothing until it lands: it is the one place
+// every task's graph is resolved ahead of being run, and resolving one here, on the key
+// press, would hold the screen still for as long as a `--summary` per task it calls takes.
+func (a *App) dangerCalled(name string) []string {
+	var out []string
+	for _, called := range a.calls.Reachable(name) {
+		if called != name && a.isDangerous(called) {
+			out = append(out, called)
+		}
+	}
+	return out
+}
+
+// touchesProduction reports whether starting name reaches the danger list at all: the task
+// itself, or anything it calls.
+func (a *App) touchesProduction(name string) bool {
+	return a.isDangerous(name) || len(a.dangerCalled(name)) > 0
+}
+
+// productionQuestion is what starting inv has to ask about production, if anything.
+func (a *App) productionQuestion(inv invocation) (ConfirmRun, bool) {
+	if a.isDangerous(inv.name) {
+		return inv.confirm(TouchesProduction), true
+	}
+	if calls := a.dangerCalled(inv.name); len(calls) > 0 {
+		q := inv.confirm(CallsProduction)
+		q.Calls = calls
+		return q, true
+	}
+	return ConfirmRun{}, false
 }
 
 func (a *App) start(inv invocation) error {

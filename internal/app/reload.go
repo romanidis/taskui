@@ -188,7 +188,7 @@ func (a *App) ReplaceTasks(tasks []task.Task) {
 	// just changed. Restarted rather than dropped: they are what `e` and the coverage
 	// annotations run on, and stale ones are worse than late ones.
 	a.details = pending[map[string]task.Detail]{}
-	a.reaches = pending[map[string][]string]{}
+	a.reaches = pending[covered]{}
 	if a.enriching {
 		a.StartEnrichment()
 	}

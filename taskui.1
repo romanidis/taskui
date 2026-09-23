@@ -591,7 +591,8 @@ In the project root. One pattern per line, where
 .B *
 matches any characters and
 .B #
-starts a comment. Matching tasks need a confirmation before they run. The
+starts a comment. Matching tasks need a confirmation before they run, and so
+do tasks that call them, once taskui has worked out what each task calls. The
 presence of this file replaces taskui's own guess entirely.
 .TP
 .I .taskui.yaml

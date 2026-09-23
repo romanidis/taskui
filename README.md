@@ -649,9 +649,9 @@ The namespace's own row says so, in the column descriptions start in:
 tree that called a namespace covered while the linter called it a gap would be the tool
 arguing with itself.
 
-It arrives a beat after the first frame, because working it out is a `task --summary` per
-node of every aggregate's graph. Until then the row says nothing, which is not the same as
-saying nothing runs it.
+It arrives a beat after the first frame, because working it out is a `task --summary` for
+every task in the Taskfile. Until then the row says nothing, which is not the same as saying
+nothing runs it.
 
 ### Aggregates that cover less than they claim
 
@@ -1515,27 +1515,20 @@ A `.taskui-danger` file in the project marks tasks that need a confirmation befo
 run — one pattern per line, `#` comments, `*` supported:
 
 ```
-
-# Ask the terminal for mouse events, so the wheel scrolls taskui.
-mouse: on
 deploy:*
 backend:migrate:prod
-The wheel moves one row a notch on whichever screen you are on — the picker, a run, the
-history list, the timeline, the diff, the profile. It is defined as arrowing rather than as
-scrolling of its own, so everything that hangs off the arrow keys comes with it: scrolling
-away from a running task stops following it, exactly as `k` does.
-
-`mouse: off` gives the mouse back to the terminal. The trade is real in both directions: a
-terminal that is forwarding mouse events to a program is not selecting text with them, so
-drag-to-select over taskui's output needs your terminal's own override — shift in most of
-them, option on macOS — until you turn this off.
-
 *:wipe
 ```
 
 Its presence switches off the description heuristic entirely. A guess and a declaration
 disagreeing about which tasks are dangerous is worse than either alone; once you have
 written the list down, that list is the answer.
+
+A task that calls one on the list asks as well, and names what it calls: `release` running
+`deploy:prod` is a production run whatever it is called. Knowing that takes every task's
+graph, which is the walk that annotates the tree, so it applies once that has landed — a
+beat after the first frame. `F`, which restarts what failed in a run, asks the question a
+marked batch asks.
 
 ## In Neovim
 

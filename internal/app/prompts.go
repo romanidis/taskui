@@ -16,19 +16,25 @@ func (a *App) confirmBar() (line, bool) {
 	t := a.Theme
 	// Verb, subject, why, and what `y` will do. Spelling out the verb separately from the
 	// subject is what keeps "run deploy:prod" from reading like "stop deploy:prod" at a
-	// glance — these are the two questions it is least acceptable to confuse.
-	var verb, subject, why, does string
+	// glance — these are the two questions it is least acceptable to confuse. Most questions
+	// are about running something; quitting and stopping say so.
+	verb, does := " run ", " to run"
+	var subject, why string
 	switch c := a.Confirm.(type) {
 	case ConfirmRun:
 		subject = "task " + c.Name
 		if len(c.Args) > 0 {
 			subject += " " + strings.Join(c.Args, " ")
 		}
-		why = "  —  this one touches production.  "
-		if c.Reason == WouldStopRunning {
+		switch c.Reason {
+		case TouchesProduction:
+			why = "  —  this one touches production.  "
+		case WouldStopRunning:
 			why = "  —  this stops the run already going.  "
+		case CallsProduction:
+			why = fmt.Sprintf("  —  this calls %s, which %s production.  ",
+				strings.Join(c.Calls, ", "), plural(len(c.Calls), "touches", "touch"))
 		}
-		verb, does = " run ", " to run"
 	case ConfirmQuit:
 		verb, does = " quit ", " to quit"
 		switch c.Live {
@@ -51,13 +57,18 @@ func (a *App) confirmBar() (line, bool) {
 				)
 		}
 	case ConfirmRunMarked:
-		verb, does = " run ", " to run"
 		subject = fmt.Sprintf("%d marked tasks", len(c.Names))
 		if len(c.Names) == 1 {
 			subject = "1 marked task"
 		}
 		// Named, because the whole reason this is one question rather than several is that
 		// the dangerous ones are in a batch with tasks that are not.
+		why = "  —  " + strings.Join(c.Dangerous, ", ") + " touches production.  "
+	case ConfirmRerunFailed:
+		subject = fmt.Sprintf("%d failed tasks", len(c.Names))
+		if len(c.Names) == 1 {
+			subject = "1 failed task"
+		}
 		why = "  —  " + strings.Join(c.Dangerous, ", ") + " touches production.  "
 	case ConfirmStopAll:
 		verb, does = " stop ", " to stop"

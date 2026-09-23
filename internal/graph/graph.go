@@ -380,6 +380,17 @@ func Resolve(dir, root string) Graph {
 	return g
 }
 
+// ResolveAll is the graph of everything roots reach, one `--summary` per distinct task
+// however many of the roots reach it.
+//
+// For asking about every task at once. Resolving them one at a time repeats the part their
+// graphs share — every aggregate's walk summarised `backend:lint` again — and the tasks of
+// one Taskfile share most of theirs.
+func ResolveAll(dir string, roots []string) Graph {
+	g, _ := resolveParallel(roots, summarising(dir))
+	return g
+}
+
 // ResolveDetailed is Resolve, but also hands back the raw `--summary` text of every task
 // in the graph.
 //
@@ -389,7 +400,14 @@ func Resolve(dir, root string) Graph {
 // summary never mentions it. It is returned rather than stored so the caller is forced
 // to decide what happens to it; it must not be persisted or displayed.
 func ResolveDetailed(dir, root string) (Graph, string) {
-	return resolveParallel(root, dir)
+	return resolveParallel([]string{root}, summarising(dir))
+}
+
+// summarising fetches a task's `--summary` from dir. A parameter of the walk rather than
+// called by it, so a test can hand the real walk a Taskfile's worth of summaries without
+// go-task installed.
+func summarising(dir string) func(string) string {
+	return func(task string) string { return summaryOf(dir, task) }
 }
 
 // lanes is enough to hide the latency without spawning a process per task in a wide graph.
@@ -405,10 +423,15 @@ const lanes = 8
 // Tasks are memoised and revisits short-circuit, so a diamond (`all` reaching `lint` and
 // `check`, both reaching `backend:*`) costs one call per node, and a cycle terminates
 // instead of spinning.
-func resolveParallel(root, dir string) (Graph, string) {
+func resolveParallel(roots []string, fetch func(string) string) (Graph, string) {
 	g := New()
 	var summaries strings.Builder
-	frontier := []string{root}
+	var frontier []string
+	for _, root := range roots {
+		if !contains(frontier, root) {
+			frontier = append(frontier, root)
+		}
+	}
 
 	for len(frontier) > 0 {
 		var next []string
@@ -423,7 +446,7 @@ func resolveParallel(root, dir string) (Graph, string) {
 			var wg sync.WaitGroup
 			for i, task := range batch {
 				wg.Go(func() {
-					texts[i] = summaryOf(dir, task)
+					texts[i] = fetch(task)
 					results[i], depResults[i] = parseSummary(texts[i])
 				})
 			}

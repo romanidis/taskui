@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -463,6 +464,105 @@ func TestRerunFailedOnAGreenRunSaysSo(t *testing.T) {
 
 	if !strings.Contains(a.Status, "nothing in") {
 		t.Errorf("status = %q", a.Status)
+	}
+}
+
+// A marked set is a set you chose; re-running what broke in a run is not that set, and
+// spending it on the way was a surprise waiting for the next `⏎`.
+func TestRerunningWhatFailedLeavesTheMarksAlone(t *testing.T) {
+	a := appWith(t, []string{"all", "fmt", "lint", "test"})
+	broken(t, a)
+	a.marked = map[string]bool{"fmt": true}
+	press(a, Char('F'))
+	defer a.KillAll()
+
+	if !a.IsMarked("fmt") {
+		t.Error("re-running the failures cleared the marks")
+	}
+}
+
+// --- production ---------------------------------------------------------------------
+
+// dangerousCaller is `release`, which calls `deploy:prod` — the one on the danger list — as
+// the coverage walk would report it once it has landed.
+func dangerousCaller(t *testing.T) *App {
+	t.Helper()
+	a := appWith(t, []string{"build", "deploy:prod", "release"})
+	for i := range a.Tasks {
+		a.Tasks[i].Dangerous = a.Tasks[i].Name == "deploy:prod"
+	}
+	a.calls = run.GraphFrom(run.Edge{Parent: "release", Children: []string{"build", "deploy:prod"}})
+	return a
+}
+
+// The danger list stopped at the task you pressed `⏎` on. `release` is not on it, and runs
+// `deploy:prod`, which is.
+func TestATaskThatCallsAProductionTaskAsksFirst(t *testing.T) {
+	a := dangerousCaller(t)
+	a.RequestRun("release", nil)
+
+	c, ok := a.Confirm.(ConfirmRun)
+	if !ok || c.Reason != CallsProduction || !reflect.DeepEqual(c.Calls, []string{"deploy:prod"}) {
+		t.Fatalf("confirm = %+v", a.Confirm)
+	}
+	lines := a.RenderHeadless(100, 12)
+	if footer := lines[len(lines)-1]; !strings.Contains(footer, "calls deploy:prod") {
+		t.Errorf("the question does not say which: %q", footer)
+	}
+	if _, ok := a.productionQuestion(a.armed("build", nil)); ok {
+		t.Error("`build` calls nothing on the list and should not be asked about")
+	}
+}
+
+// Restarting asks whether to stop the run already going, and that yes is not a yes to
+// production — the same second question a task on the list itself gets.
+func TestRestartingATaskThatCallsProductionAsksBothQuestions(t *testing.T) {
+	a := dangerousCaller(t)
+	a.OpenRunForTest(run.Detached("release", run.GraphFrom(run.Edge{Parent: "release"})))
+	a.Screen = ScreenRun
+	a.RerunSelected()
+	if c, ok := a.Confirm.(ConfirmRun); !ok || c.Reason != WouldStopRunning {
+		t.Fatalf("confirm = %+v, want the restart question first", a.Confirm)
+	}
+	a.ConfirmYes()
+	if c, ok := a.Confirm.(ConfirmRun); !ok || c.Reason != CallsProduction {
+		t.Errorf("confirm = %+v, want the production question next", a.Confirm)
+	}
+}
+
+// A batch is one question, and it names what in it reaches production, directly or not.
+func TestAMarkedSetThatCallsProductionAsksOnce(t *testing.T) {
+	a := dangerousCaller(t)
+	a.marked = map[string]bool{"build": true, "release": true}
+	a.RunMarked()
+	if c, ok := a.Confirm.(ConfirmRunMarked); !ok || !reflect.DeepEqual(c.Dangerous, []string{"release"}) {
+		t.Errorf("confirm = %+v", a.Confirm)
+	}
+}
+
+// `F` restarts what broke, and what broke inside `release` was `deploy:prod`. It used to go
+// straight out, one keypress from the run it failed in.
+func TestRerunningAFailedProductionTaskAsksFirst(t *testing.T) {
+	a := dangerousCaller(t)
+	r := run.Detached("release", run.GraphFrom(run.Edge{Parent: "release", Children: []string{"build", "deploy:prod"}}))
+	r.Feed("deploy:prod", "403 Forbidden")
+	r.ApplyFailed("deploy:prod")
+	r.Finish(1)
+	a.OpenRunForTest(r)
+	a.Screen = ScreenRun
+
+	press(a, Char('F'))
+	c, ok := a.Confirm.(ConfirmRerunFailed)
+	if !ok || !reflect.DeepEqual(c.Dangerous, []string{"deploy:prod"}) {
+		t.Fatalf("confirm = %+v", a.Confirm)
+	}
+	lines := a.RenderHeadless(100, 12)
+	if footer := lines[len(lines)-1]; !strings.Contains(footer, "1 failed task") {
+		t.Errorf("footer = %q", footer)
+	}
+	a.ConfirmNo()
+	if a.Status != "not run" || len(a.Slots()) != 1 {
+		t.Errorf("status = %q with %d slots; no should start nothing", a.Status, len(a.Slots()))
 	}
 }
 

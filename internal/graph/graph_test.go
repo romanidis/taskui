@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -262,6 +263,40 @@ func TestResolveWalksTheWholeGraphOncePerTask(t *testing.T) {
 	sort.Strings(calls)
 	if !reflect.DeepEqual(calls, []string{"all", "backend:lint", "lint", "test"}) {
 		t.Errorf("one call each: %v", calls)
+	}
+}
+
+// Every task of a Taskfile at once, sharing one walk: a task two roots reach is summarised
+// once, and so is a root that another root reaches.
+func TestResolvingSeveralRootsSummarisesEachTaskOnce(t *testing.T) {
+	var mu sync.Mutex
+	calls := map[string]int{}
+	g, _ := resolveParallel([]string{"release", "all", "lint", "all"}, func(x string) string {
+		mu.Lock()
+		calls[x]++
+		mu.Unlock()
+		switch x {
+		case "release":
+			return "commands:\n - Task: build\n - Task: deploy:prod\n"
+		case "all":
+			return "commands:\n - Task: build\n - Task: lint\n"
+		}
+		return ""
+	})
+
+	if !reflect.DeepEqual(g.Reachable("release"), []string{"release", "build", "deploy:prod"}) {
+		t.Errorf("reachable(release) = %v", g.Reachable("release"))
+	}
+	if !reflect.DeepEqual(g.Children("all"), []string{"build", "lint"}) {
+		t.Errorf("children(all) = %v", g.Children("all"))
+	}
+	for task, n := range calls {
+		if n != 1 {
+			t.Errorf("%s was summarised %d times", task, n)
+		}
+	}
+	if len(calls) != 5 {
+		t.Errorf("summarised %v, want the five tasks", calls)
 	}
 }
 

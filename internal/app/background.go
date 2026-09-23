@@ -29,7 +29,8 @@ func (a *App) StartEnrichment() {
 	})
 }
 
-// StartCoverage works out which aggregates reach which namespaces, in the background.
+// StartCoverage works out which aggregates reach which namespaces, and what every task
+// calls, in the background.
 //
 // The question the domain tree could not answer: standing in `backend`, is there something
 // above that runs it? A root `fmt` that gathers every namespace's `fmt` is the whole reason
@@ -42,30 +43,52 @@ func (a *App) StartEnrichment() {
 //
 // Opt-in for the same reason as StartEnrichment — it shells out, and the tests that build an
 // App from a fixture have no Taskfile to shell out to. The cost is why it is a goroutine: a
-// `--summary` is a process spawn, an aggregate's graph is dozens of them, and a Taskfile
-// with a dozen aggregates is dozens of dozens. Nothing on screen waits for it.
+// `--summary` is a process spawn, and the walk takes one for every task in the Taskfile.
+// Nothing on screen waits for it.
+//
+// Every task rather than only the aggregates, because the graph it resolves is also what the
+// danger check reads: `release` calling `deploy:prod` is a production run whether or not
+// `release` is anything's aggregate. Resolving them together costs one `--summary` a task,
+// where walking each aggregate on its own summarised what they share again for each.
 func (a *App) StartCoverage() {
 	if a.reaches.running() {
 		return
 	}
 	a.covering = true
 	root, tasks := a.Root, slices.Clone(a.Tasks)
-	a.reaches = begin(func() (map[string][]string, bool) {
-		reach := func(name string) []string { return graph.Resolve(root, name).Reachable(name) }
+	a.reaches = begin(func() (covered, bool) {
+		names := make([]string, len(tasks))
+		for i, t := range tasks {
+			names[i] = t.Name
+		}
+		// Spelled the way the list spells them, as a run spells its own graph: a call to an
+		// alias is a call to the task the list knows it as.
+		calls := graph.ResolveAll(root, names).Renamed(task.ReadProject(root).Names.Canonical)
 		// No exemptions: `.taskui-cover` says which gaps are deliberate, and a gap is not
 		// what this projection reads. A namespace is annotated with what reaches it.
-		return cover.BuildGrid(tasks, reach, nil).Reaches(), true
+		return covered{reaches: cover.BuildGrid(tasks, calls.Reachable, nil).Reaches(), calls: calls}, true
 	})
+}
+
+// covered is what the coverage walk finds: the aggregates that reach each namespace, and
+// what every task calls, which it had to resolve to find them.
+type covered struct {
+	reaches map[string][]string
+	calls   graph.Graph
 }
 
 // collectCoverage takes the answer if it has arrived. Non-blocking, like collectDetails: it
 // is called from the poll loop, which must not wait for anything.
 func (a *App) collectCoverage() bool {
-	reaches, ok := a.reaches.take()
-	if !ok || len(reaches) == 0 {
+	found, ok := a.reaches.take()
+	if !ok {
 		return false
 	}
-	a.Reaches = reaches
+	a.calls = found.calls
+	if len(found.reaches) == 0 {
+		return false
+	}
+	a.Reaches = found.reaches
 	return true
 }
 
@@ -75,8 +98,8 @@ func (a *App) collectCoverage() bool {
 // loaded UI, and one taken mid-walk would show a different thing every time depending on how
 // the race went.
 func (a *App) AwaitCoverage(grace time.Duration) {
-	if reaches, ok := a.reaches.await(grace); ok {
-		a.Reaches = reaches
+	if found, ok := a.reaches.await(grace); ok {
+		a.Reaches, a.calls = found.reaches, found.calls
 	}
 }
 

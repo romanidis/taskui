@@ -243,11 +243,14 @@ type App struct {
 
 	// Reaches is which aggregates run each namespace: `backend` is run by `fmt`, `lint`,
 	// `test`. From `internal/cover`, on a background goroutine, because working it out means
-	// a `task --summary` per node of every aggregate's graph and the list must not wait on
-	// that. Nil until it lands, which the header rows read as "nothing to say yet" rather
-	// than as "nothing runs this".
+	// a `task --summary` for every task and the list must not wait on that. Nil until it
+	// lands, which the header rows read as "nothing to say yet" rather than as "nothing runs
+	// this".
 	Reaches map[string][]string
-	reaches pending[map[string][]string]
+	reaches pending[covered]
+	// calls is what every task calls, at every depth, from the same walk. What the danger
+	// check reads to see past the task you started; empty until the walk lands.
+	calls graph.Graph
 
 	// Where the run on screen spent its time, slowest first.
 	ProfileRows   []Cost

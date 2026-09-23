@@ -394,6 +394,12 @@ dev:reset
   ⚠   run task infra:deploy  —  this one touches production.  y to run, anything else cancels
 ```
 
+So does anything that calls one of them, once taskui has worked out what each task calls:
+
+```
+  ⚠   run task release  —  this calls infra:deploy, which touches production.  y to run, anything else cancels
+```
+
 The file's presence switches off the built-in guess entirely — once the list is written
 down, the list is the answer.
 
@@ -419,9 +425,9 @@ it, in the column descriptions start in:
 `backend:test` and stops there. Same walk the check below reports on, from the same grid, so
 the tree and `--lint` cannot disagree about it.
 
-It arrives a beat after the first frame: a `task --summary` per node of every aggregate's
-graph is the most expensive thing taskui asks go-task for. Until it lands the row says
-nothing, which is not the same as saying nothing runs it.
+It arrives a beat after the first frame: a `task --summary` for every task in the Taskfile
+is the most expensive thing taskui asks go-task for. Until it lands the row says nothing,
+which is not the same as saying nothing runs it.
 
 ---
 

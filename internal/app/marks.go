@@ -88,19 +88,25 @@ func (a *App) RunMarked() {
 	// would put a modal prompt between each pair of starts, which is not a confirmation, it
 	// is an obstacle course.
 	if a.Confirm == nil {
-		var dangerous []string
-		for _, name := range names {
-			if a.isDangerous(name) {
-				dangerous = append(dangerous, name)
-			}
-		}
-		if len(dangerous) > 0 {
+		if dangerous := a.touchingProduction(names); len(dangerous) > 0 {
 			a.Confirm = ConfirmRunMarked{Names: names, Dangerous: dangerous}
 			return
 		}
 	}
 	a.Confirm = nil
 	a.startMarked(names)
+}
+
+// touchingProduction is the part of a batch that reaches the danger list, directly or
+// through something it calls.
+func (a *App) touchingProduction(names []string) []string {
+	var out []string
+	for _, name := range names {
+		if a.touchesProduction(name) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // anyStartable reports whether any of names is not running yet and would find a slot.
@@ -114,12 +120,20 @@ func (a *App) anyStartable(names []string) bool {
 	return false
 }
 
-// startMarked is the part that actually runs things, past every question.
+// startMarked starts the marked set past every question, and spends the marks.
+func (a *App) startMarked(names []string) {
+	if a.startBatch(names) {
+		a.marked = nil
+	}
+}
+
+// startBatch is the part that actually runs things, past every question. It reports whether
+// it got to the end of the list.
 //
 // Each task is asked about as it comes rather than against a count taken up front: the
 // count kept disagreeing with what claiming a slot actually does, and "started 1 task"
 // with nothing started was the result.
-func (a *App) startMarked(names []string) {
+func (a *App) startBatch(names []string) bool {
 	started, skipped := 0, 0
 	for _, name := range names {
 		if a.liveSlot(name) {
@@ -131,12 +145,11 @@ func (a *App) startMarked(names []string) {
 		}
 		if err := a.StartRunWith(name, nil); err != nil {
 			a.Status = fmt.Sprintf("could not start `task %s`: %v", name, err)
-			return
+			return false
 		}
 		started++
 	}
 
-	a.marked = nil
 	switch {
 	case started == 0:
 		a.Status = "those are all running already"
@@ -145,6 +158,7 @@ func (a *App) startMarked(names []string) {
 	default:
 		a.Status = fmt.Sprintf("started %d %s", started, plural(started, "task", "tasks"))
 	}
+	return true
 }
 
 // FailedTasks are the tasks of the run on screen that did not pass, in the order the run
@@ -207,5 +221,13 @@ func (a *App) RerunFailed() {
 			plural(len(failed), "1 task", fmt.Sprintf("%d tasks", len(failed))))
 		return
 	}
-	a.startMarked(failed)
+	// The same stop a marked batch gets. A `deploy:prod` that failed inside `release` is
+	// still `deploy:prod`, and the key that restarts it is one keypress from the run it
+	// failed in. The marks are left alone: they are a set you chose, and what broke in a
+	// run is not that set.
+	if dangerous := a.touchingProduction(failed); len(dangerous) > 0 {
+		a.Confirm = ConfirmRerunFailed{Names: failed, Dangerous: dangerous}
+		return
+	}
+	a.startBatch(failed)
 }

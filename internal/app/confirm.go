@@ -13,6 +13,9 @@ const (
 	// WouldStopRunning means this task's slot already holds a live run, and restarting it
 	// kills that one.
 	WouldStopRunning
+	// CallsProduction means the task is not on the list itself but calls one that is, at
+	// some depth. `release` running `deploy:prod` is a production run whatever it is named.
+	CallsProduction
 )
 
 // Confirm is something waiting on a yes.
@@ -38,6 +41,8 @@ type ConfirmRun struct {
 	Interactive bool
 	Force       bool
 	Reason      ConfirmReason
+	// Calls is what CallsProduction is about: the tasks on the danger list this one calls.
+	Calls []string
 }
 
 // ConfirmRunMarked is the marked set, started at once. Asking per task would put a prompt
@@ -48,6 +53,13 @@ type ConfirmRunMarked struct {
 	// Dangerous is the part of it on the danger list, named in the question: the whole
 	// reason this is one question rather than several is that they are in a batch with
 	// tasks that are not.
+	Dangerous []string
+}
+
+// ConfirmRerunFailed is the tasks that broke in the run on screen, started again at once —
+// the same question as a marked batch, about a set the run chose rather than you.
+type ConfirmRerunFailed struct {
+	Names     []string
 	Dangerous []string
 }
 
@@ -69,10 +81,11 @@ type ConfirmStopAll struct {
 	Live int
 }
 
-func (ConfirmRun) isConfirm()       {}
-func (ConfirmRunMarked) isConfirm() {}
-func (ConfirmQuit) isConfirm()      {}
-func (ConfirmStopAll) isConfirm()   {}
+func (ConfirmRun) isConfirm()         {}
+func (ConfirmRunMarked) isConfirm()   {}
+func (ConfirmRerunFailed) isConfirm() {}
+func (ConfirmQuit) isConfirm()        {}
+func (ConfirmStopAll) isConfirm()     {}
 
 // confirm is the question to ask before starting inv.
 func (inv invocation) confirm(why ConfirmReason) ConfirmRun {
@@ -97,15 +110,19 @@ func (a *App) ConfirmYes() bool {
 	case ConfirmRun:
 		// "Restarting stops the one running" was the question; whether this task touches
 		// production is a second one, and answering the first is not answering it.
-		if c.Reason == WouldStopRunning && a.isDangerous(c.Name) {
-			a.Confirm = c.invocation().confirm(TouchesProduction)
-			return false
+		if c.Reason == WouldStopRunning {
+			if next, ok := a.productionQuestion(c.invocation()); ok {
+				a.Confirm = next
+				return false
+			}
 		}
 		if err := a.start(c.invocation()); err != nil {
 			a.Status = fmt.Sprintf("could not start `task %s`: %v", c.Name, err)
 		}
 	case ConfirmRunMarked:
 		a.startMarked(c.Names)
+	case ConfirmRerunFailed:
+		a.startBatch(c.Names)
 	case ConfirmStopAll:
 		a.StopAll()
 	case ConfirmQuit:
@@ -118,7 +135,7 @@ func (a *App) ConfirmNo() {
 	pending := a.Confirm
 	a.Confirm = nil
 	switch pending.(type) {
-	case ConfirmRun, ConfirmRunMarked:
+	case ConfirmRun, ConfirmRunMarked, ConfirmRerunFailed:
 		a.Status = "not run"
 	case ConfirmQuit, ConfirmStopAll:
 		a.Status = "left running"
