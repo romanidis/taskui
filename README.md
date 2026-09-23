@@ -193,6 +193,8 @@ taskui --list                 # print discovered tasks and exit
 taskui --dump domain|verb     # print a pivot fully expanded and exit
 taskui --graph all            # print the execution graph reachable from a task
 taskui --run all              # run headlessly and print the captured tree
+taskui --run backend:test --args '-- -p ingest'
+taskui --last                 # open the most recent run here, instead of the picker
 taskui --search 'FAIL|error'  # grep every stored run (works from any directory)
 taskui --search FAIL --task backend:test --since 2d
 taskui --timeline test        # how one task has gone, run after run
@@ -207,7 +209,6 @@ taskui --flaky                # tasks that went both ways at one commit
 taskui config edit            # open ~/.config/taskui/config.yaml in $EDITOR
 taskui --screenshot 90x30     # render one frame to stdout (add --keys 'p' or '/lint')
 taskui examples               # worked examples, rendered at your terminal's width
-taskui config edit            # open ~/.config/taskui/config.yaml in $EDITOR
 ```
 
 `taskui examples` walks through the whole thing — eight worked examples, every frame drawn
@@ -831,12 +832,21 @@ The run is archived like any other, and the process exits with the task's own co
 
 ```json
 {"type":"run","root":"ci","dir":"/src/acme","started_unix":1787983902}
-{"type":"graph","edges":{"ci":["build","test"],"build":[],"test":[]}}
-{"type":"task","name":"build","status":"Running"}
-{"type":"line","task":"build","index":0,"text":"go build ./...","command":true}
-{"type":"task","name":"build","status":"Ok","duration_ms":314}
-{"type":"exit","code":1,"duration_ms":2100,"saved":"~/.local/state/taskui/runs/…"}
+{"type":"graph","root":"ci","edges":{"ci":["build","test"],"build":null,"test":null}}
+{"type":"task","root":"ci","name":"test","status":"Pending"}
+{"type":"task","root":"ci","name":"build","status":"Running"}
+{"type":"line","root":"ci","task":"build","index":0,"text":"go build ./...","command":true}
+{"type":"task","root":"ci","name":"build","status":"Ok","duration_ms":314}
+{"type":"task","root":"ci","name":"test","status":"Running"}
+{"type":"line","root":"ci","task":"test","index":1,"text":"--- FAIL: TestOrder"}
+{"type":"task","root":"ci","name":"test","status":"Failed","duration_ms":1780}
+{"type":"exit","root":"ci","code":201,"duration_ms":2100,"saved":"~/.local/state/taskui/runs/…","redacted_secrets":2}
 ```
+
+Every event names its `root`, which is how a consumer with several runs going tells them
+apart. A `task` event carries a `note` when go-task said why it did not run — `up to date`,
+`precondition not met` — a `prompt` event is a task waiting on an answer, with the question
+as its `text`, and `exit` says how many secrets were masked out of what was archived.
 
 One process per run rather than a daemon: the archive on disk is already the shared state,
 so separate processes see each other's history for free, and a caller that wants three runs
@@ -1543,8 +1553,11 @@ Neovim 0.10 or newer, the `taskui` binary on your `PATH`, and go-task — which 
 ```
 :TaskUI                    open the terminal (again to hide it)
 :TaskUI backend:test       open it and run one, with completion over the task names
+:TaskUI run backend:test   the same, for a task whose name is also one of these verbs
 :TaskUI edit backend:test  open the task's definition in the Taskfile
 :TaskUI quickfix           the last run's failures, in the quickfix list
+:TaskUI open               open it, without the toggle — for a mapping that only opens
+:TaskUI close              hide it; everything in it keeps running
 :TaskUI stop               stop taskui and every run it owns
 ```
 
@@ -1576,13 +1589,6 @@ newline-delimited JSON, the plugin listens, and nothing else crosses between the
 ```lua
 require("taskui").setup({
   binary = "taskui",       -- or an absolute path
-**The wheel scrolls taskui**, not the buffer it is drawn into. Neovim forwards mouse events
-to a terminal program when that program asks for them and processes them itself when it does
-not — so before taskui asked, a notch over the picker scrolled the terminal buffer instead,
-through frames taskui had already replaced. It asks now. If you have `set mouse=`, Neovim
-has no mouse to forward and `:checkhealth taskui` says so; `mouse: off` in taskui's own
-config opts back out from the other end.
-
   project = nil,           -- nil means Neovim's cwd
   position = "float",      -- float | left | right | top | bottom | tab
   width = 80,              -- for a left or right split
@@ -1591,6 +1597,7 @@ config opts back out from the other end.
   quickfix = "on_failure", -- on_failure | always | never
   open_quickfix = false,   -- open the quickfix window when a run fills it
   notify = true,           -- say how a run went
+  jump_key = "f",          -- taskui's jump key, which :TaskUI run types; match your config
   keys = {                 -- bound inside the terminal only
     toggle = "<A-t>",      -- the same key you bound `:TaskUI` to
     close = "<C-q>",
@@ -1608,7 +1615,7 @@ Everything else in that terminal belongs to taskui, because taking its keys woul
 them from the thing you asked for. Hiding is hiding — the process carries on with its slots
 and its scroll position, and `:TaskUI` brings it back where you left it.
 
-## Development## Development
+## Development
 
 The project's own Taskfile is the smallest honest test of taskui — it is deliberately
 shaped to exercise what it claims to handle, with tasks that are both runnable and parents
@@ -1638,15 +1645,16 @@ task theme THEME=synthwave      # preview a theme in colour
 ```
 0   nothing went wrong
 1   taskui could not do what was asked — bad flag, no Taskfile, no go-task, unreadable config
-2   a check found what it was looking for: `--flaky`, and nothing else
+2   a check found what it was looking for: `--flaky` a flaky task, `--lint` a gap
 ```
 
 `--run` is the exception: it means run this and be it, so it exits with the task's own status
 — which for go-task's own errors is in the 200s. That makes `taskui --run ci` usable as a CI
 step, which it was not before: it printed `exit 1` and returned 0.
 
-`--flaky` gets a code of its own so a script can tell "this task is flaky" from "there is no
-Taskfile here", which is the distinction an exit code exists to draw.
+`--flaky` and `--lint` get a code of their own so a script can tell "this task is flaky" or
+"this aggregate misses a namespace" from "there is no Taskfile here", which is the
+distinction an exit code exists to draw.
 
 `--screenshot` is why the rendering is testable at all: `View()` returns a string, so a
 frame rendered off-screen is the same code path the live UI runs. The suite renders every
@@ -1666,7 +1674,10 @@ internal/run          the pty, the capture, the process group
 internal/redact       masking credentials out of captured output
 internal/store        the archive
 internal/search       one matcher over the live run and the archive both
-internal/diff         Myers, for comparing two runs of one task
+internal/diff         patience and Myers, for comparing two runs of one task
+internal/cover        which namespaces each aggregate reaches, for --lint and the picker
+internal/events       the run as newline-delimited JSON, for --json and a host
+internal/watch        re-running on a change to the source
 internal/loc          finding `file:line` in output, and how to open it
 internal/shellwords   splitting and joining argument lines the way a shell reads them
 internal/keys         the keymap, as data

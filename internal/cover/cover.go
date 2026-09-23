@@ -109,8 +109,8 @@ const (
 // prints the disagreements, `--matrix` prints the table they came out of, and computing
 // them separately would be three chances to disagree about what covered means.
 type Grid struct {
-	// Rows in the order the Taskfile declares them, so a matrix reads down the file rather
-	// than alphabetically.
+	// Rows in the order the tasks were given — the listing's, which is by name — so a
+	// matrix reads the same way every time it is built.
 	Rows []task.Task
 	// Columns sorted, and only namespaces that answer at least one aggregate's verb — a
 	// column of nothing but `—` is a column about a namespace nobody asked about.
@@ -238,9 +238,9 @@ func (g Grid) Findings() []Finding {
 // Reaches is the grid read the other way up: for each namespace, the aggregates that run it.
 //
 // The linter's projection asks "what does this aggregate miss"; the picker's asks "what runs
-// this namespace", which is the same cells transposed. Aggregates come back in the order the
-// Taskfile declares them, because that is the order the rows are in and a list that
-// reshuffled between rebuilds would be one you had to re-read every time.
+// this namespace", which is the same cells transposed. Aggregates come back in the rows'
+// order, the listing's, because a list that reshuffled between rebuilds would be one you had
+// to re-read every time.
 func (g Grid) Reaches() map[string][]string {
 	out := map[string][]string{}
 	for _, r := range g.Rows {

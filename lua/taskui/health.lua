@@ -73,21 +73,21 @@ function M.check()
     ok(("mouse=%s — the wheel reaches taskui"):format(vim.o.mouse))
   end
 
+  -- Asked of the binary rather than looked for here. It knows every name go-task reads,
+  -- and that go-task walks up from a subdirectory; the four names this file used to check,
+  -- in this directory only, missed `Taskfile.dist.yml` and warned in every `src/` of a
+  -- project whose Taskfile is at its root.
   local project = config.project()
-  local found = false
-  for _, name in ipairs({ "Taskfile.yml", "Taskfile.yaml", "taskfile.yml", "taskfile.yaml" }) do
-    if vim.fn.filereadable(project .. "/" .. name) == 1 then
-      found = true
-      break
+  if vim.fn.executable(config.options.binary) == 1 then
+    local out = vim.fn.system({ config.options.binary, project, "--list" })
+    if vim.v.shell_error == 0 then
+      ok(("a Taskfile governs %s"):format(project))
+    else
+      warn(vim.trim(out) ~= "" and vim.trim(out) or ("no Taskfile for %s"):format(project), {
+        "open Neovim in a project that has one,",
+        "or set the project option to where yours is",
+      })
     end
-  end
-  if found then
-    ok(("Taskfile in %s"):format(project))
-  else
-    warn(("no Taskfile in %s"):format(project), {
-      "open Neovim in a project that has one,",
-      "or set the project option to where yours is",
-    })
   end
 end
 

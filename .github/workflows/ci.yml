@@ -93,6 +93,31 @@ jobs:
           # answer, and saying so is what the diff has to get right here.
           go run . --diff test ./probe | grep -q -- '-- +0 -0'
 
+  # The plugin's tests drive the real binary in a real terminal buffer, and only ran where
+  # somebody ran `task all` by hand — which is how a moved jump key reached main with the
+  # plugin still typing the old one.
+  plugin:
+    name: neovim plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install go-task
+        run: sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+      - name: Install luacheck
+        run: sudo apt-get update && sudo apt-get install -y lua-check
+      - name: Lint the plugin
+        run: task lint:lua
+      - name: Test the plugin
+        run: task test:nvim
+
   goreleaser:
     name: goreleaser check
     runs-on: ubuntu-latest

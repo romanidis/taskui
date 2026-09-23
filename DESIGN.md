@@ -575,6 +575,16 @@ almost every real input into the cheap case. Past a bounded edit distance there 
 alignment left to find, and the fallback says so by showing both sides in full rather than
 producing a plausible-looking alignment of two unrelated logs.
 
+Before Myers sees anything, the lines that appear exactly once on each side anchor the
+alignment, in the longest order the two sides agree on — patience diff — and Myers only
+fills the gaps between anchors. Trimming alone was not enough for logs that differ all the
+way through, which is what two `go test` runs are when every package line carries its own
+timing: two 20,000-line logs cost a 145MB trace, ran past the bound and came back as every
+line deleted and every line added. A line unique to both sides is the same line, and pinning
+those first leaves Myers a few short gaps. The result is not always the smallest edit
+script; for logs it is the more readable one, which is the same trade `git diff --patience`
+makes.
+
 Shared stretches are elided to a `⋮`, because the entire value of the view is that it is
 short. A diff of two 800-line logs differing in five places is 800 rows of which 790 are
 noise.

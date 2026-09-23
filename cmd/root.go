@@ -262,6 +262,15 @@ func projectCommand(cmd *cobra.Command, root string, tasks []task.Task, config t
 	return false, nil
 }
 
+// opensPicker reports whether this invocation ends in the interactive picker. It is the only
+// place an offer to write a Taskfile belongs: `--list`, `--run` and the other print-and-exit
+// flags are asked by scripts as often as by people, and at a terminal they used to get the
+// offer instead of the answer.
+func opensPicker() bool {
+	return !opts.list && opts.dump == "" && opts.graph == "" && !opts.lint &&
+		opts.runTask == "" && opts.screenshot == ""
+}
+
 // listed reports whether name is a task go-task would run by that name: one in the list, by
 // its name or an alias, or a namespace's default spelled out in full — `dev:default` is
 // listed as `dev`, and go-task still accepts the long form.
@@ -288,6 +297,29 @@ func printTaskListText(out io.Writer, tasks []task.Task) {
 // matrixFormOK rejects `--matrix` on its own. Like `--json` it is a form another flag is
 // printed in rather than a command, and launching the TUI at somebody who asked for a table
 // is worse than saying so.
+// formsOK rejects the flags that only mean something beside another one, given without it.
+func formsOK() error {
+	for _, check := range []func() error{jsonFormOK, matrixFormOK, narrowingFormOK} {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// narrowingFormOK rejects `--since` and `--task` with nothing to narrow. On their own they
+// were ignored, so `--since bogus --list` exited 0 and a typo in either passed unnoticed.
+func narrowingFormOK() error {
+	switch {
+	case opts.since != "" && opts.searchFor == "":
+		return errors.New("--since narrows --search; on its own there is nothing for it to narrow")
+	case opts.searchTask != "" && opts.searchFor == "" && !opts.quickfix:
+		return errors.New("--task narrows --search or --quickfix; on its own there is nothing " +
+			"for it to narrow")
+	}
+	return nil
+}
+
 func matrixFormOK() error {
 	if opts.matrix && !opts.lint {
 		return errors.New("--matrix is the full-table form of --lint; on its own there is " +
@@ -345,10 +377,7 @@ func rootRun(cmd *cobra.Command, args []string) error {
 
 	// `--json` is a form the other flags can be printed in, not a command of its own.
 	// Saying so beats launching the TUI at somebody who is piping this into a program.
-	if err := jsonFormOK(); err != nil {
-		return err
-	}
-	if err := matrixFormOK(); err != nil {
+	if err := formsOK(); err != nil {
 		return err
 	}
 
@@ -393,6 +422,9 @@ func rootRun(cmd *cobra.Command, args []string) error {
 	// before go-task rather than after it fails, so that the answer is taskui's own — see
 	// starter.go for why go-task's is the wrong one to pass on.
 	if task.FindUp(root) == "" {
+		if !opensPicker() {
+			return noTaskfileHere(root)
+		}
 		created, err := offerStarter(root, config)
 		if err != nil || !created {
 			return err

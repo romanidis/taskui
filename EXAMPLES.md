@@ -568,9 +568,18 @@ tree the TUI draws without reimplementing any of the engine.
 
 ```json
 {"type":"run","root":"ci","dir":"/src/acme","started_unix":1787983902}
-{"type":"graph","edges":{"ci":["build","test"],"build":[],"test":[]}}
-{"type":"task","name":"build","status":"Running"}
-{"type":"line","task":"build","index":0,"text":"go build ./...","command":true}
-{"type":"task","name":"build","status":"Ok","duration_ms":314}
-{"type":"exit","code":1,"duration_ms":2100,"saved":"~/.local/state/taskui/runs/…"}
+{"type":"graph","root":"ci","edges":{"ci":["build","test"],"build":null,"test":null}}
+{"type":"task","root":"ci","name":"test","status":"Pending"}
+{"type":"task","root":"ci","name":"build","status":"Running"}
+{"type":"line","root":"ci","task":"build","index":0,"text":"go build ./...","command":true}
+{"type":"task","root":"ci","name":"build","status":"Ok","duration_ms":314}
+{"type":"task","root":"ci","name":"test","status":"Running"}
+{"type":"line","root":"ci","task":"test","index":1,"text":"--- FAIL: TestOrder"}
+{"type":"task","root":"ci","name":"test","status":"Failed","duration_ms":1780}
+{"type":"exit","root":"ci","code":201,"duration_ms":2100,"saved":"~/.local/state/taskui/runs/…","redacted_secrets":2}
 ```
+
+Every event names its `root`, which is how a consumer with several runs going tells them
+apart. A `task` event carries a `note` when go-task said why it did not run — `up to date`,
+`precondition not met` — a `prompt` event is a task waiting on an answer, with the question
+as its `text`, and `exit` says how many secrets were masked out of what was archived.

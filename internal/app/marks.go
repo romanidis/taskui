@@ -39,8 +39,9 @@ func (a *App) selectedLabel() string {
 	return ""
 }
 
-// Marked is the set, in the order the picker lists them — which is the order they were
-// chosen in as far as anyone is concerned, and stable between frames either way.
+// Marked is the set, by name: stable between frames, and the order a batch starts them in.
+// Not the picker's order, which moves with the pivot and the sort and leaves out whatever a
+// filter is hiding — and a marked task stays marked while it is filtered away.
 func (a *App) Marked() []string {
 	out := make([]string, 0, len(a.marked))
 	for name := range a.marked {

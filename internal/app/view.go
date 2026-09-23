@@ -767,11 +767,11 @@ func (a *App) runHeader() line {
 	return a.header(r.Command(), state)
 }
 
-// runRowLines builds the rendered lines for one run row.
+// runRowLines builds the rendered lines for one run row. A task row and a line row are two
+// shapes with one gutter between them, and splitting them would duplicate the indent,
+// marker and highlight arithmetic.
 //
-// splitting them would duplicate the indent, marker and highlight arithmetic.
-//
-//nolint:cyclop // a task row and a line row are two shapes with one gutter between them;
+//nolint:cyclop // two row shapes sharing one gutter; see above
 func (a *App) runRowLines(r *run.Run, row RunRow, gutter string, width int) []line {
 	t := a.Theme
 	if r == nil {

@@ -3047,10 +3047,9 @@ func (a *App) StopAll() {
 // RunInFlight is true while the run on screen is still going.
 func (a *App) RunInFlight() bool { return a.Run != nil && !a.Run.Finished() }
 
-// AnyInFlight is true while any slot still has a child out there. Quitting without dealing
-// with them would leave containers running with nothing watching them.
-// AnyInFlight is what quitting waits for, so it counts only the runs quitting is still
-// responsible for. A detached one is going to outlive the wait by design.
+// AnyInFlight is true while a run quitting is responsible for is still going: quitting
+// without dealing with it would leave containers running with nothing watching them. A
+// detached run does not count, because it is going to outlive the wait by design.
 func (a *App) AnyInFlight() bool { return len(a.attachedRuns()) > 0 }
 
 // AnyRunning includes the detached ones — for anything asking "is something happening",
@@ -3067,12 +3066,11 @@ func (a *App) AnyRunning() bool {
 	return false
 }
 
-// InFlightCount is how many slots are still going, for the quit prompt.
+// InFlightCount is how many runs quitting would stop, for the quit prompt.
 func (a *App) InFlightCount() int { return len(a.attachedRuns()) }
 
-// CancelAll stops every slot. Used on the way out.
-// CancelAll stops everything quitting is responsible for — which is not everything. `x`
-// still reaches a detached run; this is the blanket that no longer covers it.
+// CancelAll stops everything quitting is responsible for, on the way out — which is not
+// everything. `x` still reaches a detached run; this is the blanket that no longer covers it.
 func (a *App) CancelAll() {
 	for _, r := range a.attachedRuns() {
 		r.run.Cancel()

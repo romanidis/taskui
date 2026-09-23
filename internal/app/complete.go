@@ -174,8 +174,10 @@ func (a *App) pastValues(key, prefix string) []string {
 // argsHistory is the archived argument lists for the task the prompt is aimed at, newest
 // run first.
 //
-// Read once per prompt and on the first ⇥ rather than when the prompt opens: it is a walk
-// of every manifest in the archive, and most trips through this prompt never press ⇥.
+// Read at most once per prompt, and only when something needs it: when the prompt opens with
+// nothing declared to pre-fill, because the last run's arguments are the best answer then,
+// or on the first ⇥. It is a walk of every manifest in the archive, and a prompt whose
+// variables were declared, closed without a ⇥, never pays for it.
 func (a *App) argsHistory() [][]string {
 	if a.argsPastRead {
 		return a.argsPast

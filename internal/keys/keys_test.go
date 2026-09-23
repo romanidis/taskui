@@ -310,3 +310,28 @@ func TestTheDefaultsDoNotCollideWithTheLiterals(t *testing.T) {
 		t.Errorf("the shipped keymap reports conflicts: %v", c)
 	}
 }
+
+// A footer label that names another action on the same screen says that key does the
+// other thing: the picker's footer read `v watch` beside the `⇧W` that watches, the clash
+// renaming `watch-run` to `view-run` had taken out of the configs.
+func TestNoFooterLabelNamesAnotherActionOnItsScreen(t *testing.T) {
+	for _, section := range Sections {
+		offered := map[string]bool{}
+		for _, b := range section.Bindings {
+			for _, m := range placeholder.FindAllStringSubmatch(b.Keys, -1) {
+				offered[m[1]] = true
+			}
+		}
+		for _, b := range section.Bindings {
+			// Only a key configured by name: a literal like `space` cannot be rebound, so its
+			// label is never read as the name of the action it would be moved by.
+			if !placeholder.MatchString(b.Keys) {
+				continue
+			}
+			if offered[b.Footer] && !strings.Contains(b.Keys, "{"+b.Footer+"}") {
+				t.Errorf("%s: %q is labelled %q, which is another key on this screen",
+					section.Title, b.Keys, b.Footer)
+			}
+		}
+	}
+}

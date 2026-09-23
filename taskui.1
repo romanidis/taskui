@@ -575,6 +575,12 @@ and, per task, the ANSI\-stripped output and a sidecar keeping the escape
 sequences. The stripped half is plain text on purpose: the archive is meant to
 be greppable without taskui. Created with owner\-only permissions.
 .TP
+.I $XDG_STATE_HOME/taskui/history.ndjson
+Every run remembered, one line each: the newest 2000 per project, kept long
+after the output of all but the last 50 has been pruned. The timeline,
+.B \-\-flaky
+and the history list read it.
+.TP
 .I $XDG_CONFIG_HOME/taskui/themes
 Your own themes, one YAML file each. A file here shadows a built\-in of the same
 name. Defaults to
@@ -587,6 +593,23 @@ matches any characters and
 .B #
 starts a comment. Matching tasks need a confirmation before they run. The
 presence of this file replaces taskui's own guess entirely.
+.TP
+.I .taskui.yaml
+.TQ
+.I .taskui.yml
+In the project root, checked in. Read after your own config, and may add
+.B pin
+and
+.B pivots
+entries and nothing else; anything else in it is refused and reported.
+.TP
+.I .taskui-cover
+In the project root. Namespaces an aggregate is meant not to reach, one glob per
+line, with
+.B #
+for the reason:
+.B \-\-lint
+reports them no more.
 .SH ENVIRONMENT
 .TP
 .B XDG_CONFIG_HOME
@@ -843,9 +866,11 @@ on
 a config it could not read.
 .TP
 .B 2
-A check found what it was looking for.
+A check found what it was looking for:
 .B \-\-flaky
-and nothing else \(em so that a script can tell "this task is flaky" from
+a flaky task, or
+.B \-\-lint
+an aggregate that misses a namespace \(em so that a script can tell either from
 "there is no Taskfile here", which is the distinction the status exists to draw.
 .PP
 .B \-\-run

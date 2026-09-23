@@ -475,8 +475,6 @@ func (a *App) handleKey(k Key) bool {
 	return a.handlePickerKey(k)
 }
 
-// handleConfirmKey: something is waiting on a yes; nothing else gets through until it is
-// answered.
 // wheelStep is how many rows a notch of the wheel moves.
 //
 // One, not the three that terminals and browsers use for scrolling a page. This is not a
@@ -524,6 +522,8 @@ func (a *App) handleWheel(button tea.MouseButton) {
 	}
 }
 
+// handleConfirmKey: something is waiting on a yes; nothing else gets through until it is
+// answered.
 func (a *App) handleConfirmKey(k Key) bool {
 	// Only ConfirmYes knows what was being asked, and only the quit answer ends the loop —
 	// so the teardown hangs off its return value rather than off the key.
@@ -794,9 +794,11 @@ func (a *App) handleFilterKey(k Key) bool {
 	}
 }
 
-// hide the order the arms are tried in, which is what makes a rebound key shadow a literal.
+// handlePickerKey is the picker's dispatch table. One flat table per screen is the point:
+// splitting it would hide the order the arms are tried in, which is what makes a rebound
+// key shadow a literal.
 //
-//nolint:cyclop // one flat dispatch table per screen is the point; splitting it would
+//nolint:cyclop // a dispatch table, read top to bottom; see above
 func (a *App) handlePickerKey(k Key) bool {
 	act := func() keys.Action { return a.action(k, ScreenPicker) }
 

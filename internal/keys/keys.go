@@ -686,7 +686,9 @@ var Picker = Section{
 		f("{filter}", "filter the list down to matching tasks", "filter"),
 		f("{jump}", "jump to a task, leaving the list intact", "jump"),
 		f("{detail}", "what this task is, and what it will run", "detail"),
-		f("{view-run}", "the whole screen for whatever is running, or the last run", "watch"),
+		// Footer label `view`, like the action: `watch` beside the key that does not watch
+		// anything put back, on the footer, the clash renaming the action took out of configs.
+		f("{view-run}", "the whole screen for whatever is running, or the last run", "view"),
 		b("{timeline}", "how this one task has been going, run after run"),
 		b("{edit}", "open this task's own definition in $EDITOR"),
 		f("{history}", "past runs", "history"),

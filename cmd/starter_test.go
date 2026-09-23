@@ -101,3 +101,24 @@ func TestBlockIndentsTheLinesItMade(t *testing.T) {
 		}
 	}
 }
+
+// The offer to write a Taskfile is for somebody about to use the picker; a print-and-exit
+// flag gets the plain answer even at a terminal.
+func TestOnlyThePickerOffersAStarter(t *testing.T) {
+	t.Cleanup(func() { opts.list, opts.lint, opts.runTask, opts.graph = false, false, "", "" })
+	if !opensPicker() {
+		t.Fatal("no flags opens the picker")
+	}
+	for name, set := range map[string]func(){
+		"--list":  func() { opts.list = true },
+		"--lint":  func() { opts.lint = true },
+		"--run":   func() { opts.runTask = "build" },
+		"--graph": func() { opts.graph = "build" },
+	} {
+		opts.list, opts.lint, opts.runTask, opts.graph = false, false, "", ""
+		set()
+		if opensPicker() {
+			t.Errorf("%s would have been offered a starter", name)
+		}
+	}
+}

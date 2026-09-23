@@ -9,9 +9,11 @@ version: "3"
 vars:
   PROBE: '{{.ROOT_DIR}}/probe'
   BIN: '{{.ROOT_DIR}}/bin'
-  # Stamped into the binary so `taskui --version` says something truthful.
+  # Stamped into the binary so `taskui --version` says something truthful — without the
+  # tag's `v`, which goreleaser's `.Version` leaves off too, so a local build and a release
+  # say `0.6.2` the same way.
   VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+    sh: v=$(git describe --tags --always --dirty 2>/dev/null) && echo "${v#v}" || echo dev
   COMMIT:
     sh: git rev-parse --short HEAD 2>/dev/null || echo none
   LDFLAGS: >-

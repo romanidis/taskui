@@ -12,6 +12,7 @@ import (
 
 	"github.com/romanidis/taskui/internal/app"
 	"github.com/romanidis/taskui/internal/diff"
+	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/pivot"
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/store"
@@ -361,9 +362,11 @@ var examples = []example{{
 			"everything that does not match, which is what you want when you are looking for all " +
 			"the linting tasks:"),
 		frame(draw(11, "/lint", nil)),
-		text("`t` jumps instead: the tree stays whole and only the cursor moves, which is what you " +
-			"want when the surroundings still matter. Both match fuzzily over the whole colon " +
-			"path, so `blint` finds `backend:lint`."),
+		// From the keymap, not spelled here: jump moved from `t` to `f`, and this sentence
+		// went on sending people to the old key.
+		text("`" + defaultKey(keys.Jump) + "` jumps instead: the tree stays whole and only the " +
+			"cursor moves, which is what you want when the surroundings still matter. Both match " +
+			"fuzzily over the whole colon path, so `blint` finds `backend:lint`."),
 		text("And `p` regroups. `domain` splits the name on `:`; `verb` collects the last segment, " +
 			"gathering the cross-cutting concerns the domain tree scatters:"),
 		frame(draw(12, "p", nil)),
@@ -523,3 +526,10 @@ var examples = []example{{
 			"one of these."),
 	},
 }}
+
+// defaultKey is where an action sits in the default keymap, written the way the help writes
+// it. The examples are drawn with the defaults, so their text is too.
+func defaultKey(action keys.Action) string {
+	chord, _ := keys.NewKeymap().KeyOf(action)
+	return chord.Display()
+}

@@ -96,3 +96,18 @@ func TestListJSONThroughTheFlag(t *testing.T) {
 		t.Errorf("no location on %+v — the JSON listing is what an editor jumps with", page.Tasks[0])
 	}
 }
+
+// `--since` and `--task` narrow something else, and alone they used to be ignored.
+func TestANarrowingFlagOnItsOwnIsRefused(t *testing.T) {
+	t.Cleanup(func() { opts.since, opts.searchTask, opts.list = "", "", false })
+	for _, args := range [][]string{
+		{"--since", "bogus", "--list", t.TempDir()},
+		{"--task", "build", "--list", t.TempDir()},
+	} {
+		opts.since, opts.searchTask = "", ""
+		_, err := execute(t, args...)
+		if err == nil || !strings.Contains(err.Error(), "nothing for it to narrow") {
+			t.Errorf("%v: err = %v", args, err)
+		}
+	}
+}
