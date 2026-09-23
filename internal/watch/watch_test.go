@@ -3,6 +3,7 @@ package watch
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -136,5 +137,56 @@ func TestANamedWatchOnlyFiresForItsOwnFiles(t *testing.T) {
 func TestANamedWatchWithNothingToWatchSaysSo(t *testing.T) {
 	if _, err := Files(nil); err == nil {
 		t.Error("watching nothing succeeded")
+	}
+}
+
+// Something that never stops writing — a log in the tree — must not hold a re-run off
+// forever: past MaxWait it fires with the writes still coming.
+func TestAChangeFiresEvenWhileWritesKeepComing(t *testing.T) {
+	dir := t.TempDir()
+	w, err := Start(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	w.Settle = 200 * time.Millisecond
+	w.MaxWait = 600 * time.Millisecond
+
+	deadline := time.Now().Add(5 * time.Second)
+	for i := 0; time.Now().Before(deadline); i++ {
+		// Faster than Settle, so it never settles.
+		if err := os.WriteFile(filepath.Join(dir, "server.log"), []byte(strconv.Itoa(i)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := w.Poll(); ok {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("a steady stream of writes held the watch off for good")
+}
+
+func TestAMetadataChangeIsNotAnEdit(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "a.go")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w, err := Start(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	w.Settle = 50 * time.Millisecond
+
+	if err := os.Chmod(file, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if path, ok := w.Poll(); ok {
+			t.Fatalf("a chmod fired the watch: %s", path)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

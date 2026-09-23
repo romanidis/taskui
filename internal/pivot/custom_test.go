@@ -358,3 +358,19 @@ func TestBuiltinsAreNamedAndDistinct(t *testing.T) {
 		}
 	}
 }
+
+// Two Taskfiles with the same parent directory name are two files. A label they shared put
+// both files' tasks in one group, which is the one thing a file pivot must not do.
+func TestTwoTaskfilesThatShareAParentNameAreTwoGroups(t *testing.T) {
+	tasks := []task.Task{
+		{Name: "api:serve", Where: task.Where{File: "/proj/services/api/Taskfile.yml", Line: 3}},
+		{Name: "client:gen", Where: task.Where{File: "/proj/clients/api/Taskfile.yml", Line: 3}},
+		{Name: "site:build", Where: task.Where{File: "/proj/site/Taskfile.yml", Line: 4}},
+	}
+	got := drawTree(Build(File(), tasks, []int{0, 1, 2}, Order{}))
+	for _, want := range []string{"services/api/Taskfile.yml/", "clients/api/Taskfile.yml/", "site/Taskfile.yml/"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("no group %q in:\n%s", want, got)
+		}
+	}
+}

@@ -7,8 +7,9 @@
 //
 // Redaction happens in the capture goroutine, before a line is ever handed to the UI, so
 // nothing unmasked reaches the screen, the buffers, or the disk. The secrets themselves
-// come from the `--summary` env dump we already run to build the graph: the leak is also
-// the best available list of what to plug.
+// come from the `--summary` env dump we already run to build the graph — the leak is also
+// the best available list of what to plug — and from the Taskfile-level `env:` that dump
+// leaves out.
 package redact
 
 import (
@@ -100,7 +101,21 @@ func isSecret(key, value string) bool {
 func Empty() *Redactor { return &Redactor{} }
 
 // FromSummary harvests from the `KEY: "value"` block that `task --summary` prints.
-func FromSummary(text string) *Redactor {
+func FromSummary(text string) *Redactor { return Harvest(text, nil) }
+
+// Harvest is FromSummary plus env the summary never prints — go-task leaves a Taskfile's
+// top-level `env:` out of it — passed as the variables themselves.
+func Harvest(summary string, env map[string]string) *Redactor {
+	secrets := summarySecrets(summary)
+	for key, value := range env {
+		if isSecret(key, value) {
+			secrets = append(secrets, value)
+		}
+	}
+	return New(secrets)
+}
+
+func summarySecrets(text string) []string {
 	var secrets []string
 	for line := range strings.SplitSeq(text, "\n") {
 		// Env entries are indented `  KEY: "value"`; the ` - x` items and the section
@@ -119,7 +134,7 @@ func FromSummary(text string) *Redactor {
 			secrets = append(secrets, value)
 		}
 	}
-	return New(secrets)
+	return secrets
 }
 
 func New(secrets []string) *Redactor {
@@ -133,6 +148,39 @@ func New(secrets []string) *Redactor {
 	}
 	sort.SliceStable(kept, func(i, j int) bool { return len(kept[i]) > len(kept[j]) })
 	return &Redactor{secrets: kept}
+}
+
+// Longest is the length of the longest secret, and 0 with none.
+func (r *Redactor) Longest() int {
+	if len(r.secrets) == 0 {
+		return 0
+	}
+	return len(r.secrets[0])
+}
+
+// Cut is where text can be split without cutting through a secret: at want, or past the
+// end of any secret occurrence that straddles it. Masking works on whole lines, so a
+// secret split across two of them is masked in neither.
+//
+// Only occurrences text holds in full are seen. A caller splitting a stream that is still
+// arriving keeps at least Longest bytes after want, so any secret that starts before it has
+// arrived whole.
+func (r *Redactor) Cut(text string, want int) int {
+	for moved := true; moved; {
+		moved = false
+		for _, secret := range r.secrets {
+			from := max(0, want-len(secret)+1)
+			to := min(len(text), want+len(secret)-1)
+			if from >= to {
+				continue
+			}
+			if at := strings.Index(text[from:to], secret); at >= 0 {
+				want = from + at + len(secret)
+				moved = true
+			}
+		}
+	}
+	return want
 }
 
 // Len is how many distinct secrets are being masked.

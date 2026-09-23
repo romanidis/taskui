@@ -393,12 +393,23 @@ func (a *App) drawDetail(width, height int) []string {
 		}
 		for _, cmd := range d.Commands {
 			// Another task, or a shell line — worth telling apart at a glance.
-			style, text := fg(t.Colors.Text), "  "+cmd
-			if name, ok := strings.CutPrefix(cmd, "Task: "); ok {
-				style, text = fg(t.Colors.Alias), "  → "+name
+			if name, ok := strings.CutPrefix(cmd, "Task: "); ok && !strings.Contains(name, "\n") {
+				for _, chunk := range wrap("  → "+name, room) {
+					lines = append(lines, line{styled(chunk, fg(t.Colors.Alias))})
+				}
+				continue
 			}
-			for _, chunk := range wrap(text, room) {
-				lines = append(lines, line{styled(chunk, style)})
+			// A multi-line block is one command, so its continuation lines sit indented
+			// under its first rather than level with it, where they would read as commands
+			// of their own.
+			for i, text := range strings.Split(cmd, "\n") {
+				indent := "  "
+				if i > 0 {
+					indent = "    "
+				}
+				for _, chunk := range wrap(indent+text, room) {
+					lines = append(lines, line{styled(chunk, fg(t.Colors.Text))})
+				}
 			}
 		}
 	}

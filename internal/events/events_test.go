@@ -3,6 +3,7 @@ package events_test
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -140,5 +141,53 @@ func TestTheStreamSendsTheGraphOnce(t *testing.T) {
 	r.Feed("test", "something")
 	if n := count(sent(t, r, d)); n != 0 {
 		t.Errorf("%d graph events on the second flush, want none", n)
+	}
+}
+
+// A line still growing is not sent until it stops: the buffer replaces it in place, and a
+// stream that had sent the fragment could never send the line it became.
+func TestAnUnfinishedLineIsSentOnceItIsFinished(t *testing.T) {
+	r := run.Detached("ci", run.GraphFrom(run.Edge{Parent: "ci"}))
+	d := newDeltas()
+	r.Apply(run.Partial{Text: "half of a li"})
+	for _, e := range sent(t, r, d) {
+		if e["type"] == "line" {
+			t.Errorf("sent the fragment: %v", e)
+		}
+	}
+	r.Apply(run.LineEvent{Task: "ci", Raw: "half of a line"})
+	var lines []string
+	for _, e := range sent(t, r, d) {
+		if e["type"] == "line" {
+			lines = append(lines, e["text"].(string))
+		}
+	}
+	if len(lines) != 1 || lines[0] != "half of a line" {
+		t.Errorf("lines = %v", lines)
+	}
+}
+
+// A fragment first guessed into one task and then moved to another must not leave the
+// first task's count one past its end, or its next real line is never sent.
+func TestAFragmentMovedToAnotherTaskCostsTheFirstNothing(t *testing.T) {
+	r := run.Detached("ci", run.GraphFrom(
+		run.Edge{Parent: "ci", Children: []string{"a", "b"}},
+		run.Edge{Parent: "a"}, run.Edge{Parent: "b"},
+	))
+	r.Graph.Deps["ci"] = []string{"a", "b"}
+	d := newDeltas()
+	r.Feed("a", "a1")
+	r.Apply(run.Partial{Text: "frag"})
+	sent(t, r, d)
+	r.Feed("b", "b1")
+	r.Feed("a", "a2-should-appear")
+	var lines []string
+	for _, e := range sent(t, r, d) {
+		if e["type"] == "line" && e["task"] == "a" {
+			lines = append(lines, e["text"].(string))
+		}
+	}
+	if !slices.Contains(lines, "a2-should-appear") {
+		t.Errorf("a's lines = %v", lines)
 	}
 }

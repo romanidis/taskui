@@ -1,6 +1,9 @@
 package loc
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -20,6 +23,12 @@ func TestEachEditorGetsTheSpellingItUnderstands(t *testing.T) {
 		{"subl", "subl /p/view.go:212:5"},
 		{"goland", "goland --line 212 --column 5 /p/view.go"},
 		{"micro", "micro +212 /p/view.go"},
+		// `+number` only: `+212:5` would be a new buffer of that name.
+		{"mg", "mg +212 /p/view.go"},
+		{"kak", "kak +212:5 /p/view.go"},
+		// No `--goto` for zed; the position rides on the path.
+		{"zed", "zed /p/view.go:212:5"},
+		{"mate", "mate -l 212 /p/view.go"},
 		{"/usr/local/bin/nvim", "/usr/local/bin/nvim +212 /p/view.go"},
 	} {
 		t.Setenv("VISUAL", "")
@@ -123,5 +132,34 @@ func TestAMissingColumnBecomesOne(t *testing.T) {
 	e, _ := EditorFor(Loc{Line: 12, Col: 0}, "/p/x.go")
 	if e.Args[0] != "+12,1" {
 		t.Errorf("got %q", e.Args[0])
+	}
+}
+
+// On a Mac the editor lives under a path with a space in it. Quoted, it is one word;
+// unquoted — which is how it usually gets pasted — it is still one program, because the
+// whole value names a file.
+func TestAnEditorPathWithASpaceIsOneProgram(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Sublime Text.app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prog := filepath.Join(dir, "subl")
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, spec := range []string{prog, `"` + prog + `" -w`} {
+		t.Setenv("VISUAL", spec)
+		e, ok := EditorFor(Loc{Line: 3, Col: 2}, "/p/x.go")
+		if !ok {
+			t.Fatalf("%q: no editor", spec)
+		}
+		if e.Name != prog {
+			t.Errorf("%q: program = %q", spec, e.Name)
+		}
+		// Recognised by its name, so it gets the position and is known to be windowed.
+		if e.Terminal || !slices.Contains(e.Args, "/p/x.go:3:2") {
+			t.Errorf("%q: %+v", spec, e)
+		}
 	}
 }

@@ -42,26 +42,69 @@ func Builtins() []Pivot {
 	return []Pivot{
 		{Name: "domain", Build: buildDomain, Natural: ByName},
 		{Name: "verb", Build: buildVerb, Natural: BySize},
-		ByPath("file", func(t task.Task) []string {
-			if !t.Where.Ok() {
-				return nil
-			}
-			return []string{shortestUnique(t.Where.File)}
-		}),
+		byFile(),
 	}
 }
 
-// shortestUnique trims a Taskfile path to something readable. The full path is the same
-// prefix on every row, and the prefix is not the answer to which file this is.
-func shortestUnique(path string) string {
-	slashed := strings.ReplaceAll(path, "\\", "/")
-	parts := strings.Split(slashed, "/")
-	if len(parts) <= 2 {
-		return slashed
+// byFile groups by the Taskfile each task is written in.
+//
+// Its labels depend on the whole set of files, which a key function — one task at a time —
+// cannot see, so it wraps ByPath rather than being one: the labels are worked out once per
+// build, over every task, and then each task is keyed by its file's.
+func byFile() Pivot {
+	p := ByPath(FileName, nil)
+	p.Build = func(tasks []task.Task, visible []int) *Tree {
+		var files []string
+		for _, t := range tasks {
+			if t.Where.Ok() {
+				files = append(files, t.Where.File)
+			}
+		}
+		labels := fileLabels(files)
+		return buildByPath(tasks, visible, FileName, func(t task.Task) []string {
+			if !t.Where.Ok() {
+				return nil
+			}
+			return []string{labels[t.Where.File]}
+		})
 	}
-	// The parent directory disambiguates the dozen `Taskfile.yml`s an `includes:` tree has,
-	// and two segments is almost always enough to tell them apart.
-	return strings.Join(parts[len(parts)-2:], "/")
+	return p
+}
+
+// fileLabels names each Taskfile by the shortest tail of its path that no other file in
+// the set shares.
+//
+// The full path is the same prefix on every row, and the prefix is not the answer to which
+// file this is. Two segments — the parent directory and the name — tell apart the dozen
+// `Taskfile.yml`s an `includes:` tree usually has, and are where every label starts; but
+// `services/api` and `clients/api` are both `api/Taskfile.yml` at two, and a label that
+// two files share put both files' tasks in one group. So a label grows until it is unique.
+func fileLabels(files []string) map[string]string {
+	split := map[string][]string{}
+	for _, f := range files {
+		split[f] = strings.Split(strings.ReplaceAll(f, "\\", "/"), "/")
+	}
+	tail := func(parts []string, n int) string {
+		return strings.Join(parts[max(0, len(parts)-n):], "/")
+	}
+	labels := make(map[string]string, len(split))
+	for f, parts := range split {
+		n := min(2, len(parts))
+		for ; n < len(parts); n++ {
+			label, clash := tail(parts, n), false
+			for g, other := range split {
+				if g != f && tail(other, n) == label {
+					clash = true
+					break
+				}
+			}
+			if !clash {
+				break
+			}
+		}
+		labels[f] = tail(parts, n)
+	}
+	return labels
 }
 
 // Named returns a built-in by name, for callers that want one specific grouping.

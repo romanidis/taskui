@@ -122,18 +122,59 @@ func TestParsesWhatATaskIsAndDoes(t *testing.T) {
 	if !reflect.DeepEqual(d.Dependencies, []string{"setup"}) {
 		t.Errorf("dependencies = %v", d.Dependencies)
 	}
-	if d.Commands[0] != "Task: build" || d.Commands[1] != "set -eu" {
-		t.Errorf("commands = %v", d.Commands)
+	// Multi-line shell keeps its shape: one command, not one per line.
+	want := []string{"Task: build", "set -eu\ndir=\".worktrees/\"\ngit worktree add \"$dir\""}
+	if !reflect.DeepEqual(d.Commands, want) {
+		t.Errorf("commands = %q", d.Commands)
 	}
-	// Multi-line shell keeps its shape rather than being reflowed.
-	found := false
-	for _, c := range d.Commands {
-		if strings.Contains(c, "git worktree add") {
-			found = true
-		}
+}
+
+// Real `--summary` output, go-task 3.53.1: a multi-line command's continuation lines come
+// at the margin, with a blank line inside the block and another after it.
+const multiline = `task: all
+
+(task does not have description or summary)
+
+dependencies:
+ - dep1
+
+commands:
+ - echo one
+echo two
+
+echo after-blank
+
+ - Task: child
+ - echo cmd-form
+ - echo start
+- Task: fake
+
+ - Task: last
+`
+
+// A continuation line is the command carrying on, not the end of the section: every edge
+// after the first multi-line command used to be lost.
+func TestEdgesAfterAMultiLineCommandAreKept(t *testing.T) {
+	got, deps := parseSummary(multiline)
+	if want := []string{"dep1", "child", "last"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("edges = %v, want %v", got, want)
 	}
-	if !found {
-		t.Errorf("multi-line shell was reflowed away: %v", d.Commands)
+	if !reflect.DeepEqual(deps, []string{"dep1"}) {
+		t.Errorf("deps = %v", deps)
+	}
+}
+
+func TestAMultiLineCommandIsOneCommand(t *testing.T) {
+	want := []string{
+		"echo one\necho two\n\necho after-blank",
+		"Task: child",
+		"echo cmd-form",
+		// A `- Task:` at the margin is inside the shell block; only ` - ` starts an item.
+		"echo start\n- Task: fake",
+		"Task: last",
+	}
+	if got := parseDetail(multiline).Commands; !reflect.DeepEqual(got, want) {
+		t.Errorf("commands = %q", got)
 	}
 }
 
@@ -255,5 +296,29 @@ func TestReachableListsTheSubtreeDepthFirst(t *testing.T) {
 	want := []string{"all", "lint", "backend:lint", "test"}
 	if got := g.Reachable("all"); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestRenamingMergesTwoSpellingsOfOneTask(t *testing.T) {
+	g := New()
+	g.Edges["all"] = []string{"b", "build", "dev"}
+	g.Edges["b"] = nil
+	g.Edges["dev"] = []string{"dev:inner"}
+	g.Deps["dev"] = []string{"dev:inner"}
+	names := map[string]string{"b": "build", "dev": "dev"}
+	got := g.Renamed(func(n string) string {
+		if c, ok := names[n]; ok {
+			return c
+		}
+		return n
+	})
+	if !reflect.DeepEqual(got.Children("all"), []string{"build", "dev"}) {
+		t.Errorf("children(all) = %v", got.Children("all"))
+	}
+	if _, ok := got.Edges["build"]; !ok {
+		t.Error("a leaf keeps its entry under its new name")
+	}
+	if !reflect.DeepEqual(got.Deps["dev"], []string{"dev:inner"}) {
+		t.Errorf("deps = %v", got.Deps)
 	}
 }

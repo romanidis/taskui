@@ -17,10 +17,12 @@
 package run
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -28,12 +30,14 @@ import (
 	"syscall"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/creack/pty"
 
 	"github.com/romanidis/taskui/internal/graph"
 	"github.com/romanidis/taskui/internal/redact"
+	"github.com/romanidis/taskui/internal/shellwords"
 	"github.com/romanidis/taskui/internal/task"
 )
 
@@ -112,6 +116,23 @@ type Line struct {
 // `.txt` file would make the archive worse to grep.
 func Restored(raw, plain string) Line {
 	return Line{Raw: raw, Plain: plain, IsCommand: strings.HasPrefix(plain, "task: [")}
+}
+
+// mask redacts a line so that no secret survives in either of the forms a Line keeps.
+//
+// Masking the raw bytes alone is not enough: a colour escape landing inside a secret — grep
+// highlighting the `sk-` it was asked for, under the FORCE_COLOR every run gets — hides it
+// from the raw text, and stripping the escapes for Plain puts it back together, which is
+// the form the `.txt` archive keeps. Such a line gives up its colour rather than its secret.
+func mask(redactor *redact.Redactor, text string) string {
+	if redactor.Len() == 0 {
+		return text
+	}
+	text = redactor.Redact(text)
+	if plain := ansi.Strip(text); redactor.Redact(plain) != plain {
+		return redactor.Redact(plain)
+	}
+	return text
 }
 
 func newLine(raw string, isCommand bool) Line {
@@ -260,6 +281,10 @@ type Partial struct{ Text string }
 // whether output has been through it.
 type Redacting struct{ N int }
 
+// Naming carries the project's task names, ahead of the graph and the output that are
+// both spelled by them. See task.Names for why a run cannot just use what it is given.
+type Naming struct{ Names task.Names }
+
 // LineEvent is one complete line. Task is empty when the line carried no `[name]` tag.
 type LineEvent struct {
 	Task      string
@@ -276,6 +301,7 @@ type Exited struct{ Code int }
 func (GraphReady) event()  {}
 func (Partial) event()     {}
 func (Redacting) event()   {}
+func (Naming) event()      {}
 func (LineEvent) event()   {}
 func (FailedEvent) event() {}
 func (Exited) event()      {}
@@ -311,6 +337,9 @@ type Stored struct {
 	ID              string
 	Root            string
 	Args            []string
+	Force           bool
+	Interactive     bool
+	Started         time.Time
 	Graph           graph.Graph
 	Tasks           map[string]*TaskRun
 	Order           []string
@@ -361,11 +390,14 @@ type Run struct {
 	// goroutine, which is why it is an atomic rather than HasExit.
 	reaped atomic.Bool
 
-	cancelled bool
+	// cancelled and killed are atomics because they are written by whoever stops the run —
+	// the UI, or a signal handler on a goroutine of its own — and read by the capture
+	// goroutine deciding whether to start the child at all.
+	cancelled atomic.Bool
 	// killed records whether the polite signals have already been sent and ignored. Kept
 	// so a second `x` can escalate rather than sending a process the same signal it just
 	// sat through.
-	killed bool
+	killed atomic.Bool
 
 	// provisional is where the not-yet-terminated line lives, so the next read replaces it
 	// rather than stacking up a copy per 8KB chunk.
@@ -375,6 +407,23 @@ type Run struct {
 	hasActive   bool
 	events      *queue
 	drained     bool
+	// names is how the project spells its tasks; nil for a run with no project behind it,
+	// which leaves every name as it arrived.
+	names task.Names
+}
+
+// canonical is name as this run keys it: as the task list spells it, except that the root
+// keeps the spelling it was invoked by. `taskui --run b` is a run of `b` from the header
+// down, and the `[build]` its output is tagged with has to land on that same row.
+func (r *Run) canonical(name string) string {
+	if name == "" || r.names == nil {
+		return name
+	}
+	c := r.names.Canonical(name)
+	if c == r.names.Canonical(r.Root) {
+		return r.Root
+	}
+	return c
 }
 
 // queue is an unbounded event queue: the capture goroutine must never block on a UI that
@@ -434,17 +483,27 @@ func Start(dir, root string, args []string, interactive, force bool) (*Run, erro
 		// arrives to fill it in. The same call yields the environment dump the redactor is
 		// built from, so masking is in place before the first line.
 		redactor := redact.Empty()
+		// Read alongside: the names the graph and the output are spelled in, and the
+		// Taskfile's own env, which the summaries leave out.
+		var project task.Project
+		var wg sync.WaitGroup
+		wg.Go(func() { project = task.ReadProject(dir) })
 		// A graph we could not resolve is not fatal — we still capture output, just
 		// without the nesting. Redaction is then empty, which is why the run view says so
 		// rather than implying output has been checked.
 		g, summary := graph.ResolveDetailed(dir, root)
+		wg.Wait()
+		r.send(Naming{Names: project.Names})
 		if len(g.Edges) > 0 {
-			redactor = redact.FromSummary(summary)
+			redactor = redact.Harvest(summary, project.Env)
 			r.send(GraphReady{Graph: g})
 		}
 		r.send(Redacting{N: redactor.Len()})
 
-		if err := r.capture(dir, redactor); err != nil {
+		switch err := r.capture(dir, redactor); {
+		case errors.Is(err, errStoppedBeforeStart):
+			r.send(Exited{Code: -1})
+		case err != nil:
 			r.send(LineEvent{Raw: fmt.Sprintf("taskui: could not start `task %s`: %v", root, err)})
 			r.send(Exited{Code: -1})
 		}
@@ -456,11 +515,25 @@ func Start(dir, root string, args []string, interactive, force bool) (*Run, erro
 func (r *Run) send(e Event) { r.events.push(e) }
 
 func (r *Run) Finished() bool  { return r.HasExit }
-func (r *Run) Cancelled() bool { return r.cancelled }
+func (r *Run) Cancelled() bool { return r.cancelled.Load() }
 
 // Killed is true once SIGKILL has gone out. There is nothing louder left to try, so the UI
 // stops offering to stop it harder.
-func (r *Run) Killed() bool { return r.killed }
+func (r *Run) Killed() bool { return r.killed.Load() }
+
+// over reports whether there is no longer a process to stop, safely from any goroutine.
+//
+// Not Finished: HasExit is written by Poll on the UI goroutine, and a stop can come from a
+// signal handler on another. For a live run the capture goroutine's own record is the
+// answer, and it is also the more accurate one — the process is gone the moment it is
+// reaped, not a poll later when the UI hears about it. A run with no capture behind it,
+// stored or built for a test, has only HasExit, and only one goroutine to read it from.
+func (r *Run) over() bool {
+	if r.events == nil {
+		return r.HasExit
+	}
+	return r.reaped.Load()
+}
 
 // IsStored is true when this Run came off disk rather than off a pty. The run view uses it
 // to avoid implying a stored run is still doing something.
@@ -549,6 +622,25 @@ func (r *Run) PendingPrompt() (string, bool) {
 	return text, true
 }
 
+// Complete is how many of a task's buffered lines are final: all of them, less the
+// unterminated one still growing at the end.
+//
+// That one is replaced in place as it grows, or taken away when it turns out to belong to
+// another task, so anything that reads the buffer as append-only — the host's event stream
+// — has to stop short of it. Counting it had the stream send `half of a li` and never the
+// line it grew into, and a fragment moved to another task left the count one past the end,
+// so the task's next real line was never sent at all.
+func (r *Run) Complete(name string) int {
+	t, ok := r.Tasks[name]
+	if !ok {
+		return 0
+	}
+	if r.provisional != nil && r.provisional.task == name && r.provisional.index < len(t.Lines) {
+		return r.provisional.index
+	}
+	return len(t.Lines)
+}
+
 // LooksLikeAPrompt guesses whether the tail is a question. Used only to nudge the user
 // toward the input key — a wrong guess costs nothing but a missing hint.
 func (r *Run) LooksLikeAPrompt() bool {
@@ -576,24 +668,39 @@ func (r *Run) LooksLikeAPrompt() bool {
 // Both signals sent here are catchable, deliberately: `docker compose up` takes SIGTERM as
 // "stop the containers", and skipping that would leave the stack running while taskui
 // reported it stopped. What happens when they are ignored is Kill's problem.
+//
+// A run still resolving its graph has no process yet, and needs none signalled: the capture
+// goroutine checks this flag under the same lock it starts the child under, so a stop that
+// lands first means the child is never started.
 func (r *Run) Cancel() {
-	if r.Finished() {
+	if r.over() {
 		return
 	}
-	r.cancelled = true
 	// Tell the capture goroutine this was a stop, not an ending. It is what turns the
 	// group's survivors into its problem rather than nobody's.
+	r.cancelled.Store(true)
 	r.mu.Lock()
 	proc := r.proc
 	r.mu.Unlock()
-	if proc != nil {
+	if proc == nil {
+		return
+	}
+	// Under reapMu, and only if the leader has not been waited on: once it has, its pid is
+	// back in circulation and the signal would go to a stranger. Tried rather than waited
+	// for, because whoever holds it is reaping this run already, and waiting would hang
+	// the UI on that.
+	if !r.reapMu.TryLock() {
+		return
+	}
+	if !r.reaped.Load() {
 		// SIGTERM first so the tools get to clean up after themselves.
 		_ = syscall.Kill(-proc.Pid, syscall.SIGTERM)
 		// SIGHUP is the backstop for a child that never became a group leader — and is
 		// still catchable, which is the point.
 		_ = proc.Signal(syscall.SIGHUP)
-		go r.reapGroup()
 	}
+	r.reapMu.Unlock()
+	go r.reapGroup()
 }
 
 // reapGroup takes what is left of the process group once the grace is up.
@@ -653,12 +760,12 @@ func (r *Run) reapGroup() {
 // means the containers stay up with nothing left to take them down — so this is a second,
 // deliberate press rather than the opening move.
 func (r *Run) Kill() {
-	r.cancelled = true
-	r.killed = true
+	r.cancelled.Store(true)
+	r.killed.Store(true)
 	// Set both: a Kill that arrives before anything was asked politely still has to leave
 	// the capture goroutine a stopped run to clean up after.
 	r.stop.now.Store(true)
-	if r.Finished() {
+	if r.over() {
 		// The capture goroutine has already reaped the group on its way out, and the pid
 		// that named it belongs to somebody else by now. Setting the flags above is all
 		// there is left to do — signalling anything here would be signalling a stranger.
@@ -678,7 +785,7 @@ func (r *Run) Command() string {
 	if len(r.Args) == 0 {
 		return "task " + r.Root + force
 	}
-	return "task " + r.Root + force + " " + task.JoinArgs(r.Args)
+	return "task " + r.Root + force + " " + shellwords.Join(r.Args)
 }
 
 // FromStored rebuilds a finished run from the archive.
@@ -686,12 +793,14 @@ func FromStored(s Stored) *Run {
 	return &Run{
 		Root:            s.Root,
 		Args:            s.Args,
+		Interactive:     s.Interactive,
+		Force:           s.Force,
 		Graph:           s.Graph,
 		Tasks:           s.Tasks,
 		Order:           s.Order,
 		Exit:            s.Exit,
 		HasExit:         true,
-		Started:         time.Now(),
+		Started:         s.Started,
 		Duration:        s.Duration,
 		HasDuration:     true,
 		RedactedSecrets: s.RedactedSecrets,
@@ -812,13 +921,17 @@ func (r *Run) apply(event Event) {
 	case Redacting:
 		r.RedactedSecrets = e.N
 
+	case Naming:
+		r.names = e.Names
+
 	case GraphReady:
-		for _, name := range e.Graph.Reachable(r.Root) {
+		g := e.Graph.Renamed(r.canonical)
+		for _, name := range g.Reachable(r.Root) {
 			if _, ok := r.Tasks[name]; !ok {
 				r.Tasks[name] = newTaskRun()
 			}
 		}
-		r.Graph = e.Graph
+		r.Graph = g
 
 	case Partial:
 		r.lastOutput = time.Now()
@@ -847,7 +960,7 @@ func (r *Run) apply(event Event) {
 		// var, an unknown task, a malformed Taskfile — are printed before any task starts,
 		// so they carry no `[name]` prefix and there is no active task to inherit.
 		// Dropping them left the user with an empty tree and a bare exit code.
-		name := e.Task
+		name := r.canonical(e.Task)
 		if name == "" {
 			if r.hasActive {
 				name = r.active
@@ -862,7 +975,7 @@ func (r *Run) apply(event Event) {
 		// first of two identical skips was explained and the second was not, purely by which
 		// arrived whole.
 		if task, why, ok := skipReason(ansi.Strip(e.Raw)); ok {
-			r.apply(Skipping{Task: task, Why: why})
+			r.apply(Skipping{Task: r.canonical(task), Why: why})
 		}
 		// A completed line supersedes the provisional one it grew out of.
 		if r.provisional != nil {
@@ -882,8 +995,9 @@ func (r *Run) apply(event Event) {
 		r.pushLine(name, newLine(e.Raw, e.IsCommand))
 
 	case FailedEvent:
-		r.touch(e.Task)
-		r.fail(e.Task)
+		name := r.canonical(e.Task)
+		r.touch(name)
+		r.fail(name)
 
 	case Skipping:
 		// Deliberately does not touch(): a task go-task decided not to run has not started,
@@ -909,6 +1023,7 @@ func (r *Run) touch(name string) {
 	if r.hasActive && r.active == name {
 		return
 	}
+	r.adoptStray(name)
 
 	ancestors := r.ancestorsOf(name)
 	now := time.Now()
@@ -961,6 +1076,41 @@ func (r *Run) touch(name string) {
 	}
 	r.active = name
 	r.hasActive = true
+}
+
+// adoptStray puts a task that ran but that the graph never reached under the root.
+//
+// `--summary` refuses to describe an `internal: true` task, so a root whose deps hide behind
+// one — `dev` → `dev:all` → {`dev:backend`, `site:dev`} — resolves to a graph that stops at
+// the internal task, while the output plainly carries the tasks beyond it. Grafted rather
+// than left floating, because everything reads the graph: the rows, what counts as an
+// ancestor that stays open, and what may run alongside what. Left outside it, the root sat
+// Pending under two live servers and each server's lines closed the other as finished.
+//
+// Hung off the root as its deps, which is to say concurrently with each other: what their
+// real parent ran them as cannot be known from here, and closing a task that is still going
+// is the worse mistake — a stray taken as concurrent is closed by the run ending instead.
+//
+// Only once a graph has arrived. Before that, or with none, every task would be a stray,
+// and the run is in the flat mode that has no nesting to graft onto.
+func (r *Run) adoptStray(name string) {
+	if len(r.Graph.Edges) == 0 || name == r.Root {
+		return
+	}
+	if _, known := r.Tasks[name]; known {
+		return
+	}
+	if slices.Contains(r.Graph.Reachable(r.Root), name) {
+		return
+	}
+	if r.Graph.Deps == nil {
+		r.Graph.Deps = map[string][]string{}
+	}
+	r.Graph.Edges[r.Root] = append(r.Graph.Edges[r.Root], name)
+	r.Graph.Deps[r.Root] = append(r.Graph.Deps[r.Root], name)
+	if _, ok := r.Graph.Edges[name]; !ok {
+		r.Graph.Edges[name] = nil
+	}
 }
 
 func (t *TaskRun) close(now time.Time) {
@@ -1032,6 +1182,28 @@ func (r *Run) settle(exit int) {
 
 // capture drives `task --output prefixed <root>` on a pty and streams parsed events,
 // blocking until the child exits.
+// maxPending is how long an unterminated line is allowed to grow before it is broken.
+const maxPending = 16 << 10
+
+// breakAt picks where to break an overlong unterminated line: as late as leaves every
+// secret that starts before the break fully arrived, on a rune boundary, and never inside
+// a secret. False when there is not yet room to break safely.
+func breakAt(redactor *redact.Redactor, pending []byte) (int, bool) {
+	want := len(pending) - redactor.Longest()
+	for want > 0 && want < len(pending) && !utf8.RuneStart(pending[want]) {
+		want--
+	}
+	if want <= 0 {
+		return 0, false
+	}
+	cut := redactor.Cut(string(pending), want)
+	return cut, cut > 0 && cut <= len(pending)
+}
+
+// errStoppedBeforeStart is capture declining to start a child that was stopped while the
+// graph was still being resolved.
+var errStoppedBeforeStart = errors.New("stopped before it started")
+
 func (r *Run) capture(dir string, redactor *redact.Redactor) error {
 	mode := "prefixed"
 	if r.Interactive {
@@ -1058,6 +1230,16 @@ func (r *Run) capture(dir string, redactor *redact.Redactor) error {
 		"FORCE_COLOR=1",           // the node ecosystem
 	)
 
+	// Started and published under one lock, with the stop checked inside it. Cancel sets
+	// the flag before it looks for a process, so either this sees the flag and never
+	// starts the child, or Cancel sees the process and signals it. Checked only before,
+	// the child could start in the gap after a stop that found nothing to signal, and run
+	// to completion — which is what `x` during graph resolution did.
+	r.mu.Lock()
+	if r.cancelled.Load() {
+		r.mu.Unlock()
+		return errStoppedBeforeStart
+	}
 	master, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: 50,
 		// Wide, so tools that wrap to the terminal width do not hard-wrap the capture at
@@ -1065,11 +1247,9 @@ func (r *Run) capture(dir string, redactor *redact.Redactor) error {
 		Cols: 200,
 	})
 	if err != nil {
+		r.mu.Unlock()
 		return err
 	}
-
-	// Publish the handles before reading, so a cancel arriving immediately still lands.
-	r.mu.Lock()
 	r.proc = cmd.Process
 	r.master = master
 	r.mu.Unlock()
@@ -1093,16 +1273,30 @@ func (r *Run) capture(dir string, redactor *redact.Redactor) error {
 				}
 				// Mask here, at the boundary: nothing unredacted is ever put on the
 				// channel, so no later code path can leak what it never received.
-				text := redactor.Redact(applyOverwrites(string(line)))
+				text := mask(redactor, applyOverwrites(string(line)))
 				for _, event := range parseLine(text) {
 					r.send(event)
 				}
 			}
 
+			// A line with no end in sight — minified JS, a base64 blob, `\r`-only
+			// progress — is broken up rather than held. Everything below reprocesses the
+			// whole of pending on every read, so holding it made a 6MB line cost 46s.
+			for len(pending) > maxPending {
+				cut, ok := breakAt(redactor, pending)
+				if !ok {
+					break
+				}
+				for _, event := range parseLine(mask(redactor, applyOverwrites(string(pending[:cut])))) {
+					r.send(event)
+				}
+				pending = pending[cut:]
+			}
+
 			// Whatever is left has no newline yet. Emit it anyway: a prompt never gets
 			// one, and waiting for it means the run looks hung.
 			if len(pending) > 0 {
-				r.send(Partial{Text: redactor.Redact(applyOverwrites(string(pending)))})
+				r.send(Partial{Text: mask(redactor, applyOverwrites(string(pending)))})
 			}
 		}
 		if err != nil {

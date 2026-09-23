@@ -176,86 +176,6 @@ func trimProse(rest string) string {
 	return strings.TrimRight(strings.TrimSpace(rest[:end]), ".,` ")
 }
 
-// JoinArgs is SplitArgs backwards: the line that splits back into these arguments.
-//
-// Needed the moment a stored argument list is put back in front of you. `-- "My Post
-// Title"` comes out of the archive as two arguments, and joining them with a space would
-// hand back a line that runs as four.
-func JoinArgs(args []string) string {
-	parts := make([]string, 0, len(args))
-	for _, arg := range args {
-		parts = append(parts, quoteArg(arg))
-	}
-	return strings.Join(parts, " ")
-}
-
-func quoteArg(arg string) string {
-	if arg == "" {
-		return `""`
-	}
-	if !strings.ContainsAny(arg, " \t'\"\\") {
-		return arg
-	}
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, c := range arg {
-		if c == '"' || c == '\\' {
-			b.WriteByte('\\')
-		}
-		b.WriteRune(c)
-	}
-	b.WriteByte('"')
-	return b.String()
-}
-
-// SplitArgs splits an args line the way a shell would, so quoted arguments survive.
-//
-// `site:new -- "My Post Title"` has to reach go-task as one argument, not three.
-func SplitArgs(input string) []string {
-	out := []string{}
-	var current strings.Builder
-	var quote rune
-	started := false
-
-	runes := []rune(input)
-	for i := 0; i < len(runes); i++ {
-		c := runes[i]
-		switch {
-		case c == '\\':
-			if i+1 < len(runes) {
-				i++
-				current.WriteRune(runes[i])
-				started = true
-			}
-		case c == '\'' || c == '"':
-			switch {
-			case quote == c:
-				quote = 0
-			case quote != 0:
-				current.WriteRune(c)
-				started = true
-			default:
-				// An empty quoted string is still an argument.
-				quote = c
-				started = true
-			}
-		case unicode.IsSpace(c) && quote == 0:
-			if started {
-				out = append(out, current.String())
-				current.Reset()
-				started = false
-			}
-		default:
-			current.WriteRune(c)
-			started = true
-		}
-	}
-	if started {
-		out = append(out, current.String())
-	}
-	return out
-}
-
 // DangerFile is the opt-in file listing tasks that must not be run by accident.
 const DangerFile = ".taskui-danger"
 
@@ -341,6 +261,44 @@ func looksDangerous(name, desc string) bool {
 	return strings.HasSuffix(name, ":prod") || strings.HasPrefix(name, "deploy:") || name == "deploy"
 }
 
+// dangerous decides by both of a task's names: the one go-task lists it by and the one
+// taskui shows. They differ for a namespace default, and a `.taskui-danger` line or a
+// `:prod` suffix written against either one means the same task — `deploy:*` is meant to
+// cover the `deploy:default` that `task deploy` runs, and `backend:prod:default` is as
+// much a production task as `backend:prod`.
+func dangerous(t Task, listed string, declared []string) bool {
+	names := []string{listed, t.Name}
+	if len(declared) == 0 {
+		return slices.ContainsFunc(names, func(n string) bool { return looksDangerous(n, t.Desc) })
+	}
+	for _, p := range declared {
+		if slices.ContainsFunc(names, func(n string) bool { return GlobMatch(p, n) }) {
+			return true
+		}
+	}
+	return false
+}
+
+// splitName takes the task name off the front of a listing entry.
+//
+// It ends at the first colon with whitespace or nothing after it. Names are colon paths —
+// `backend:migrate:down:` is one name, not three — and may have spaces in them, which
+// go-task runs happily: `weird name:` split at the first space listed a task called
+// `weird` that did not exist. A colon inside a name is always followed by more name.
+func splitName(rest string) (string, string) {
+	for i := range len(rest) {
+		if rest[i] == ':' && (i+1 == len(rest) || rest[i+1] == ' ' || rest[i+1] == '\t') {
+			return rest[:i], rest[i+1:]
+		}
+	}
+	// No colon where one belongs: not the shape go-task prints, so the old reading — the
+	// first word — is as good a guess as any.
+	if at := strings.IndexFunc(rest, unicode.IsSpace); at >= 0 {
+		return strings.TrimRight(rest[:at], ":"), rest[at:]
+	}
+	return strings.TrimRight(rest, ":"), ""
+}
+
 // parseEntry reads one line of `task --list-all`:
 //
 //   - build:      Build all components                    (aliases: b)
@@ -353,13 +311,7 @@ func parseEntry(line string) (Task, bool) {
 	if !ok {
 		return Task{}, false
 	}
-	// Names contain colons, so split at the first whitespace rather than the first colon —
-	// `backend:migrate:down:` is one name, not three.
-	name, tail := rest, ""
-	if at := strings.IndexFunc(rest, unicode.IsSpace); at >= 0 {
-		name, tail = rest[:at], rest[at:]
-	}
-	name = strings.TrimRight(name, ":")
+	name, tail := splitName(rest)
 	if name == "" {
 		return Task{}, false
 	}
@@ -367,9 +319,12 @@ func parseEntry(line string) (Task, bool) {
 	desc := strings.TrimSpace(tail)
 	var aliases []string
 	// Parsed off the end rather than searched for, so a description that happens to
-	// mention the word does not get eaten.
+	// mention the word does not get eaten — and only when it stands in its own column.
+	// go-task pads the alias list away from the description (six spaces at the least, by
+	// measurement), so a description that merely ends `… (aliases: q)` with one space
+	// before it is still a description. The JSON listing corrects the rest when it comes.
 	if strings.HasSuffix(desc, ")") {
-		if at := strings.LastIndex(desc, "(aliases: "); at >= 0 {
+		if at := strings.LastIndex(desc, "(aliases: "); at >= 0 && (at == 0 || strings.HasSuffix(desc[:at], "  ")) {
 			for a := range strings.SplitSeq(desc[at+len("(aliases: "):len(desc)-1], ",") {
 				if a = strings.TrimSpace(a); a != "" {
 					aliases = append(aliases, a)
@@ -450,6 +405,7 @@ func Discover(dir string) ([]Task, error) {
 	seen := map[string]bool{}
 	for line := range strings.SplitSeq(string(stdout), "\n") {
 		t, ok := parseEntry(line)
+		listed := t.Name
 		if ok {
 			t, ok = canonical(t)
 		}
@@ -457,15 +413,7 @@ func Discover(dir string) ([]Task, error) {
 			continue
 		}
 		seen[t.Name] = true
-		if len(declared) > 0 {
-			t.Dangerous = false
-			for _, p := range declared {
-				if GlobMatch(p, t.Name) {
-					t.Dangerous = true
-					break
-				}
-			}
-		}
+		t.Dangerous = dangerous(t, listed, declared)
 		tasks = append(tasks, t)
 	}
 
@@ -493,13 +441,27 @@ func (w Where) Ok() bool { return w.File != "" && w.Line > 0 }
 type Detail struct {
 	Where    Where
 	UpToDate bool
+	// Aliases are go-task's own list. The text form can only guess where a description
+	// ends and the alias column begins; this is the answer.
+	Aliases []string
+}
+
+// With is the task with what the JSON listing knows put onto what Discover read from the
+// text one.
+func (t Task) With(d Detail) Task {
+	t.Where = d.Where
+	if d.Aliases != nil {
+		t.Aliases = d.Aliases
+	}
+	return t
 }
 
 // jsonListing is the shape of `task --list-all --json`, narrowed to what is read.
 type jsonListing struct {
 	Tasks []struct {
-		Name     string `json:"name"`
-		UpToDate bool   `json:"up_to_date"`
+		Name     string   `json:"name"`
+		Aliases  []string `json:"aliases"`
+		UpToDate bool     `json:"up_to_date"`
 		Location struct {
 			Taskfile string `json:"taskfile"`
 			Line     int    `json:"line"`
@@ -531,7 +493,7 @@ func Details(dir string) (map[string]Detail, error) {
 	for _, t := range listing.Tasks {
 		// Keyed the way Discover names them, so `dev:default` lands on `dev`; a root-level
 		// `dev` wins the collision, the same as there.
-		named, ok := canonical(Task{Name: t.Name})
+		named, ok := canonical(Task{Name: t.Name, Aliases: t.Aliases})
 		if !ok {
 			continue
 		}
@@ -541,6 +503,8 @@ func Details(dir string) (map[string]Detail, error) {
 		out[named.Name] = Detail{
 			Where:    Where{File: t.Location.Taskfile, Line: t.Location.Line},
 			UpToDate: t.UpToDate,
+			// Never nil, so an empty list from go-task clears a guessed one.
+			Aliases: append([]string{}, named.Aliases...),
 		}
 	}
 	return out, nil

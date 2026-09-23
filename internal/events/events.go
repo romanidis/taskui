@@ -228,7 +228,9 @@ func (d *Deltas) Flush(s *Sink, r *run.Run) {
 			// Where the sent count lands in the buffer as it stands now. Negative means
 			// the lines it referred to have been dropped, so start from what is left.
 			at := max(0, d.seen[name]-task.Dropped)
-			for i := at; i < len(task.Lines); i++ {
+			// Only what is final: a line still growing goes out once it has stopped.
+			complete := r.Complete(name)
+			for i := at; i < complete; i++ {
 				s.Send(Line{
 					Type: "line", Root: r.Root, Task: name, Index: task.Dropped + i,
 					// A command echo goes out as the command: `command: true` and `task`
@@ -237,7 +239,7 @@ func (d *Deltas) Flush(s *Sink, r *run.Run) {
 					Text: run.CommandText(task.Lines[i]), Command: task.Lines[i].IsCommand,
 				})
 			}
-			d.seen[name] = task.Dropped + len(task.Lines)
+			d.seen[name] = task.Dropped + max(at, complete)
 		}
 		if changed {
 			announce()

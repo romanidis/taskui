@@ -12,7 +12,9 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +25,7 @@ import (
 
 	"github.com/romanidis/taskui/internal/graph"
 	"github.com/romanidis/taskui/internal/run"
-	"github.com/romanidis/taskui/internal/task"
+	"github.com/romanidis/taskui/internal/shellwords"
 )
 
 // KeepRuns is how many runs' *output* to keep. A full `task all` on a large repo is a lot of
@@ -61,6 +63,9 @@ type TaskEntry struct {
 	Note       string `json:"note,omitempty"`
 	DurationMs int64  `json:"duration_ms"`
 	Lines      int    `json:"lines"`
+	// Dropped is how many earlier lines fell off the front before the run ended, so a
+	// trimmed log loads as trimmed rather than passing for the whole of it.
+	Dropped int `json:"dropped,omitempty"`
 	// File is the basename, without extension: `<file>.txt` and `<file>.ansi`.
 	File string `json:"file"`
 }
@@ -87,6 +92,8 @@ type Manifest struct {
 	Args []string `json:"args,omitempty"`
 	// Force likewise defaults to false for older manifests.
 	Force bool `json:"force,omitempty"`
+	// Interactive means it ran with `--output interleaved`, and re-running it should too.
+	Interactive bool `json:"interactive,omitempty"`
 	// Dir is the project directory it ran in.
 	Dir string `json:"dir"`
 	// Repo is the checkout this directory belongs to, identified by the git directory every
@@ -118,7 +125,7 @@ func (m Manifest) Command() string {
 	if len(m.Args) == 0 {
 		return "task " + m.Root + force
 	}
-	return "task " + m.Root + force + " " + task.JoinArgs(m.Args)
+	return "task " + m.Root + force + " " + shellwords.Join(m.Args)
 }
 
 // StateDir is `$XDG_STATE_HOME/taskui` if set, else `~/.local/state/taskui`.
@@ -186,7 +193,20 @@ func readHistory(base string) []Manifest {
 		}
 		out = append(out, m)
 	}
-	return out
+	// One entry per run, the last written: Resave appends the finished record of a run
+	// whose partial one is already here, and a backfill racing a save can append the same
+	// run twice.
+	at := map[string]int{}
+	kept := out[:0]
+	for _, m := range out {
+		if i, ok := at[m.ID]; ok {
+			kept[i] = m
+			continue
+		}
+		at[m.ID] = len(kept)
+		kept = append(kept, m)
+	}
+	return kept
 }
 
 // compactHistory rewrites the ledger keeping the newest KeepHistory runs of each project, and
@@ -303,12 +323,45 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 	// takes the rest. Two runs of the *same* task inside one second used to be one run —
 	// which is exactly the pair a timeline is built to show you, so silently keeping the
 	// second and dropping the first is the worst place for that to happen.
-	id := uniqueID(base, fmt.Sprintf("%d-%s", started, safeName(r.Root)))
-
-	dir := filepath.Join(runsDir(base), id)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("creating %s: %w", dir, err)
+	if err := os.MkdirAll(runsDir(base), 0o700); err != nil {
+		return "", fmt.Errorf("creating %s: %w", runsDir(base), err)
 	}
+	id, err := claimID(base, fmt.Sprintf("%d-%s", started, safeName(r.Root)))
+	if err != nil {
+		return "", err
+	}
+	return writeRun(base, projectDir, r, id, started)
+}
+
+// Resave rewrites a run already in the archive, in place and under the same id.
+//
+// For a run saved before it finished — detaching writes down what it has, because that
+// may be the last chance — and then finished while taskui was still there to see it. A
+// second Save would put the run in history twice, once cut off; leaving the first would
+// keep only the part before the detach, with the outcome it did not have yet.
+func Resave(base, dir, projectDir string, r *run.Run) (string, error) {
+	id := filepath.Base(dir)
+	blob, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		return "", err
+	}
+	var was Manifest
+	if err := json.Unmarshal(blob, &was); err != nil {
+		return "", err
+	}
+	// What the partial record wrote is replaced, not added to: a task's file name can
+	// change between the two, and a stale one would be output no manifest points at.
+	for _, t := range was.Tasks {
+		_ = os.Remove(filepath.Join(dir, t.File+".txt"))
+		_ = os.Remove(filepath.Join(dir, t.File+".ansi"))
+	}
+	return writeRun(base, projectDir, r, id, was.StartedUnix)
+}
+
+// writeRun writes a run's output and manifest into the directory id names, and records it
+// in the ledger.
+func writeRun(base, projectDir string, r *run.Run, id string, started int64) (string, error) {
+	dir := RunDir(base, id)
 	if err := lockDown(runsDir(base), true); err != nil {
 		return "", err
 	}
@@ -326,10 +379,14 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 		// manifest handed both tasks whichever file survived. The suffix is only reached by a
 		// real collision, and `File` is recorded per task, so a reader never has to work the
 		// name out and archives written before this load exactly as they did.
-		for n := 2; used[file]; n++ {
+		//
+		// Compared without case, because the filesystem this most often lands on does:
+		// APFS and HFS+ are case-insensitive by default, so `Build` and `build` are one file
+		// there, and the second task's output replaced the first's.
+		for n := 2; used[strings.ToLower(file)]; n++ {
 			file = fmt.Sprintf("%s-%d", safeName(name), n)
 		}
-		used[file] = true
+		used[strings.ToLower(file)] = true
 
 		var plain, ansi strings.Builder
 		for _, l := range t.Lines {
@@ -361,6 +418,7 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 			Note:       t.Note,
 			DurationMs: t.Duration().Milliseconds(),
 			Lines:      len(t.Lines),
+			Dropped:    t.Dropped,
 			File:       file,
 		})
 	}
@@ -371,6 +429,7 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 		Root:            r.Root,
 		Args:            r.Args,
 		Force:           r.Force,
+		Interactive:     r.Interactive,
 		Dir:             projectDir,
 		Repo:            RepoOf(projectDir),
 		Commit:          headCommit(projectDir),
@@ -386,11 +445,11 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Written last and renamed into place, so a save that dies partway leaves either a
+	// whole manifest or none. None is the case Prune knows to clean up; a truncated one
+	// would be a run that is neither listed nor ever removed.
 	path := filepath.Join(dir, "manifest.json")
-	if err := os.WriteFile(path, blob, 0o600); err != nil {
-		return "", err
-	}
-	if err := lockDown(path, false); err != nil {
+	if err := writeAtomic(path, blob); err != nil {
 		return "", err
 	}
 
@@ -430,23 +489,50 @@ func backfillHistory(base string) {
 	}
 }
 
-// uniqueID appends a counter until the id names a directory that does not exist yet.
+// claimID creates the run's directory under the first free id, appending a counter while
+// the id is taken.
+//
+// Creating is the check. Asking whether the directory exists and then making it left a
+// gap in which a second taskui — another worktree, an agent's — finishing the same task in
+// the same second got the same answer, and the two runs were written into one directory.
+// [os.Mkdir] fails on a directory that is already there, so exactly one of them gets it.
 //
 // Zero-padded so the suffixes still sort the way List expects: `.10` has to come after
 // `.02`, and lexically it only does with the padding.
-func uniqueID(base, want string) string {
-	if !exists(filepath.Join(runsDir(base), want)) {
-		return want
-	}
-	for n := 1; n < 100; n++ {
-		candidate := fmt.Sprintf("%s.%02d", want, n)
-		if !exists(filepath.Join(runsDir(base), candidate)) {
-			return candidate
+func claimID(base, want string) (string, error) {
+	for n := range 100 {
+		candidate := want
+		if n > 0 {
+			candidate = fmt.Sprintf("%s.%02d", want, n)
+		}
+		err := os.Mkdir(RunDir(base, candidate), 0o700)
+		if err == nil {
+			return candidate, nil
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return "", fmt.Errorf("creating %s: %w", RunDir(base, candidate), err)
 		}
 	}
-	// A hundred runs of one task inside one second is not a case worth more code than this;
-	// the last one wins, as it always did.
-	return want
+	return "", fmt.Errorf("a hundred runs of %s inside one second: not saving another", want)
+}
+
+// writeAtomic writes path by renaming a finished temporary file over it, so no reader
+// ever sees it half-written.
+func writeAtomic(path string, blob []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(blob); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// CreateTemp already makes it 0600, which is what lockDown would set.
+	return os.Rename(tmp.Name(), path)
 }
 
 func exists(path string) bool {
@@ -612,6 +698,7 @@ func Load(base string, manifest Manifest) (*run.Run, error) {
 			time.Duration(entry.DurationMs)*time.Millisecond,
 		)
 		restored.Note = entry.Note
+		restored.Dropped = entry.Dropped
 		tasks[entry.Name] = restored
 	}
 
@@ -624,6 +711,9 @@ func Load(base string, manifest Manifest) (*run.Run, error) {
 		ID:              manifest.ID,
 		Root:            manifest.Root,
 		Args:            manifest.Args,
+		Force:           manifest.Force,
+		Interactive:     manifest.Interactive,
+		Started:         time.Unix(manifest.StartedUnix, 0),
 		Graph:           graph.Graph{Edges: edges},
 		Tasks:           tasks,
 		Order:           order,
@@ -710,7 +800,7 @@ func (p Point) Command() string {
 	if len(p.Args) == 0 {
 		return "task " + p.Root
 	}
-	return "task " + p.Root + " " + task.JoinArgs(p.Args)
+	return "task " + p.Root + " " + shellwords.Join(p.Args)
 }
 
 // Timeline is every stored appearance of one task, newest first.
@@ -794,7 +884,39 @@ func Prune(base string, keep int) (int, error) {
 			removed++
 		}
 	}
+	removed += pruneUnfinished(base)
 	return removed, nil
+}
+
+// unfinishedGrace is how old a run directory with no manifest has to be before it counts
+// as abandoned rather than as another process's save still in progress.
+const unfinishedGrace = time.Hour
+
+// pruneUnfinished removes the directories of saves that never completed.
+//
+// A save that was killed partway leaves output but no manifest, and List only knows runs
+// by their manifest — so the loop above, which walks List, would keep such a directory
+// forever, outside KeepRuns and invisible to everything that reads the archive.
+func pruneUnfinished(base string) int {
+	entries, err := os.ReadDir(runsDir(base))
+	if err != nil {
+		return 0
+	}
+	removed := 0
+	for _, e := range entries {
+		dir := filepath.Join(runsDir(base), e.Name())
+		if !e.IsDir() || exists(filepath.Join(dir, "manifest.json")) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || time.Since(info.ModTime()) < unfinishedGrace {
+			continue
+		}
+		if os.RemoveAll(dir) == nil {
+			removed++
+		}
+	}
+	return removed
 }
 
 // Flake is a task that has both passed and failed at the same commit, invoked the same way.
@@ -836,7 +958,7 @@ func Flaky(base, project string) []Flake {
 			if e.Status != "Ok" && e.Status != "Failed" {
 				continue
 			}
-			k := key{e.Name, task.JoinArgs(m.Args), m.Commit}
+			k := key{e.Name, shellwords.Join(m.Args), m.Commit}
 			f, ok := seen[k]
 			if !ok {
 				f = &Flake{Task: e.Name, Args: m.Args, Commit: m.Commit}
@@ -866,7 +988,7 @@ func Flaky(base, project string) []Flake {
 		if out[i].Task != out[j].Task {
 			return out[i].Task < out[j].Task
 		}
-		return task.JoinArgs(out[i].Args) < task.JoinArgs(out[j].Args)
+		return shellwords.Join(out[i].Args) < shellwords.Join(out[j].Args)
 	})
 	return out
 }
@@ -877,7 +999,7 @@ func Flaky(base, project string) []Flake {
 // written down — so the report and the timeline that marks its rows cannot drift into two
 // ideas of what same means.
 func QuestionKey(commit string, args []string) string {
-	return commit + "\x00" + task.JoinArgs(args)
+	return commit + "\x00" + shellwords.Join(args)
 }
 
 // Question is this point's key, for matching it against a flake.
@@ -895,7 +1017,7 @@ func (f Flake) Invocation() string {
 	if len(f.Args) == 0 {
 		return ""
 	}
-	return task.JoinArgs(f.Args)
+	return shellwords.Join(f.Args)
 }
 
 // Short is the commit, abbreviated for display.

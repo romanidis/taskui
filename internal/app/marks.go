@@ -79,14 +79,7 @@ func (a *App) RunMarked() {
 		return
 	}
 
-	room := MaxSlots - a.openSlots()
-	for _, name := range names {
-		// A task already in a slot does not need one.
-		if a.liveSlot(name) {
-			room++
-		}
-	}
-	if room <= 0 {
+	if !a.anyStartable(names) {
 		a.Status = fmt.Sprintf("every slot is taken — ⇧X closes one (%d marked)", len(names))
 		return
 	}
@@ -97,10 +90,8 @@ func (a *App) RunMarked() {
 	if a.Confirm == nil {
 		var dangerous []string
 		for _, name := range names {
-			for _, t := range a.Tasks {
-				if t.Name == name && t.Dangerous {
-					dangerous = append(dangerous, name)
-				}
+			if a.isDangerous(name) {
+				dangerous = append(dangerous, name)
 			}
 		}
 		if len(dangerous) > 0 {
@@ -114,17 +105,32 @@ func (a *App) RunMarked() {
 		}
 	}
 	a.Confirm = nil
-	a.startMarked(names, room)
+	a.startMarked(names)
+}
+
+// anyStartable reports whether any of names is not running yet and would find a slot.
+// Only a live task is left alone: one in a finished slot reuses it.
+func (a *App) anyStartable(names []string) bool {
+	for _, name := range names {
+		if !a.liveSlot(name) && a.slotAvailable(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // startMarked is the part that actually runs things, past every question.
-func (a *App) startMarked(names []string, room int) {
+//
+// Each task is asked about as it comes rather than against a count taken up front: the
+// count kept disagreeing with what claiming a slot actually does, and "started 1 task"
+// with nothing started was the result.
+func (a *App) startMarked(names []string) {
 	started, skipped := 0, 0
 	for _, name := range names {
 		if a.liveSlot(name) {
 			continue
 		}
-		if started >= room {
+		if !a.slotAvailable(name) {
 			skipped++
 			continue
 		}
@@ -201,16 +207,10 @@ func (a *App) RerunFailed() {
 		return
 	}
 
-	room := MaxSlots - a.openSlots()
-	for _, name := range failed {
-		if a.liveSlot(name) {
-			room++
-		}
-	}
-	if room <= 0 {
+	if !a.anyStartable(failed) {
 		a.Status = fmt.Sprintf("every slot is taken — ⇧X closes one (%s failed)",
 			plural(len(failed), "1 task", fmt.Sprintf("%d tasks", len(failed))))
 		return
 	}
-	a.startMarked(failed, room)
+	a.startMarked(failed)
 }

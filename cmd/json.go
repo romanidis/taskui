@@ -75,14 +75,18 @@ func printTaskList(out io.Writer, root string, tasks []task.Task) error {
 
 	page := listing{Project: root, Tasks: make([]taskJSON, 0, len(tasks))}
 	for _, t := range tasks {
+		d, known := details[t.Name]
+		if known {
+			t = t.With(d)
+		}
 		entry := taskJSON{
 			Name:      t.Name,
 			Desc:      t.Desc,
 			Aliases:   t.Aliases,
 			Dangerous: t.Dangerous,
 		}
-		if d, ok := details[t.Name]; ok {
-			entry.Taskfile, entry.Line, entry.UpToDate = d.Where.File, d.Where.Line, d.UpToDate
+		if known {
+			entry.Taskfile, entry.Line, entry.UpToDate = t.Where.File, t.Where.Line, d.UpToDate
 		}
 		if o, ok := outcomes[t.Name]; ok {
 			entry.Last = &outcomeJSON{Ok: o.Ok, When: o.WhenUnix}
@@ -139,17 +143,8 @@ func streamRun(out io.Writer, dir, target string, argv []string) error {
 	sink.Lines = true
 
 	// A front end that started this stream stops it by signalling the process — `jobstop`
-	// in Neovim, ^C at a shell. Without a handler that kills taskui and leaves `task` and
-	// everything under it running, because the child is a session leader of its own: the
-	// property that lets the group be reaped is the same one that lets it survive us.
-	stopping := make(chan os.Signal, 1)
-	signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(stopping)
-	go func() {
-		if _, ok := <-stopping; ok {
-			r.Cancel()
-		}
-	}()
+	// in Neovim, ^C at a shell.
+	defer stopOnSignal(r)()
 
 	deltas := events.NewDeltas()
 	deltas.Start(sink, r, dir)
@@ -180,6 +175,30 @@ func streamRun(out io.Writer, dir, target string, argv []string) error {
 		return exitWith(exit)
 	}
 	return nil
+}
+
+// stopOnSignal stops r when taskui is interrupted or terminated, and returns the function
+// that stops listening.
+//
+// Every headless run needs it. Without a handler a signal kills taskui and leaves `task` and
+// everything under it running, because the child is a session leader of its own: the
+// property that lets the group be reaped is the same one that lets it survive us. Only
+// `--run --json` had one, so `kill` on a plain `--run` left its `sleep` behind.
+func stopOnSignal(r *run.Run) func() {
+	stopping := make(chan os.Signal, 1)
+	signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-stopping:
+			r.Cancel()
+		case <-done:
+		}
+	}()
+	return func() {
+		signal.Stop(stopping)
+		close(done)
+	}
 }
 
 // nopCloser lets a plain writer stand in for the closer a sink owns: stdout is not ours to

@@ -783,3 +783,103 @@ func TestARunRecordsTheRepositoryItsDirectoryBelongsTo(t *testing.T) {
 		t.Errorf("RepoOf outside a checkout = %q", got)
 	}
 }
+
+// Everything that changes what a re-run does, or what the log is, has to survive the trip.
+func TestALoadedRunKeepsHowItWasInvokedAndWhatItDropped(t *testing.T) {
+	base := t.TempDir()
+	r := finishedRun("all")
+	r.Force, r.Interactive = true, true
+	r.Tasks["child"].Dropped = 4000
+	r.Duration, r.HasDuration = 3*time.Second, true
+	if _, err := Save(base, "/proj", r); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Load(base, List(base)[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Force || !got.Interactive {
+		t.Errorf("force = %v, interactive = %v", got.Force, got.Interactive)
+	}
+	if got.Tasks["child"].Dropped != 4000 {
+		t.Errorf("dropped = %d", got.Tasks["child"].Dropped)
+	}
+	if since := time.Since(got.Started); since < 3*time.Second || since > time.Minute {
+		t.Errorf("started %v ago, want when the run began", since)
+	}
+}
+
+func TestTasksThatDifferOnlyInCaseKeepTheirOwnOutput(t *testing.T) {
+	base := t.TempDir()
+	r := run.Detached("all", run.GraphFrom(
+		run.Edge{Parent: "all", Children: []string{"Build", "build"}},
+		run.Edge{Parent: "Build"}, run.Edge{Parent: "build"},
+	))
+	r.Feed("Build", "from upper")
+	r.Feed("build", "from lower")
+	r.Finish(0)
+	if _, err := Save(base, "/proj", r); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Load(base, List(base)[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"Build": "from upper", "build": "from lower"} {
+		if lines := got.Tasks[name].Lines; len(lines) != 1 || lines[0].Plain != want {
+			t.Errorf("%s = %v, want %q", name, lines, want)
+		}
+	}
+}
+
+func TestAnIDThatIsTakenIsNeverShared(t *testing.T) {
+	base := t.TempDir()
+	if err := os.MkdirAll(runsDir(base), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Another process got there first and has not written its manifest yet — the case an
+	// existence check on the manifest, or on nothing, would hand out twice.
+	if err := os.Mkdir(RunDir(base, "100-all"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	id, err := claimID(base, "100-all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "100-all.01" {
+		t.Errorf("id = %q", id)
+	}
+}
+
+func TestAnAbandonedSaveIsPruned(t *testing.T) {
+	base := t.TempDir()
+	if _, err := Save(base, "/proj", finishedRun("all")); err != nil {
+		t.Fatal(err)
+	}
+	abandoned := RunDir(base, "100-dead")
+	inProgress := RunDir(base, "200-live")
+	for _, dir := range []string{abandoned, inProgress} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-2 * unfinishedGrace)
+	if err := os.Chtimes(abandoned, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Prune(base, KeepRuns); err != nil {
+		t.Fatal(err)
+	}
+	if exists(abandoned) {
+		t.Error("a save with no manifest, long abandoned, should be removed")
+	}
+	if !exists(inProgress) {
+		t.Error("a save still being written by someone else must be left alone")
+	}
+	if len(List(base)) != 1 {
+		t.Errorf("the finished run should be untouched: %v", List(base))
+	}
+}

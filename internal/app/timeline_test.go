@@ -11,6 +11,7 @@ import (
 	"github.com/romanidis/taskui/internal/pivot"
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/store"
+	"github.com/romanidis/taskui/internal/task"
 )
 
 // archived saves a finished run of one task into the app's own state directory, aged so
@@ -676,5 +677,47 @@ func TestADiffWithNoLocationsSaysSo(t *testing.T) {
 	}
 	if !strings.Contains(a.Status, "anywhere in this diff") {
 		t.Errorf("status = %q", a.Status)
+	}
+}
+
+// A task defined in `site/Taskfile.yml` runs in `site/`, and `src/index.ts` from it means
+// `site/src/index.ts` — even with a `src/index.ts` at the root.
+func TestPressingEReadsThePathFromWhereTheTaskRan(t *testing.T) {
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "vim")
+	root := t.TempDir()
+	for _, f := range []string{"src/index.ts", "site/src/index.ts", "site/Taskfile.yml"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, f), []byte("x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := New(pivot.Fixture([]string{"site:build"}), root)
+	a.SetStateDir(t.TempDir())
+	a.Details = map[string]task.Detail{
+		"site:build": {Where: task.Where{File: filepath.Join(root, "site/Taskfile.yml"), Line: 3}},
+	}
+	r := run.Detached("site:build", run.GraphFrom(run.Edge{Parent: "site:build"}))
+	r.Feed("site:build", "src/index.ts:3:1: error TS2304")
+	r.Finish(1)
+	a.OpenRunForTest(r)
+	a.Screen = ScreenRun
+	a.RunExpand("site:build")
+	a.RebuildRunRows()
+	for i, row := range a.RunRows {
+		if !row.IsTask {
+			a.RunCursor = i
+		}
+	}
+	press(a, Char('e'))
+
+	editor, ok := a.TakeEdit()
+	if !ok {
+		t.Fatalf("no editor was asked for — status %q", a.Status)
+	}
+	if want := filepath.Join(root, "site/src/index.ts"); editor.Args[len(editor.Args)-1] != want {
+		t.Errorf("opened %s, want %s", editor.Args[len(editor.Args)-1], want)
 	}
 }

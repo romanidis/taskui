@@ -92,6 +92,11 @@ func (a *App) OpenProfile() {
 	a.ProfileRows = a.Profile()
 	a.ProfileCursor = 0
 	a.ProfileOffset = 0
+	// Opened on a finished run, these figures are already the final ones.
+	a.profileFinal = nil
+	if a.Run.Finished() {
+		a.profileFinal = a.Run
+	}
 	a.profileReturn = a.Screen
 	a.Screen = ScreenProfile
 	a.Status = ""
@@ -110,8 +115,17 @@ func (a *App) OpenProfile() {
 // overtake each other as the numbers move, and an index-holding cursor would drift onto
 // whatever happened to slide underneath it.
 func (a *App) refreshProfile() {
-	if a.Screen != ScreenProfile || a.Run == nil || a.Run.Finished() {
+	if a.Screen != ScreenProfile || a.Run == nil {
 		return
+	}
+	// Once more after the run ends, and only once: the poll that finishes a run is the one
+	// that settles its last task, and a profile that stopped a poll early went on showing
+	// that task as running, at the time it had one tick before.
+	if a.Run.Finished() {
+		if a.profileFinal == a.Run {
+			return
+		}
+		a.profileFinal = a.Run
 	}
 	on := ""
 	if cost, ok := a.SelectedCost(); ok {

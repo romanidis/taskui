@@ -1,16 +1,20 @@
 package run
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/romanidis/taskui/internal/graph"
+	"github.com/romanidis/taskui/internal/redact"
+	"github.com/romanidis/taskui/internal/task"
 )
 
 func one(t *testing.T, text string) LineEvent {
@@ -826,5 +830,221 @@ func TestUnderCommandTiesOutputToItsCommand(t *testing.T) {
 	loose := &TaskRun{Lines: []Line{newLine("task: up to date", false)}}
 	if under, _ := loose.UnderCommand(0); under {
 		t.Error("a line with no command above it claimed one")
+	}
+}
+
+// A called task's own `env:` and the Taskfile's top-level `env:` both reach the commands,
+// and neither is in the root's `--summary` — the second is in nobody's.
+func TestSecretsTheRootsSummaryNeverShowsAreStillMasked(t *testing.T) {
+	needsGoTask(t)
+	dir := taskfile(t, `version: "3"
+env:
+  ROOT_TOKEN: rootsecret123
+tasks:
+  all:
+    cmds:
+      - task: child
+  child:
+    env:
+      API_TOKEN: childsecret456
+    cmds:
+      - echo "$API_TOKEN $ROOT_TOKEN"
+`)
+
+	r, err := Start(dir, "all", nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pollUntil(r, 15*time.Second, r.Finished)
+
+	var out []string
+	for _, task := range r.Tasks {
+		for _, l := range task.Lines {
+			out = append(out, l.Raw, l.Plain)
+		}
+	}
+	text := strings.Join(out, "\n")
+	for _, secret := range []string{"rootsecret123", "childsecret456"} {
+		if strings.Contains(text, secret) {
+			t.Errorf("%s leaked:\n%s", secret, text)
+		}
+	}
+	if !strings.Contains(text, redact.Marker+" "+redact.Marker) {
+		t.Errorf("expected both values masked:\n%s", text)
+	}
+}
+
+func TestASecretSplitByAColourEscapeIsMaskedInBothForms(t *testing.T) {
+	redactor := redact.New([]string{"sk-abcdef123456"})
+	// grep --color highlighting the `sk-` it was asked for.
+	got := newLine(mask(redactor, "KEY=\x1b[01;31msk-\x1b[mabcdef123456"), false)
+	for _, form := range []string{got.Raw, got.Plain} {
+		if strings.Contains(form, "abcdef123456") {
+			t.Errorf("secret survived: %q", form)
+		}
+	}
+	if got.Plain != "KEY="+redact.Marker {
+		t.Errorf("plain = %q", got.Plain)
+	}
+}
+
+func TestALineWithNoSecretKeepsItsColour(t *testing.T) {
+	redactor := redact.New([]string{"sk-abcdef123456"})
+	line := "\x1b[32mok\x1b[0m"
+	if got := mask(redactor, line); got != line {
+		t.Errorf("mask = %q", got)
+	}
+}
+
+func TestOutputUnderAnotherSpellingLandsOnTheListedTask(t *testing.T) {
+	r := Detached("all", graph.New())
+	r.apply(Naming{Names: task.Names{"b": "build", "dev:default": "dev"}})
+	r.apply(GraphReady{Graph: GraphFrom(
+		Edge{Parent: "all", Children: []string{"b", "dev"}},
+		Edge{Parent: "b"}, Edge{Parent: "dev"},
+	)})
+	r.apply(LineEvent{Task: "build", Raw: "building"})
+	r.apply(LineEvent{Task: "dev:default", Raw: "serving"})
+
+	if _, ok := r.Tasks["b"]; ok {
+		t.Error("the alias should not be a task of its own")
+	}
+	for name, want := range map[string]string{"build": "building", "dev": "serving"} {
+		if lines := r.Tasks[name].Lines; len(lines) != 1 || lines[0].Plain != want {
+			t.Errorf("%s = %v", name, lines)
+		}
+	}
+	if _, ok := r.Tasks["dev:default"]; ok {
+		t.Error("dev:default is listed as dev and should not get a row of its own")
+	}
+}
+
+func TestTheRootKeepsTheSpellingItWasInvokedBy(t *testing.T) {
+	r := Detached("b", graph.New())
+	r.apply(Naming{Names: task.Names{"b": "build"}})
+	r.apply(GraphReady{Graph: GraphFrom(Edge{Parent: "b"})})
+	r.apply(LineEvent{Task: "build", Raw: "building"})
+	if lines := r.Tasks["b"].Lines; len(lines) != 1 {
+		t.Errorf("root lines = %v; tasks = %v", lines, r.Tasks)
+	}
+}
+
+// `dev` → `dev:all`, which is internal, so the graph stops there; the servers behind it
+// print regardless.
+func TestTasksTheGraphNeverReachedRunUnderTheRoot(t *testing.T) {
+	r := Detached("dev", GraphFrom(
+		Edge{Parent: "dev", Children: []string{"dev:all"}},
+		Edge{Parent: "dev:all"},
+	))
+	r.Feed("dev:backend", "listening on :8080")
+	r.Feed("site:dev", "hugo server")
+	r.Feed("dev:backend", "GET /")
+
+	if got := r.Tasks["dev"].Status; got != Running {
+		t.Errorf("the root is what is running them: %v", got)
+	}
+	for _, name := range []string{"dev:backend", "site:dev"} {
+		if got := r.Tasks[name].Status; got != Running {
+			t.Errorf("%s = %v; one server speaking says nothing about the other", name, got)
+		}
+	}
+	if !slices.Contains(r.Graph.Children("dev"), "site:dev") {
+		t.Errorf("strays should hang off the root: %v", r.Graph.Edges)
+	}
+}
+
+// Stopping while the graph is still resolving has no process to signal. It has to keep the
+// process from ever existing instead, or `x` pressed in the first second does nothing and
+// the task runs to the end.
+func TestAStopBeforeTheChildStartsMeansItNeverStarts(t *testing.T) {
+	needsGoTask(t)
+	dir := taskfile(t, "version: \"3\"\ntasks:\n  mark:\n    cmds: ['touch ran']\n")
+	r := &Run{Root: "mark", Tasks: map[string]*TaskRun{}, events: &queue{}}
+	r.Cancel()
+
+	if err := r.capture(dir, redact.Empty()); !errors.Is(err, errStoppedBeforeStart) {
+		t.Fatalf("capture = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ran")); err == nil {
+		t.Error("the task ran after being stopped")
+	}
+}
+
+func TestStoppingDuringResolutionEndsTheRun(t *testing.T) {
+	needsGoTask(t)
+	dir := taskfile(t, "version: \"3\"\ntasks:\n  all:\n    cmds: [{task: mark}]\n  mark:\n    cmds: ['touch ran']\n")
+	r, err := Start(dir, "all", nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Cancel()
+	pollUntil(r, 15*time.Second, r.Finished)
+
+	if !r.Finished() || r.Exit != -1 || !r.Cancelled() {
+		t.Errorf("finished = %v, exit = %d, cancelled = %v", r.Finished(), r.Exit, r.Cancelled())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ran")); err == nil {
+		t.Error("the task ran after being stopped")
+	}
+}
+
+// A signal handler stops the run from its own goroutine while the main one polls, which is
+// what `--run` under ^C does. Worth running under -race; the reviewer's report of Cancel
+// reading HasExit as Poll wrote it came from a driver like this one.
+func TestStoppingFromAnotherGoroutineIsSafe(t *testing.T) {
+	needsGoTask(t)
+	dir := taskfile(t, "version: \"3\"\ntasks:\n  sleeper:\n    cmds: ['echo started', 'sleep 30']\n")
+	r, err := Start(dir, "sleeper", nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pollUntil(r, 15*time.Second, func() bool {
+		task, ok := r.Tasks["sleeper"]
+		return ok && len(task.Lines) > 0
+	})
+	go r.Cancel()
+	pollUntil(r, 10*time.Second, r.Finished)
+	if !r.Finished() || !r.Cancelled() {
+		t.Errorf("finished = %v, cancelled = %v", r.Finished(), r.Cancelled())
+	}
+}
+
+// go-task's prefixer holds a line until its newline, so a long one arrives as hundreds of
+// reads with no newline among them. Reprocessing everything held on every read made that
+// quadratic: a 3MB line took ten seconds.
+func TestAVeryLongLineIsCapturedInLinearTime(t *testing.T) {
+	needsGoTask(t)
+	const size = 3_000_000
+	cmd := fmt.Sprintf(`head -c %d /dev/zero | tr '\0' a; echo`, size)
+	dir := taskfile(t, fmt.Sprintf("version: \"3\"\ntasks:\n  blob:\n    cmds: [%q]\n", cmd))
+	began := time.Now()
+	r, err := Start(dir, "blob", nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pollUntil(r, 30*time.Second, r.Finished)
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("took %v", took)
+	}
+	got := 0
+	for _, l := range r.Tasks["blob"].Lines {
+		if !l.IsCommand {
+			got += strings.Count(l.Plain, "a")
+		}
+	}
+	if got != size {
+		t.Errorf("captured %d of %d bytes", got, size)
+	}
+}
+
+func TestABreakLeavesRoomForASecretStillArriving(t *testing.T) {
+	r := redact.New([]string{"sk-abcdef123456"})
+	pending := []byte(strings.Repeat("x", 100) + "sk-abc")
+	cut, ok := breakAt(r, pending)
+	if !ok {
+		t.Fatal("there is room to break")
+	}
+	if cut > 100 {
+		t.Errorf("cut = %d: the start of a secret still arriving would go out unmasked", cut)
 	}
 }

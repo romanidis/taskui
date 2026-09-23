@@ -56,6 +56,27 @@ func (g Graph) Concurrent(a, b string) bool {
 	return false
 }
 
+// Renamed is g with every task spelled the way name spells it. Two spellings of one task —
+// an edge to the alias `b` and another to `build` — become one node.
+func (g Graph) Renamed(name func(string) string) Graph {
+	out := New()
+	rename := func(from, to map[string][]string) {
+		for parent, children := range from {
+			p := name(parent)
+			kept := to[p]
+			for _, c := range children {
+				if c = name(c); !slices.Contains(kept, c) {
+					kept = append(kept, c)
+				}
+			}
+			to[p] = kept
+		}
+	}
+	rename(g.Edges, out.Edges)
+	rename(g.Deps, out.Deps)
+	return out
+}
+
 func (g Graph) Children(task string) []string {
 	return g.Edges[task]
 }
@@ -102,8 +123,53 @@ type section int
 const (
 	sectionNone section = iota
 	sectionDeps
-	sectionCmds
 )
+
+// commandsHeading opens the last section `--summary` prints. Nothing follows it, which is
+// what lets everything after it be read as commands however it looks.
+const commandsHeading = "commands:"
+
+// summaryCommands splits what follows `commands:` into one entry per command.
+//
+// Each command is a ` - ` item, but a multi-line one carries on with its continuation lines
+// printed at the margin — ` - echo one`, then `echo two` — so a line that is not an item is
+// the command before it going on, not the end of the section. Reading it as the end is what
+// lost every `Task:` edge after the first multi-line command: the run tree went without
+// them and `--lint` reported gaps that were not there.
+//
+// A blank line inside a block is part of it. The ones at the end of a block are the block's
+// own trailing newline and go-task's separator, and are dropped.
+//
+// The text form cannot say everything. A continuation line that itself starts with ` - `
+// reads as a new item, and nothing here can tell it apart; this is the case the shape of the
+// output leaves ambiguous, not one the parser gets wrong.
+func summaryCommands(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		line = strings.TrimRight(line, " \t\r")
+		if item, ok := strings.CutPrefix(line, " - "); ok {
+			out = append(out, item)
+			continue
+		}
+		if len(out) > 0 {
+			out[len(out)-1] += "\n" + line
+		}
+	}
+	for i := range out {
+		out[i] = strings.TrimRight(out[i], "\n")
+	}
+	return out
+}
+
+// taskCall is the task a command calls, when it is `Task: <name>` rather than shell. A
+// call is always one line, so a multi-line command is shell whatever its first line says.
+func taskCall(command string) (string, bool) {
+	name, ok := strings.CutPrefix(command, "Task: ")
+	if !ok || strings.Contains(name, "\n") {
+		return "", false
+	}
+	return strings.TrimSpace(name), true
+}
 
 // parseSummary returns a task's direct edges, dependencies first (go-task runs those
 // before the commands), and separately the dependencies on their own.
@@ -117,15 +183,21 @@ func parseSummary(text string) ([]string, []string) {
 	deps := []string{}
 	var cmds []string
 
-	for line := range strings.SplitSeq(text, "\n") {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
 		trimmed := strings.TrimRight(line, " \t\r")
 		switch strings.TrimSpace(trimmed) {
 		case "dependencies:":
 			at = sectionDeps
 			continue
-		case "commands:":
-			at = sectionCmds
-			continue
+		case commandsHeading:
+			// Under `commands:` only `Task: x` entries are edges; the rest are shell.
+			for _, c := range summaryCommands(lines[i+1:]) {
+				if name, ok := taskCall(c); ok {
+					cmds = append(cmds, name)
+				}
+			}
+			return append(append([]string{}, deps...), cmds...), deps
 		}
 
 		// Items are ` - <thing>`. Anything else — the env dump, the description, blank
@@ -137,17 +209,9 @@ func parseSummary(text string) ([]string, []string) {
 			}
 			continue
 		}
-
-		switch at {
-		case sectionNone:
-			// An item outside either section is not an edge.
-		case sectionDeps:
+		// An item outside `dependencies:` is not an edge.
+		if at == sectionDeps {
 			deps = append(deps, strings.TrimSpace(item))
-		case sectionCmds:
-			// Under `commands:` only `Task: x` entries are edges; the rest are shell.
-			if name, ok := strings.CutPrefix(strings.TrimSpace(item), "Task: "); ok {
-				cmds = append(cmds, strings.TrimSpace(name))
-			}
 		}
 	}
 
@@ -207,7 +271,6 @@ const (
 	detailSecrets
 	detailRequires
 	detailDependencies
-	detailCommands
 )
 
 // parseDetail turns `task --summary` into something showable.
@@ -225,7 +288,7 @@ func parseDetail(text string) Detail {
 		lines = lines[1:]
 	}
 
-	for _, line := range lines {
+	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		// Inside `requires:` the names nest under their own `vars:` sub-heading, which
 		// must not be mistaken for the top-level one.
@@ -242,9 +305,11 @@ func parseDetail(text string) Detail {
 		case "dependencies:":
 			at = detailDependencies
 			continue
-		case "commands:":
-			at = detailCommands
-			continue
+		case commandsHeading:
+			// Commands keep their shape: a multi-line shell block is one command, and
+			// reflowing it would misrepresent what runs.
+			d.Commands = summaryCommands(lines[i+1:])
+			return d
 		}
 
 		switch at {
@@ -262,12 +327,6 @@ func parseDetail(text string) Detail {
 		case detailDependencies:
 			if name, ok := strings.CutPrefix(trimmed, "- "); ok {
 				d.Dependencies = append(d.Dependencies, strings.TrimSpace(name))
-			}
-		case detailCommands:
-			// Commands keep their shape: a multi-line shell block is one command, and
-			// reflowing it would misrepresent what runs.
-			if right := strings.TrimRight(line, " \t\r"); right != "" {
-				d.Commands = append(d.Commands, strings.TrimPrefix(right, " - "))
 			}
 		}
 	}
@@ -294,16 +353,16 @@ func Resolve(dir, root string) Graph {
 	return g
 }
 
-// ResolveDetailed is Resolve, but also hands back the root task's raw `--summary` text.
+// ResolveDetailed is Resolve, but also hands back the raw `--summary` text of every task
+// in the graph.
 //
-// That text contains the resolved environment — which is exactly what the redactor needs
-// in order to know what to mask. It is returned rather than stored so the caller is forced
+// That text contains each task's environment — which is exactly what the redactor needs
+// in order to know what to mask. Every task's, not only the root's: `all` calling a
+// `deploy` whose own `env:` holds the token prints that token from `deploy`, and the root's
+// summary never mentions it. It is returned rather than stored so the caller is forced
 // to decide what happens to it; it must not be persisted or displayed.
 func ResolveDetailed(dir, root string) (Graph, string) {
-	// The root's own summary is wanted verbatim, so it is fetched here; everything below
-	// it is resolved concurrently.
-	rootSummary := summaryOf(dir, root)
-	return resolveParallel(root, dir), rootSummary
+	return resolveParallel(root, dir)
 }
 
 // lanes is enough to hide the latency without spawning a process per task in a wide graph.
@@ -319,8 +378,9 @@ const lanes = 8
 // Tasks are memoised and revisits short-circuit, so a diamond (`all` reaching `lint` and
 // `check`, both reaching `backend:*`) costs one call per node, and a cycle terminates
 // instead of spinning.
-func resolveParallel(root, dir string) Graph {
+func resolveParallel(root, dir string) (Graph, string) {
 	g := New()
+	var summaries strings.Builder
 	frontier := []string{root}
 
 	for len(frontier) > 0 {
@@ -332,15 +392,19 @@ func resolveParallel(root, dir string) Graph {
 
 			results := make([][]string, len(batch))
 			depResults := make([][]string, len(batch))
+			texts := make([]string, len(batch))
 			var wg sync.WaitGroup
 			for i, task := range batch {
 				wg.Go(func() {
-					results[i], depResults[i] = parseSummary(summaryOf(dir, task))
+					texts[i] = summaryOf(dir, task)
+					results[i], depResults[i] = parseSummary(texts[i])
 				})
 			}
 			wg.Wait()
 
 			for i, task := range batch {
+				summaries.WriteString(texts[i])
+				summaries.WriteString("\n")
 				for _, c := range results[i] {
 					if _, known := g.Edges[c]; !known && !contains(next, c) {
 						next = append(next, c)
@@ -363,7 +427,7 @@ func resolveParallel(root, dir string) Graph {
 		}
 	}
 
-	return g
+	return g, summaries.String()
 }
 
 func contains(haystack []string, needle string) bool {

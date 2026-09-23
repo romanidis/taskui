@@ -15,11 +15,13 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/romanidis/taskui/internal/loc"
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/store"
+	"github.com/romanidis/taskui/internal/task"
 )
 
 // printQuickfix is `--quickfix`: the most recent stored run of this project, as an error
@@ -51,12 +53,20 @@ func printQuickfix(out io.Writer, root, only string) error {
 // and its status stops mattering: you asked for that one.
 func writeQuickfix(out io.Writer, r *run.Run, dir, only string) int {
 	resolver := loc.NewResolver(dir)
+	// Where each task ran, so a path it printed is read from there — the same answer the
+	// `e` key gets. A project go-task cannot list resolves against the root, as it always
+	// did.
+	defined := task.ReadProject(dir).Files
 	written := 0
 
 	for _, name := range interesting(r, only) {
 		task := r.Tasks[name]
 		if task == nil {
 			continue
+		}
+		ranIn := ""
+		if f, ok := defined[name]; ok {
+			ranIn = filepath.Dir(f)
 		}
 		for _, line := range task.Lines {
 			// go-task's own echo of the command is structure, not a report. It routinely
@@ -66,7 +76,7 @@ func writeQuickfix(out io.Writer, r *run.Run, dir, only string) int {
 				continue
 			}
 			for _, ref := range loc.All(line.Plain) {
-				path, ambiguous, ok := resolver.Resolve(ref.Path)
+				path, ambiguous, ok := resolver.ResolveIn(ranIn, ref.Path)
 				// Ambiguous is a guess, and a guess in a list you walk without looking is
 				// worse than a shorter list: `]q` lands you in a file you have never seen
 				// and you spend the next minute working out why.

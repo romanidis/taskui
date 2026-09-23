@@ -63,8 +63,13 @@ func isNoise(root, path string) bool {
 type Watch struct {
 	watcher *fsnotify.Watcher
 	// Settle collapses the burst a single save produces.
-	Settle       time.Duration
+	Settle time.Duration
+	// MaxWait is the longest a change is held back by further changes. Settle alone
+	// restarts on every event, so something that never stops writing — a dev server's log
+	// in the tree — kept a watch from ever firing.
+	MaxWait      time.Duration
 	pendingSince time.Time
+	firstSince   time.Time
 	LastChanged  string
 	// names, when set, is the file names this watch is about — everything else in the
 	// directories it registered is ignored.
@@ -84,7 +89,7 @@ func Start(dir string) (*Watch, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := &Watch{watcher: watcher, Settle: 400 * time.Millisecond, root: dir}
+	w := &Watch{watcher: watcher, Settle: 400 * time.Millisecond, MaxWait: 5 * time.Second, root: dir}
 	if err := w.addTree(dir); err != nil {
 		_ = watcher.Close()
 		return nil, err
@@ -108,7 +113,7 @@ func Files(paths []string) (*Watch, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := &Watch{watcher: watcher, Settle: 400 * time.Millisecond, names: map[string]bool{}}
+	w := &Watch{watcher: watcher, Settle: 400 * time.Millisecond, MaxWait: 5 * time.Second, names: map[string]bool{}}
 	dirs := map[string]bool{}
 	for _, path := range paths {
 		if path == "" {
@@ -163,6 +168,11 @@ drain:
 			if !ok {
 				return "", false
 			}
+			// A permission or timestamp change is not an edit, and some tools — and
+			// Spotlight — touch metadata constantly.
+			if event.Op == fsnotify.Chmod {
+				continue
+			}
 			// A named watch answers for its own files and nothing else — including the
 			// editor droppings beside them, which never match a name it was given.
 			if w.names != nil {
@@ -183,8 +193,15 @@ drain:
 			}
 			w.LastChanged = event.Name
 			sawAny = true
-		case <-w.watcher.Errors:
-			continue
+		case err, ok := <-w.watcher.Errors:
+			// An overflow means events were lost, and a lost event is a change nobody
+			// saw: treat it as one rather than trust a quiet that is not real.
+			if ok && err != nil {
+				sawAny = true
+				if w.LastChanged == "" {
+					w.LastChanged = "something"
+				}
+			}
 		default:
 			break drain
 		}
@@ -192,13 +209,17 @@ drain:
 
 	if sawAny {
 		w.pendingSince = time.Now()
-		return "", false
+		if w.firstSince.IsZero() {
+			w.firstSince = w.pendingSince
+		}
 	}
 	if w.pendingSince.IsZero() {
 		return "", false
 	}
-	if time.Since(w.pendingSince) >= w.Settle {
-		w.pendingSince = time.Time{}
+	settled := !sawAny && time.Since(w.pendingSince) >= w.Settle
+	overdue := w.MaxWait > 0 && time.Since(w.firstSince) >= w.MaxWait
+	if settled || overdue {
+		w.pendingSince, w.firstSince = time.Time{}, time.Time{}
 		return w.LastChanged, w.LastChanged != ""
 	}
 	return "", false

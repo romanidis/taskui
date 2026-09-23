@@ -8,6 +8,7 @@ import (
 
 	"github.com/romanidis/taskui/internal/pivot"
 	"github.com/romanidis/taskui/internal/run"
+	"github.com/romanidis/taskui/internal/shellwords"
 	"github.com/romanidis/taskui/internal/store"
 	"github.com/romanidis/taskui/internal/task"
 )
@@ -254,7 +255,7 @@ func TestThePromptOpensOnWhatYouRanLastTime(t *testing.T) {
 		t.Errorf("cursor = %d, want the end of the line", a.ArgsCursor)
 	}
 	// And it splits back into what was actually run, not into four arguments.
-	if got := task.SplitArgs(a.ArgsInput); len(got) != 2 || got[1] != "My Post Title" {
+	if got := shellwords.Split(a.ArgsInput); len(got) != 2 || got[1] != "My Post Title" {
 		t.Errorf("splits to %q", got)
 	}
 

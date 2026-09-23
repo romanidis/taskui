@@ -1668,6 +1668,7 @@ internal/store        the archive
 internal/search       one matcher over the live run and the archive both
 internal/diff         Myers, for comparing two runs of one task
 internal/loc          finding `file:line` in output, and how to open it
+internal/shellwords   splitting and joining argument lines the way a shell reads them
 internal/keys         the keymap, as data
 internal/theme        colours, glyphs, animation, and the theme files
 internal/app          state, key handling, rendering

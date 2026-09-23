@@ -130,7 +130,18 @@ func NewResolver(root string) *Resolver { return &Resolver{root: root} }
 //
 // The three results are the absolute path, whether the name was ambiguous, and whether it
 // was found at all.
-func (r *Resolver) Resolve(path string) (string, bool, bool) {
+func (r *Resolver) Resolve(path string) (string, bool, bool) { return r.ResolveIn("", path) }
+
+// ResolveIn is Resolve for a reference printed by a task that ran in dir.
+//
+// A tool prints paths relative to where it ran, and a task in an included Taskfile runs in
+// that Taskfile's directory. `site:build` printing `src/index.ts:3` means `site/src/…`, and
+// trying the project root first opened the root's own `src/index.ts` — silently, and marked
+// unambiguous, because it was an exact match for the wrong question. dir is tried first,
+// and when only the index can answer, a same-named file under dir beats the rest.
+//
+// Empty dir is Resolve.
+func (r *Resolver) ResolveIn(dir, path string) (string, bool, bool) {
 	if path == "" {
 		return "", false, false
 	}
@@ -139,6 +150,11 @@ func (r *Resolver) Resolve(path string) (string, bool, bool) {
 			return path, false, true
 		}
 		return "", false, false
+	}
+	if dir != "" && dir != r.root {
+		if p := filepath.Join(dir, path); isFile(p) {
+			return p, false, true
+		}
 	}
 	// Relative to the project is the overwhelmingly common case, and it is exact — no
 	// index, no ambiguity.
@@ -164,7 +180,30 @@ func (r *Resolver) Resolve(path string) (string, bool, bool) {
 	if suffixed := matchingSuffix(candidates, path); len(suffixed) > 0 {
 		candidates = suffixed
 	}
+	if under := r.under(dir, candidates); len(under) > 0 {
+		candidates = under
+	}
 	return filepath.Join(r.root, candidates[0]), len(candidates) > 1, true
+}
+
+// under keeps the candidates inside dir, which is given absolute and kept relative to the
+// root the index is. Nothing, for a dir outside the project or none at all.
+func (r *Resolver) under(dir string, candidates []string) []string {
+	if dir == "" {
+		return nil
+	}
+	rel, err := filepath.Rel(r.root, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil
+	}
+	prefix := filepath.ToSlash(rel) + "/"
+	var out []string
+	for _, c := range candidates {
+		if strings.HasPrefix(filepath.ToSlash(c), prefix) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // matchingSuffix keeps only the candidates whose path ends at a separator boundary with the

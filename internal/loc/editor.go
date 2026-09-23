@@ -5,7 +5,30 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/romanidis/taskui/internal/shellwords"
 )
+
+// editorWords splits $VISUAL or $EDITOR into the program and its flags.
+//
+// Split the way a shell would, so a quoted path survives: `"/Applications/Sublime
+// Text.app/Contents/SharedSupport/bin/subl" -w` is the documented way to write one. And
+// before that, the whole value is tried as a path, because the undocumented way — the same
+// path, unquoted — is what most people actually paste, and taking it apart at its space
+// asked the system to run `/Applications/Sublime`.
+func editorWords(spec string) []string {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil
+	}
+	if strings.ContainsAny(spec, " \t") {
+		//nolint:gosec // the path is the user's own $EDITOR, only asked whether it exists
+		if info, err := os.Stat(spec); err == nil && !info.IsDir() {
+			return []string{spec}
+		}
+	}
+	return shellwords.Split(spec)
+}
 
 // Editor is the command to open a location, already split into argv.
 type Editor struct {
@@ -51,10 +74,10 @@ func EditorFor(l Loc, abs string) (Editor, bool) {
 	if strings.TrimSpace(spec) == "" {
 		spec = os.Getenv("EDITOR")
 	}
-	if strings.TrimSpace(spec) == "" {
+	fields := editorWords(spec)
+	if len(fields) == 0 {
 		return Editor{}, false
 	}
-	fields := strings.Fields(spec)
 	prog := fields[0]
 	// Copied rather than resliced: every arm below appends to it, and appending to a slice
 	// of `fields` would write into `fields` itself whenever the capacity happened to allow.
@@ -76,17 +99,28 @@ func EditorFor(l Loc, abs string) (Editor, bool) {
 		tail = []string{"+" + line, abs}
 	case "nano", "pico":
 		tail = []string{"+" + line + "," + strconv.Itoa(col), abs}
-	case "emacs", "emacsclient", "mg":
+	case "emacs", "emacsclient":
 		tail = []string{"+" + line + ":" + strconv.Itoa(col), abs}
-	case "micro", "ne", "joe":
+	case "micro", "ne", "joe", "mg":
+		// mg takes `+number` and nothing more: given `+3:2` it opens a new buffer by that
+		// name, which is the failure the default arm below exists to avoid.
 		tail = []string{"+" + line, abs}
-	case "hx", "helix", "kak":
-		// Helix and Kakoune both take the location suffixed to the path.
+	case "hx", "helix":
+		// Helix takes the location suffixed to the path.
 		tail = []string{abs + ":" + line + ":" + strconv.Itoa(col)}
-	case "code", "code-insiders", "codium", "cursor", "zed":
+	case "kak":
+		// Kakoune does not read a suffix off the path — it would open a file named for it
+		// — and takes the position as its own argument instead.
+		tail = []string{"+" + line + ":" + strconv.Itoa(col), abs}
+	case "code", "code-insiders", "codium", "cursor":
 		tail = []string{"--goto", abs + ":" + line + ":" + strconv.Itoa(col)}
-	case "subl", "sublime_text", "atom", "mate":
+	case "zed", "subl", "sublime_text", "atom":
+		// Zed has no `--goto`; like Sublime it reads the position off the path, and an
+		// unknown flag is an error to it rather than something ignored.
 		tail = []string{abs + ":" + line + ":" + strconv.Itoa(col)}
+	case "mate":
+		// TextMate's `mate` takes the line as a flag.
+		tail = []string{"-l", line, abs}
 	case "idea", "goland", "pycharm", "webstorm", "rubymine", "clion", "phpstorm", "rustrover", "fleet":
 		tail = []string{"--line", line, "--column", strconv.Itoa(col), abs}
 	default:

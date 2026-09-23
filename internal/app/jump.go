@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/romanidis/taskui/internal/diff"
@@ -48,11 +49,11 @@ func (a *App) EditUnderCursor() {
 		return
 	}
 	if l, found := loc.First(text); found {
-		a.openLocation(l)
+		a.openLocationFrom(l, task, "")
 		return
 	}
 	if l, note, found := a.fallbackLocation(task); found {
-		a.openLocationFrom(l, note)
+		a.openLocationFrom(l, task, note)
 		return
 	}
 	if a.Screen == ScreenDiff {
@@ -139,17 +140,27 @@ func (a *App) firstLocationIn(task string) (loc.Loc, int, bool) {
 	return loc.Loc{}, 0, false
 }
 
-func (a *App) openLocation(l loc.Loc) { a.openLocationFrom(l, "") }
+// taskDir is where a task runs, as far as taskui can tell: beside the Taskfile that
+// defines it, which is go-task's default for an included one. A task with its own `dir:` is
+// the case this misses — neither listing says what that is — and it falls back to the
+// project root, which is where everything was resolved before.
+func (a *App) taskDir(name string) string {
+	if where, ok := a.WhereIs(name); ok {
+		return filepath.Dir(where.File)
+	}
+	return ""
+}
 
-// openLocationFrom resolves a location and parks the editor command for Update to run.
+// openLocationFrom resolves a location printed by task and parks the editor command for
+// Update to run.
 //
 // Every way this can fail says what it was trying to do. A key that silently does nothing
 // is indistinguishable from a key that is broken, and this one has four separate ways of
 // not working — the file is not there, the name is ambiguous, no editor is configured, or
 // the editor is one whose line-number spelling is unknown.
-func (a *App) openLocationFrom(l loc.Loc, note string) {
+func (a *App) openLocationFrom(l loc.Loc, task, note string) {
 	where := fmt.Sprintf("%s:%d", l.Path, l.Line)
-	abs, ambiguous, ok := a.resolver().Resolve(l.Path)
+	abs, ambiguous, ok := a.resolver().ResolveIn(a.taskDir(task), l.Path)
 	if !ok {
 		a.Status = where + " — no such file under " + baseName(a.Root) + note
 		return
@@ -209,5 +220,5 @@ func (a *App) EditDefinition(name string) {
 		}
 		return
 	}
-	a.openLocationFrom(loc.Loc{Path: where.File, Line: where.Line}, "")
+	a.openLocationFrom(loc.Loc{Path: where.File, Line: where.Line}, name, "")
 }

@@ -1032,6 +1032,11 @@ func TestShiftIReRunsInteractively(t *testing.T) {
 	if a.SendingInput {
 		t.Error("and not typing at the old one")
 	}
+	// The run is live, so restarting it is asked about — and the answer restarts it
+	// interactively, rather than only focusing the run that is stuck.
+	if a.Confirm == nil || a.Confirm.Reason != WouldStopRunning || !a.Confirm.Interactive {
+		t.Errorf("confirm = %+v", a.Confirm)
+	}
 }
 
 // Leaving the run view goes back to the picker without discarding the run — it is still
@@ -1280,5 +1285,24 @@ func TestTheFrameAsksForTheMouseUnlessTurnedOff(t *testing.T) {
 	a.Mouse = false
 	if got := a.View().MouseMode; got != tea.MouseModeNone {
 		t.Errorf("`mouse: off` still asked for %v", got)
+	}
+}
+
+// Typing into a run gives every key to the child. The wheel is not typing: turned into
+// arrows it would move the child's own menu while you scrolled up to read it.
+func TestTheWheelDoesNotReachTheChildWhileTyping(t *testing.T) {
+	a := longRun(t)
+	a.SendingInput = true
+	cursor := a.RunCursor
+
+	a.handleWheel(tea.MouseWheelUp)
+
+	// This run has no pty, so anything sent at it fails — and a failed send is what ends
+	// input mode. Still typing means nothing was sent.
+	if !a.SendingInput {
+		t.Errorf("the wheel was typed at the task: %q", a.Status)
+	}
+	if a.RunCursor != cursor {
+		t.Errorf("cursor moved to %d", a.RunCursor)
 	}
 }

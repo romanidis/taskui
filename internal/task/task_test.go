@@ -127,27 +127,6 @@ func TestTheSameExampleTwiceIsOfferedOnce(t *testing.T) {
 	}
 }
 
-// JoinArgs exists to put a stored argument list back on the prompt, so what matters is
-// that SplitArgs gets the same list back out of it.
-func TestJoiningArgumentsRoundTrips(t *testing.T) {
-	for _, args := range [][]string{
-		{"--", "-p", "ingest"},
-		{"--", "My Post Title"},
-		{"NAME=a b", `quote"inside`, `back\slash`},
-		{"--", ""},
-		{},
-	} {
-		line := JoinArgs(args)
-		got := SplitArgs(line)
-		if len(args) == 0 && len(got) == 0 {
-			continue
-		}
-		if !reflect.DeepEqual(got, args) {
-			t.Errorf("JoinArgs(%q) = %q, which splits back to %q", args, line, got)
-		}
-	}
-}
-
 func TestMinesBareAssignmentConventions(t *testing.T) {
 	x := taskWith("backend:gen:migration", "Scaffold a migration and register it (NAME=add_x)")
 	hint, _ := x.ArgsHint()
@@ -186,40 +165,6 @@ func TestExtractsNoKeysFromADashDashHint(t *testing.T) {
 	for _, in := range []string{`-- "My Post Title"`, "-- -p ingest"} {
 		if got := KeysInHint(in); len(got) != 0 {
 			t.Errorf("KeysInHint(%q) = %v", in, got)
-		}
-	}
-}
-
-// Quoted arguments have to reach go-task intact.
-func TestSplitsArgsLikeAShell(t *testing.T) {
-	for _, c := range []struct {
-		in   string
-		want []string
-	}{
-		{"-- convert report.pdf", []string{"--", "convert", "report.pdf"}},
-		{`-- "My Post Title"`, []string{"--", "My Post Title"}},
-		{"NAME=backend", []string{"NAME=backend"}},
-		{"  spaced   out  ", []string{"spaced", "out"}},
-		{"", []string{}},
-	} {
-		if got := SplitArgs(c.in); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("SplitArgs(%q) = %v, want %v", c.in, got, c.want)
-		}
-	}
-}
-
-func TestQuotesInsideWordsAndEscapesSurvive(t *testing.T) {
-	for _, c := range []struct {
-		in   string
-		want []string
-	}{
-		{`MSG="hello world"`, []string{"MSG=hello world"}},
-		{`path\ with\ spaces`, []string{"path with spaces"}},
-		// An empty quoted string is a real argument, and `--` is one too.
-		{`-- '' empty`, []string{"--", "", "empty"}},
-	} {
-		if got := SplitArgs(c.in); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("SplitArgs(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}
 }
@@ -326,5 +271,92 @@ func TestOrdinaryNamesPassThrough(t *testing.T) {
 	got, ok := canonical(Task{Name: "backend:migrate:down"})
 	if !ok || got.Name != "backend:migrate:down" {
 		t.Errorf("got %+v, %v", got, ok)
+	}
+}
+
+func TestADeclaredPatternCoversTheDefaultItWasWrittenFor(t *testing.T) {
+	// `deploy:default` is listed as `deploy`, which `deploy:*` does not match on its own.
+	if !dangerous(Task{Name: "deploy"}, "deploy:default", []string{"deploy:*"}) {
+		t.Error("deploy:* should still cover what `task deploy` runs")
+	}
+	if dangerous(Task{Name: "build"}, "build", []string{"deploy:*"}) {
+		t.Error("a declared list is the whole answer")
+	}
+}
+
+func TestTheHeuristicSeesTheNameTheDefaultIsShownBy(t *testing.T) {
+	// Listed as `backend:prod:default`, which has no `:prod` suffix; shown as `backend:prod`.
+	if !dangerous(Task{Name: "backend:prod"}, "backend:prod:default", nil) {
+		t.Error("backend:prod should be flagged however go-task spells it")
+	}
+}
+
+func TestNamesResolveEverySpellingToTheListedOne(t *testing.T) {
+	n := namesOf([]Task{
+		{Name: "build", Aliases: []string{"b"}},
+		{Name: "dev:default", Aliases: []string{"dev:dd", "dev"}},
+		{Name: "default"},
+	})
+	for spelled, want := range map[string]string{
+		"b": "build", "build": "build",
+		"dev:default": "dev", "dev:dd": "dev", "dev": "dev",
+		// Never listed, so never renamed.
+		"dev:inner": "dev:inner", "default": "default",
+	} {
+		if got := n.Canonical(spelled); got != want {
+			t.Errorf("Canonical(%q) = %q, want %q", spelled, got, want)
+		}
+	}
+}
+
+func TestARootTaskKeepsItsNameAgainstAnIncludedDefault(t *testing.T) {
+	n := namesOf([]Task{
+		{Name: "dev"},
+		{Name: "dev:default", Aliases: []string{"dev"}},
+	})
+	if got := n.Canonical("dev"); got != "dev" {
+		t.Errorf("dev = %q", got)
+	}
+	// It lost the name to the root task, so it keeps its own rather than sharing a row.
+	if got := n.Canonical("dev:default"); got != "dev:default" {
+		t.Errorf("dev:default = %q", got)
+	}
+}
+
+// go-task runs a task whose name has a space in it, and lists it with one.
+func TestANameWithASpaceIsOneName(t *testing.T) {
+	got, ok := parseEntry("* weird name:       spaced: out")
+	if !ok || got.Name != "weird name" || got.Desc != "spaced: out" {
+		t.Errorf("got %+v", got)
+	}
+}
+
+// Lines as go-task 3.53.1 lists them. A real alias list stands in its own column, padded
+// away from the description; a description that only ends in something like one does not.
+func TestAnAliasListIsOnlyTheColumnGoTaskPadded(t *testing.T) {
+	for _, c := range []struct {
+		line    string
+		desc    string
+		aliases []string
+	}{
+		{"* trailing:         has trailing (aliases: q)", "has trailing (aliases: q)", nil},
+		{"* real:             real one                    (aliases: r, re)", "real one", []string{"r", "re"}},
+		{"* both:             tricky (aliases: fake)      (aliases: b)", "tricky (aliases: fake)", []string{"b"}},
+		{"* c:             (aliases: cc)", "", []string{"cc"}},
+	} {
+		got, _ := parseEntry(c.line)
+		if got.Desc != c.desc || !reflect.DeepEqual(got.Aliases, c.aliases) {
+			t.Errorf("%q: desc %q aliases %v, want %q %v", c.line, got.Desc, got.Aliases, c.desc, c.aliases)
+		}
+	}
+}
+
+// The text form can only guess at aliases; the JSON listing knows. Its answer wins, an
+// empty one included.
+func TestTheJSONListingsAliasesWin(t *testing.T) {
+	x := Task{Name: "trailing", Desc: "has trailing", Aliases: []string{"q"}}
+	x = x.With(Detail{Aliases: []string{}})
+	if len(x.Aliases) != 0 {
+		t.Errorf("aliases = %v", x.Aliases)
 	}
 }

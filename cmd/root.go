@@ -32,6 +32,7 @@ import (
 	"github.com/romanidis/taskui/internal/pivot"
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/search"
+	"github.com/romanidis/taskui/internal/shellwords"
 	"github.com/romanidis/taskui/internal/store"
 	"github.com/romanidis/taskui/internal/task"
 	"github.com/romanidis/taskui/internal/theme"
@@ -380,9 +381,9 @@ func rootRun(cmd *cobra.Command, args []string) error {
 		// the actual run view, which is how the TUI gets verified without a terminal.
 		if opts.screenshot == "" {
 			if opts.asJSON {
-				return streamRun(cmd.OutOrStdout(), root, opts.runTask, task.SplitArgs(opts.args))
+				return streamRun(cmd.OutOrStdout(), root, opts.runTask, shellwords.Split(opts.args))
 			}
-			return runHeadless(root, opts.runTask, task.SplitArgs(opts.args), opts.quickfix)
+			return runHeadless(root, opts.runTask, shellwords.Split(opts.args), opts.quickfix)
 		}
 		a := app.New(tasks, root).WithConfig(config)
 		a.StartEnrichment()
@@ -755,11 +756,13 @@ func runHeadless(dir, target string, argv []string, quickfix bool) error {
 	if err != nil {
 		return err
 	}
+	stop := stopOnSignal(r)
 	for !r.Finished() {
 		r.Poll()
 		time.Sleep(20 * time.Millisecond)
 	}
 	r.Poll()
+	stop()
 
 	type frame struct {
 		name  string

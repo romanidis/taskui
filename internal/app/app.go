@@ -3,6 +3,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os/exec"
@@ -23,6 +24,7 @@ import (
 	"github.com/romanidis/taskui/internal/pivot"
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/search"
+	"github.com/romanidis/taskui/internal/shellwords"
 	"github.com/romanidis/taskui/internal/store"
 	"github.com/romanidis/taskui/internal/task"
 	"github.com/romanidis/taskui/internal/theme"
@@ -167,9 +169,13 @@ type Confirm struct {
 	Kind ConfirmKind
 	// Name and Args belong to ConfirmRun: start this task, once the reason has been
 	// answered.
-	Name   string
-	Args   []string
-	Reason ConfirmReason
+	Name string
+	Args []string
+	// Interactive and Force are how it will be started, settled when the question was
+	// asked: a re-run carries the flags of the run it repeats, not whatever is armed.
+	Interactive bool
+	Force       bool
+	Reason      ConfirmReason
 	// Live is how many runs there were when a quit or stop-all question was asked — it is
 	// what the prompt says, and re-counting as runs finish under it would make the number
 	// move while you read it.
@@ -296,16 +302,21 @@ type App struct {
 	Parked []Parked
 	// Bell says when a finished run should ring the terminal.
 	Bell theme.BellMode
-	// belled remembers which slots have already rung, so a run that stays finished does not
-	// ring on every poll.
-	belled map[uint64]bool
+	// belled remembers which runs have already rung, so a run that stays finished does not
+	// ring on every poll. Keyed by the run, not its slot: a restart reuses the slot, and a
+	// slot that had rung once never rang again.
+	belled map[*run.Run]bool
 	// pendingBell is collected by Update, which is the only place that may write to the
 	// terminal — the model itself must not, or the byte lands in the middle of a frame.
 	pendingBell bool
 
-	// detached marks the slots quitting will leave alone. Keyed by slot rather than held on
-	// the run, so the decision survives switching focus and parking.
-	detached map[uint64]bool
+	// detached marks the runs quitting will leave alone. Keyed by the run rather than its
+	// slot: a restart reuses the slot, and the new run was silently left running on quit
+	// because the old one had been let go of.
+	detached map[*run.Run]bool
+	// partial marks runs whose archive was written before they finished — by detaching —
+	// so finishing writes it again rather than leaving the record cut off where it was.
+	partial map[*run.Run]bool
 
 	// FocusSeq is which slot Run occupies. Zero before anything has ever run.
 	FocusSeq  uint64
@@ -370,7 +381,11 @@ type App struct {
 	JumpMatches []int
 	JumpIdx     int
 	// jumpOrigin is where the cursor was before the jump, so `esc` really does cancel.
+	// jumpNode is the tree node it was on, when it was on one: the jump opens folds on its
+	// way to a match, which moves every row below them, so the index alone put the cursor
+	// back on whatever had slid into that position.
 	jumpOrigin int
+	jumpNode   int
 
 	// PendingG is half of a `gg`. Any other key clears it, so a stray `g` cannot lurk.
 	PendingG bool
@@ -461,6 +476,9 @@ type App struct {
 	ProfileCursor int
 	ProfileOffset int
 	profileReturn Screen
+	// profileFinal is the finished run the profile last took its figures from, so it
+	// refreshes once on the poll that ends the run and then holds still.
+	profileFinal *run.Run
 
 	// locs indexes the project so a `file:line` in captured output can be opened. Built on
 	// first use — most sessions never press `e`.
@@ -541,8 +559,10 @@ type App struct {
 	// events is where a host — an editor showing this terminal — is told what the runs are
 	// doing. Nil when nobody asked, which is every session started by hand.
 	events *events.Sink
-	// deltas is one tracker per slot, so a busy run cannot renumber a quiet one.
-	deltas map[string]*events.Deltas
+	// deltas is one tracker per run, so a busy run cannot renumber a quiet one. Per run
+	// rather than per task name: a re-run of `test` is a new run, and a tracker that had
+	// already said `exit` for the last one never said `run` or `exit` for this one.
+	deltas map[*run.Run]*events.Deltas
 }
 
 // SendEventsTo attaches a host's event sink. Everything the runs do is reported to it —
@@ -550,7 +570,7 @@ type App struct {
 // list and colour a statusline without drawing the run itself.
 func (a *App) SendEventsTo(sink *events.Sink) {
 	a.events = sink
-	a.deltas = map[string]*events.Deltas{}
+	a.deltas = map[*run.Run]*events.Deltas{}
 }
 
 // HasHost reports whether a host is listening. It is what decides who opens a file: with a
@@ -563,28 +583,46 @@ func (a *App) emit() {
 	if a.events == nil {
 		return
 	}
-	for _, r := range a.allRuns() {
-		d := a.deltas[r.Root]
+	live := map[*run.Run]bool{}
+	for _, slot := range a.slotRuns() {
+		r := slot.run
+		// A run read off disk is history being browsed, not something happening: telling
+		// the host it started and exited would be news of a run that ended long ago.
+		if r.IsStored() {
+			continue
+		}
+		live[r] = true
+		d := a.deltas[r]
 		if d == nil {
 			d = events.NewDeltas()
-			a.deltas[r.Root] = d
+			a.deltas[r] = d
 		}
 		d.Start(a.events, r, a.Root)
 		d.Flush(a.events, r)
 		if r.Finished() && !d.Done() {
-			d.Finish(a.events, r, a.SavedTo)
+			d.Finish(a.events, r, slot.savedTo)
 		}
 	}
+	// A closed or replaced run's tracker goes with it.
+	maps.DeleteFunc(a.deltas, func(r *run.Run, _ *events.Deltas) bool { return !live[r] })
 }
 
-// allRuns is every open slot, focused or parked.
-func (a *App) allRuns() []*run.Run {
-	out := make([]*run.Run, 0, len(a.Parked)+1)
+// slotRunInfo pairs a run with where its slot archived it.
+type slotRunInfo struct {
+	run     *run.Run
+	savedTo string
+}
+
+// slotRuns is every open slot's run with its own archive path. The focused run's lives on
+// the app and a parked one's in its view, so reading a.SavedTo for all of them told the
+// host a background run was saved wherever the one on screen was.
+func (a *App) slotRuns() []slotRunInfo {
+	out := make([]slotRunInfo, 0, len(a.Parked)+1)
 	for _, p := range a.Parked {
-		out = append(out, p.Run)
+		out = append(out, slotRunInfo{p.Run, p.view.savedTo})
 	}
 	if a.Run != nil {
-		out = append(out, a.Run)
+		out = append(out, slotRunInfo{a.Run, a.SavedTo})
 	}
 	return out
 }
@@ -770,7 +808,7 @@ func (a *App) applyDetails(details map[string]task.Detail) {
 	a.Details = details
 	for i := range a.Tasks {
 		if d, ok := details[a.Tasks[i].Name]; ok {
-			a.Tasks[i].Where = d.Where
+			a.Tasks[i] = a.Tasks[i].With(d)
 		}
 	}
 	// The listing is the only thing that knows where the tasks are actually written, so it
@@ -815,14 +853,14 @@ func (a *App) noteFinished() {
 		return
 	}
 	if a.belled == nil {
-		a.belled = map[uint64]bool{}
+		a.belled = map[*run.Run]bool{}
 	}
 	for _, slot := range a.Slots() {
 		r := a.runInSlot(slot.Seq)
-		if r == nil || !r.Finished() || a.belled[slot.Seq] {
+		if r == nil || !r.Finished() || a.belled[r] {
 			continue
 		}
-		a.belled[slot.Seq] = true
+		a.belled[r] = true
 		// Watching it happen is not news.
 		if a.Screen == ScreenRun && a.FocusSeq == slot.Seq {
 			continue
@@ -944,6 +982,35 @@ func (a *App) ResumeRun() bool {
 // means "show me it" rather than "start a second one" — one slot per task name, so a
 // second copy would have nowhere to live even if it were wanted.
 func (a *App) RequestRun(name string, args []string) {
+	a.requestRun(a.armed(name, args))
+}
+
+// invocation is one run to start: the task, its arguments, and the flags it goes out with.
+//
+// A value rather than the app's sticky toggles, because not every start is the next run
+// you armed: `r` repeats a run the way it ran, and so does watch mode. Both used to do it
+// by writing that run's flags into ForceNext and InteractiveNext on the way, so a plain `r`
+// switched off a force you had set with `F`, and a watched task inherited the flags of the
+// one watched before it.
+type invocation struct {
+	name        string
+	args        []string
+	interactive bool
+	force       bool
+}
+
+// armed is a start with whatever `F` and `I` have armed.
+func (a *App) armed(name string, args []string) invocation {
+	return invocation{name: name, args: args, interactive: a.InteractiveNext, force: a.ForceNext}
+}
+
+// repeating is a start of name the way r ran.
+func repeating(name string, args []string, r *run.Run) invocation {
+	return invocation{name: name, args: args, interactive: r.Interactive, force: r.Force}
+}
+
+func (a *App) requestRun(inv invocation) {
+	name := inv.name
 	if a.liveSlot(name) {
 		// Focus it, so `v` goes to the right one — but stay where you are. From the
 		// picker the run is already on screen, under the row the cursor is on.
@@ -962,20 +1029,31 @@ func (a *App) RequestRun(name string, args []string) {
 	if a.Confirm == nil {
 		for _, t := range a.Tasks {
 			if t.Name == name && t.Dangerous {
-				a.Confirm = &Confirm{
-					Kind:   ConfirmRun,
-					Name:   name,
-					Args:   append([]string(nil), args...),
-					Reason: TouchesProduction,
-				}
+				a.Confirm = inv.confirm(TouchesProduction)
 				return
 			}
 		}
 	}
 	a.Confirm = nil
-	if err := a.StartRunWith(name, args); err != nil {
+	if err := a.start(inv); err != nil {
 		a.Status = fmt.Sprintf("could not start `task %s`: %v", name, err)
 	}
+}
+
+// confirm is the question to ask before starting inv.
+func (inv invocation) confirm(why ConfirmReason) *Confirm {
+	return &Confirm{
+		Kind:        ConfirmRun,
+		Name:        inv.name,
+		Args:        append([]string(nil), inv.args...),
+		Interactive: inv.interactive,
+		Force:       inv.force,
+		Reason:      why,
+	}
+}
+
+func (c *Confirm) invocation() invocation {
+	return invocation{name: c.Name, args: c.Args, interactive: c.Interactive, force: c.Force}
 }
 
 // ConfirmYes answers whatever is pending. It returns true if the answer was "quit".
@@ -987,7 +1065,13 @@ func (a *App) ConfirmYes() bool {
 	}
 	switch pending.Kind {
 	case ConfirmRun:
-		if err := a.StartRunWith(pending.Name, pending.Args); err != nil {
+		// "Restarting stops the one running" was the question; whether this task touches
+		// production is a second one, and answering the first is not answering it.
+		if pending.Reason == WouldStopRunning && a.isDangerous(pending.Name) {
+			a.Confirm = pending.invocation().confirm(TouchesProduction)
+			return false
+		}
+		if err := a.start(pending.invocation()); err != nil {
 			a.Status = fmt.Sprintf("could not start `task %s`: %v", pending.Name, err)
 		}
 		return false
@@ -995,7 +1079,7 @@ func (a *App) ConfirmYes() bool {
 		a.StopAll()
 		return false
 	case ConfirmRunMarked:
-		a.startMarked(a.Marked(), MaxSlots-a.openSlots())
+		a.startMarked(a.Marked())
 		return false
 	default:
 		return true
@@ -1008,20 +1092,36 @@ func (a *App) ConfirmNo() {
 	if pending == nil {
 		return
 	}
-	if pending.Kind == ConfirmRun {
+	switch pending.Kind {
+	case ConfirmRun, ConfirmRunMarked:
 		a.Status = "not run"
-	} else {
+	default:
 		a.Status = "left running"
 	}
 }
 
+// StartRunWith starts a task with whatever `F` and `I` have armed, past every question.
 func (a *App) StartRunWith(name string, args []string) error {
+	return a.start(a.armed(name, args))
+}
+
+// isDangerous reports whether a task is on the danger list.
+func (a *App) isDangerous(name string) bool {
+	for _, t := range a.Tasks {
+		if t.Name == name {
+			return t.Dangerous
+		}
+	}
+	return false
+}
+
+func (a *App) start(inv invocation) error {
+	name, args := inv.name, inv.args
 	seq, why := a.claimSlot(name)
 	if why != "" {
-		a.Status = why
-		return nil
+		return errors.New(why)
 	}
-	r, err := run.Start(a.Root, name, args, a.InteractiveNext, a.ForceNext)
+	r, err := run.Start(a.Root, name, args, inv.interactive, inv.force)
 	if err != nil {
 		return err
 	}
@@ -1084,25 +1184,52 @@ func (a *App) claimSlot(name string) (uint64, string) {
 		}
 	}
 	// A genuinely new slot.
-	if a.openSlots() >= MaxSlots {
-		// A finished run has already been archived, so reclaiming its slot loses nothing
-		// you cannot reopen from history. A live one is somebody's compose stack; it is
-		// never taken without being asked.
-		freed := false
-		for i, p := range a.Parked {
-			if p.Run.Finished() {
-				a.Parked = append(a.Parked[:i], a.Parked[i+1:]...)
-				freed = true
-				break
-			}
-		}
-		if !freed {
-			return 0, fmt.Sprintf("all %d run slots are busy — stop one with `x` first", MaxSlots)
-		}
+	if a.openSlots() >= MaxSlots && !a.recycleSlot() {
+		return 0, fmt.Sprintf("all %d run slots are busy — stop one with `x` first", MaxSlots)
 	}
 	a.parkFocused()
 	a.nextSeq++
 	return a.nextSeq, ""
+}
+
+// slotAvailable reports whether starting name would find it a slot — the same answer
+// claimSlot will give, without claiming anything. A batch asks it per task rather than
+// counting free slots up front, because the count kept disagreeing with the claim: a
+// task already in a slot reuses it, and a finished slot is given up on demand.
+func (a *App) slotAvailable(name string) bool {
+	return a.slotRun(name) != nil || a.openSlots() < MaxSlots || a.recyclable() >= 0
+}
+
+// recyclable is the parked slot a new run may take when every slot is open — the first
+// that has finished — or -1 for none, or len(a.Parked) for the focused run.
+//
+// A finished run has already been archived, so reclaiming its slot loses nothing you
+// cannot reopen from history. A live one is somebody's compose stack; it is never taken
+// without being asked. The one on screen counts too: six finished slots with the focused
+// one among them are six finished slots.
+func (a *App) recyclable() int {
+	for i, p := range a.Parked {
+		if p.Run.Finished() {
+			return i
+		}
+	}
+	if a.Run != nil && a.Run.Finished() {
+		return len(a.Parked)
+	}
+	return -1
+}
+
+// recycleSlot gives up the slot recyclable names, and reports whether there was one.
+func (a *App) recycleSlot() bool {
+	switch i := a.recyclable(); {
+	case i < 0:
+		return false
+	case i == len(a.Parked):
+		a.Run = nil
+	default:
+		a.Parked = append(a.Parked[:i], a.Parked[i+1:]...)
+	}
+	return true
 }
 
 // claimStoredSlot is where a run read off disk goes.
@@ -1122,18 +1249,8 @@ func (a *App) claimStoredSlot() (uint64, string) {
 			return seq, ""
 		}
 	}
-	if a.openSlots() >= MaxSlots {
-		freed := false
-		for i, p := range a.Parked {
-			if p.Run.Finished() {
-				a.Parked = append(a.Parked[:i], a.Parked[i+1:]...)
-				freed = true
-				break
-			}
-		}
-		if !freed {
-			return 0, fmt.Sprintf("all %d run slots are busy — stop one with `x` first", MaxSlots)
-		}
+	if a.openSlots() >= MaxSlots && !a.recycleSlot() {
+		return 0, fmt.Sprintf("all %d run slots are busy — stop one with `x` first", MaxSlots)
 	}
 	a.parkFocused()
 	a.nextSeq++
@@ -1172,6 +1289,10 @@ func (a *App) snapshotView() slotView {
 }
 
 func (a *App) restoreView(v slotView) {
+	// The rows on hand are the slot being left. RebuildRunRows anchors the cursor to the row
+	// it is on, and anchoring the restored index against another run's rows put it on
+	// whatever that run had there — `lint` in one slot came back as `test`.
+	a.RunRows = nil
 	a.RunCursor = v.cursor
 	a.RunOffset = v.offset
 	a.runFolds = v.folds
@@ -1392,7 +1513,7 @@ func (a *App) BeginArgs(name string) {
 	// not have to be. A declaration still wins, because its value is what changes per run.
 	if a.ArgsInput == "" {
 		if past := a.argsHistory(); len(past) > 0 {
-			a.ArgsInput = task.JoinArgs(past[0])
+			a.ArgsInput = shellwords.Join(past[0])
 			a.argsFromHistory = true
 		}
 	}
@@ -1454,7 +1575,7 @@ func (a *App) ConfirmArgs() {
 	if name == "" {
 		return
 	}
-	args := task.SplitArgs(a.ArgsInput)
+	args := shellwords.Split(a.ArgsInput)
 	a.CancelArgs()
 	a.RequestRun(name, args)
 }
@@ -1478,7 +1599,26 @@ func (a *App) BeginJump() {
 	a.JumpMatches = nil
 	a.JumpIdx = 0
 	a.jumpOrigin = a.Cursor
+	a.jumpNode = -1
+	if a.Cursor >= 0 && a.Cursor < len(a.PickerRows) {
+		if tree := a.PickerRows[a.Cursor].Tree; tree >= 0 && tree < len(a.Rows) {
+			a.jumpNode = a.Rows[tree].Node
+		}
+	}
 	a.Status = ""
+}
+
+// backToJumpOrigin puts the cursor on the row the jump started from.
+func (a *App) backToJumpOrigin() {
+	if a.jumpNode >= 0 {
+		for i, row := range a.Rows {
+			if row.Node == a.jumpNode {
+				a.Cursor = a.pickerIndexOfTree(i)
+				return
+			}
+		}
+	}
+	a.Cursor = min(a.jumpOrigin, max(0, len(a.PickerRows)-1))
 }
 
 func (a *App) PushJump(c rune) {
@@ -1505,7 +1645,7 @@ func (a *App) CancelJump() {
 	a.Jumping = false
 	a.JumpQuery = ""
 	a.JumpMatches = nil
-	a.Cursor = min(a.jumpOrigin, max(0, len(a.PickerRows)-1))
+	a.backToJumpOrigin()
 }
 
 func (a *App) JumpStep(delta int) {
@@ -1520,7 +1660,7 @@ func (a *App) JumpStep(delta int) {
 func (a *App) applyJump() {
 	if a.JumpQuery == "" {
 		a.JumpMatches = nil
-		a.Cursor = min(a.jumpOrigin, max(0, len(a.PickerRows)-1))
+		a.backToJumpOrigin()
 		return
 	}
 	a.JumpMatches = a.matchingTasks(a.JumpQuery)
@@ -1659,22 +1799,21 @@ func (a *App) PollWatch() bool {
 		if a.liveSlot(name) {
 			continue
 		}
-		if a.openSlots() >= MaxSlots {
+		if !a.slotAvailable(name) {
 			skipped++
 			continue
 		}
 
-		var args []string
+		// The way it last ran, if it has; otherwise the way `F` and `I` are armed.
+		inv := a.armed(name, nil)
 		if r := a.slotRun(name); r != nil {
-			args = r.Args
-			a.InteractiveNext = r.Interactive
-			a.ForceNext = r.Force
+			inv = repeating(name, r.Args, r)
 		}
 
 		// Deliberately bypasses the confirmation: watch mode is opt-in, on tasks you chose,
 		// and a `y` prompt firing on every keystroke would be unusable. Which is also why
 		// arming it on a production task is a bad idea.
-		if err := a.StartRunWith(name, args); err != nil {
+		if err := a.start(inv); err != nil {
 			a.Status = fmt.Sprintf("could not re-run `task %s`: %v", name, err)
 			return false
 		}
@@ -2179,7 +2318,7 @@ func (a *App) PollRun() bool {
 	for i := range a.Parked {
 		if a.Parked[i].Run.Poll() {
 			moved = true
-			if a.Parked[i].Run.Finished() && a.Parked[i].view.savedTo == "" {
+			if a.Parked[i].Run.Finished() && a.needsSaving(a.Parked[i].Run, a.Parked[i].view.savedTo) {
 				finished = append(finished, i)
 			}
 		}
@@ -2223,7 +2362,7 @@ func (a *App) saveParked(i int) {
 	parked := a.Parked[i]
 	name := parked.Run.Root
 	ok := parked.Run.Exit == 0
-	path, err := store.Save(a.stateDir, a.Root, parked.Run)
+	path, err := a.archive(parked.Run, parked.view.savedTo)
 	if err != nil {
 		a.Status = fmt.Sprintf("could not save `task %s`: %v", name, err)
 		return
@@ -2237,12 +2376,28 @@ func (a *App) saveParked(i int) {
 	a.Status = fmt.Sprintf("%s `task %s` finished in the background", mark, name)
 }
 
+// needsSaving reports whether a finished run still has to be archived: never saved, or
+// saved only as far as it had got when it was detached.
+func (a *App) needsSaving(r *run.Run, savedTo string) bool {
+	return savedTo == "" || a.partial[r]
+}
+
+// archive saves a finished run, rewriting the partial record a detach left rather than
+// adding a second one beside it.
+func (a *App) archive(r *run.Run, savedTo string) (string, error) {
+	if savedTo == "" || !a.partial[r] {
+		return store.Save(a.stateDir, a.Root, r)
+	}
+	delete(a.partial, r)
+	return store.Resave(a.stateDir, savedTo, a.Root, r)
+}
+
 // saveIfFinished persists the run once, the moment it ends.
 func (a *App) saveIfFinished() {
-	if a.SavedTo != "" || a.Run == nil || !a.Run.Finished() {
+	if a.Run == nil || !a.Run.Finished() || !a.needsSaving(a.Run, a.SavedTo) {
 		return
 	}
-	path, err := store.Save(a.stateDir, a.Root, a.Run)
+	path, err := a.archive(a.Run, a.SavedTo)
 	if err != nil {
 		a.Status = fmt.Sprintf("could not save this run: %v", err)
 		return
@@ -2522,28 +2677,7 @@ func runRowsFor(r *run.Run, foldOf func(string) Fold, peek int, filter *rowFilte
 	// Pushed in reverse so siblings come out in invocation order.
 	stack := []frame{{r.Root, 0}}
 
-	for {
-		if len(stack) == 0 {
-			// Whatever go-task ran that the graph never reached. `--summary` refuses to
-			// describe an `internal: true` task, so a root whose deps hide behind one —
-			// docco's `dev` → `dev:all` → {`dev:backend`, `site:dev`} — resolves to a graph
-			// that stops at the internal task, while the output plainly carries the tasks
-			// beyond it. They hang off the root, at the depth their real parent would have
-			// had, rather than off nothing: the alternative was a run whose logs were all
-			// captured and none shown.
-			var strays []string
-			for _, name := range r.Order {
-				if !seen[name] {
-					strays = append(strays, name)
-				}
-			}
-			if len(strays) == 0 {
-				break
-			}
-			for _, name := range slices.Backward(strays) {
-				stack = append(stack, frame{name, 1})
-			}
-		}
+	for len(stack) > 0 {
 		top := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
@@ -2963,7 +3097,13 @@ func (a *App) RerunSelected() { a.rerunSelectedWith(false) }
 // green tick that proves nothing. Reaching for the picker's `F` means leaving the output
 // you are working against. This is the same key with the checks off, which is what you
 // wanted the second time you pressed `r`.
-func (a *App) ForceRerunSelected() { a.rerunSelectedWith(true) }
+//
+// It also arms force for what you start next, and the header says so: having needed the
+// checks off once, the next thing you start from the picker usually needs them off too.
+func (a *App) ForceRerunSelected() {
+	a.ForceNext = true
+	a.rerunSelectedWith(true)
+}
 
 // force is an override, not a setting: false still inherits whatever the run used, so
 // plain `r` keeps re-running a forced run forced.
@@ -2979,18 +3119,41 @@ func (a *App) rerunSelectedWith(force bool) {
 	}
 	// Re-run it the way it was run: non-interactively it would hang again, and without
 	// `--force` a cached task would simply decline.
+	inv := a.armed(name, args)
 	if a.Run != nil {
-		a.InteractiveNext = a.Run.Interactive
-		a.ForceNext = force || a.Run.Force
+		inv = repeating(name, args, a.Run)
+		inv.force = inv.force || force
 	}
-	// Re-running a task whose slot is still live means restarting it, and a restart kills
-	// what is in there. On a stack you deliberately left up that is worth a yes — and it
-	// is the only way to bounce one without stopping it by hand first.
-	if a.liveSlot(name) {
-		a.Confirm = &Confirm{Kind: ConfirmRun, Name: name, Args: args, Reason: WouldStopRunning}
+	a.restart(inv)
+}
+
+// restart starts inv, asking first when its slot is still live.
+//
+// Re-running a task whose slot is still live means restarting it, and a restart kills what
+// is in there. On a stack you deliberately left up that is worth a yes — and it is the only
+// way to bounce one without stopping it by hand first. Going through requestRun instead
+// only focused the live run, which is why `⇧I` on a task stuck at a hidden prompt — exactly
+// what it is for — did nothing.
+func (a *App) restart(inv invocation) {
+	if a.liveSlot(inv.name) {
+		a.Confirm = inv.confirm(WouldStopRunning)
 		return
 	}
-	a.RequestRun(name, args)
+	a.requestRun(inv)
+}
+
+// InteractiveRerun is `⇧I`: this run again, interactively, so a prompt it is waiting on
+// can be seen and answered.
+func (a *App) InteractiveRerun() {
+	if a.Run == nil {
+		return
+	}
+	inv := repeating(a.Run.Root, a.Run.Args, a.Run)
+	inv.interactive = true
+	// Armed as well, as `⇧R` arms force: a task that needed its prompt seen once will
+	// need it again.
+	a.InteractiveNext = true
+	a.restart(inv)
 }
 
 // RunSelectedTask is the task under the cursor, whether the cursor is on it or on one of

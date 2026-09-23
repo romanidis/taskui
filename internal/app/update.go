@@ -488,6 +488,12 @@ func (a *App) handleWheel(button tea.MouseButton) {
 	if a.Confirm != nil {
 		return
 	}
+	// Typing into the run hands every key to the child, and a wheel turned into arrows
+	// would reach it as `\x1b[A` — moving the selection of the `gum choose` you were only
+	// scrolling up to read the question for.
+	if a.SendingInput {
+		return
+	}
 
 	var k Key
 	switch button {
@@ -1053,11 +1059,7 @@ func (a *App) handleRunKey(k Key) bool {
 	// Re-run this task interactively, when seeing the prompt matters more than not
 	// starting over.
 	case act() == keys.InteractiveRerun:
-		if a.Run != nil {
-			name, args := a.Run.Root, a.Run.Args
-			a.InteractiveNext = true
-			a.RequestRun(name, args)
-		}
+		a.InteractiveRerun()
 
 	// Back to the picker. The run keeps going in the background and is still there when
 	// you come back.

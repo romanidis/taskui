@@ -425,8 +425,17 @@ without care it would write your secrets into `~/.local/state/`.
 Redaction happens in the capture thread, before a line reaches the UI, the buffers or the
 disk — nothing unmasked is ever put on the channel, so no later code path can leak what it
 never received. The secret list is harvested from that same `--summary` env dump: the leak
-is also the best available list of what to plug. Run directories are `0700` and files
+is also the best available list of what to plug. Every task's dump, not only the root's —
+`all` calling a `deploy` whose own `env:` carries the token prints it from `deploy`. And
+one thing the dump never shows is a Taskfile's plain top-level `env:`, so that is read from
+the Taskfiles themselves. Values produced by `sh:` or templates are the exception: neither
+dump nor file holds them, so they are not masked. Run directories are `0700` and files
 `0600` regardless.
+
+A secret can also be hidden by colour. `grep` highlighting the `sk-` it was asked for puts
+an escape inside the value, and stripping escapes for the searchable text rebuilds it — so
+each line is masked in both forms, and one whose plain form still held a secret keeps the
+plain form and loses its colour.
 
 The masking rule is deliberately conservative. A value is masked when its variable name
 looks like a credential (`*_TOKEN`, `*_SECRET`, `*_KEY`, `*_PASSWORD`, …) or the value

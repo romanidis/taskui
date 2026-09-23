@@ -33,18 +33,23 @@ func (a *App) Detach() {
 	}
 
 	if a.detached == nil {
-		a.detached = map[uint64]bool{}
+		a.detached = map[*run.Run]bool{}
 	}
-	a.detached[a.FocusSeq] = true
+	a.detached[a.Run] = true
 
 	// Archived now, not on quit: at quit taskui is on its way out, and a detached run has no
 	// end to wait for — this is the last moment its output can be written down at all.
 	// Unfinished, so `saveIfFinished` will not do it; store.Save is happy either way, and a
-	// partial record beats none.
+	// partial record beats none. Marked partial, so that if taskui is still open when the
+	// run ends, the record is rewritten whole rather than stopping at this moment.
 	kept := ""
 	if a.SavedTo == "" {
 		if dir, err := store.Save(a.stateDir, a.Root, a.Run); err == nil {
 			a.SavedTo = dir
+			if a.partial == nil {
+				a.partial = map[*run.Run]bool{}
+			}
+			a.partial[a.Run] = true
 			a.Outcomes = store.LastOutcomes(a.stateDir, a.Root)
 			kept = " — output so far is in the archive"
 		}
@@ -54,41 +59,31 @@ func (a *App) Detach() {
 }
 
 // IsDetached says whether a slot has been let go of.
-func (a *App) IsDetached(seq uint64) bool { return a.detached[seq] }
+func (a *App) IsDetached(seq uint64) bool {
+	r := a.runInSlot(seq)
+	return r != nil && a.detached[r]
+}
 
 // DetachedCount is how many runs would survive quitting.
 func (a *App) DetachedCount() int {
 	n := 0
-	for _, slot := range a.Slots() {
-		if a.detached[slot.Seq] && !a.finishedSeq(slot.Seq) {
+	// A detached run that ended on its own is not something quitting has to warn about.
+	for _, slot := range a.slotRuns() {
+		if a.detached[slot.run] && !slot.run.Finished() {
 			n++
 		}
 	}
 	return n
 }
 
-// finishedSeq reports whether the run in a slot has stopped. A detached run that ended on
-// its own is not something quitting has to warn about.
-func (a *App) finishedSeq(seq uint64) bool {
-	if a.FocusSeq == seq && a.Run != nil {
-		return a.Run.Finished()
-	}
-	for _, p := range a.Parked {
-		if p.Seq == seq {
-			return p.Run.Finished()
-		}
-	}
-	return true
-}
-
 // attachedRuns is every live run that quitting is still responsible for.
 func (a *App) attachedRuns() []attached {
 	var out []attached
-	if a.Run != nil && !a.Run.Finished() && !a.detached[a.FocusSeq] {
+	if a.Run != nil && !a.Run.Finished() && !a.detached[a.Run] {
 		out = append(out, attached{seq: a.FocusSeq, run: a.Run})
 	}
 	for _, p := range a.Parked {
-		if !p.Run.Finished() && !a.detached[p.Seq] {
+		if !p.Run.Finished() && !a.detached[p.Run] {
 			out = append(out, attached{seq: p.Seq, run: p.Run})
 		}
 	}

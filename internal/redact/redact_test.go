@@ -1,6 +1,9 @@
 package redact
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const summary = `task: lint
 
@@ -73,5 +76,30 @@ func TestMasksLongerSecretsFirst(t *testing.T) {
 func TestAnEmptyRedactorIsAPassthrough(t *testing.T) {
 	if got := Empty().Redact("anything at all"); got != "anything at all" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestHarvestsEnvTheSummaryLeavesOut(t *testing.T) {
+	r := Harvest(summary, map[string]string{"ROOT_TOKEN": "rootsecret123", "GREETING": "hello world"})
+	if got := r.Redact("rootsecret123 hello world"); got != Marker+" hello world" {
+		t.Errorf("redact = %q", got)
+	}
+	if got := r.Redact("hunter2hunter2"); got != Marker {
+		t.Errorf("the summary's secrets should still be masked: %q", got)
+	}
+}
+
+func TestACutNeverFallsInsideASecret(t *testing.T) {
+	r := New([]string{"sk-abcdef123456"})
+	text := "prefix sk-abcdef123456 suffix"
+	start := strings.Index(text, "sk-")
+	for want := range len(text) {
+		cut := r.Cut(text, want)
+		if cut > start && cut < start+len("sk-abcdef123456") {
+			t.Errorf("Cut(%d) = %d, inside the secret", want, cut)
+		}
+		if cut < want {
+			t.Errorf("Cut(%d) = %d moved backwards", want, cut)
+		}
 	}
 }

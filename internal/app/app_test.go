@@ -649,13 +649,17 @@ func TestForceRerunForcesAndPlainRerunDoesNot(t *testing.T) {
 
 	a.cursorToTask("build")
 	a.RerunSelected()
+	if a.Confirm == nil || a.Confirm.Force {
+		t.Errorf("`r` should re-run it the way it was run: %+v", a.Confirm)
+	}
 	if a.ForceNext {
-		t.Error("`r` should re-run it the way it was run")
+		t.Error("`r` arms nothing")
 	}
 
+	a.Confirm = nil
 	a.ForceRerunSelected()
-	if !a.ForceNext {
-		t.Error("`⇧R` should turn the checks off")
+	if a.Confirm == nil || !a.Confirm.Force {
+		t.Errorf("`⇧R` should turn the checks off: %+v", a.Confirm)
 	}
 }
 
@@ -666,8 +670,23 @@ func TestPlainRerunKeepsAForcedRunForced(t *testing.T) {
 
 	a.cursorToTask("build")
 	a.RerunSelected()
+	if a.Confirm == nil || !a.Confirm.Force {
+		t.Errorf("force should have been inherited: %+v", a.Confirm)
+	}
+}
+
+// Inheriting is not arming. `F` set by hand stays set through an `r` of an unforced run.
+func TestPlainRerunLeavesWhatFArmedAlone(t *testing.T) {
+	a := appWithRun(t, "build", run.Edge{Parent: "build"})
+	a.ForceNext = true
+
+	a.cursorToTask("build")
+	a.RerunSelected()
 	if !a.ForceNext {
-		t.Error("force should have been inherited")
+		t.Error("`r` switched off the force `F` had armed")
+	}
+	if a.Confirm == nil || a.Confirm.Force {
+		t.Errorf("…while the re-run itself goes the way the run went: %+v", a.Confirm)
 	}
 }
 

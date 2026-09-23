@@ -235,3 +235,41 @@ func TestADirectoryIsNotAFile(t *testing.T) {
 		t.Error("a directory should not resolve")
 	}
 }
+
+// A task in an included Taskfile runs in that file's directory, and prints paths relative
+// to it. The root having a file at the same relative path must not win: that is the wrong
+// file, opened as though it were certain.
+func TestAPathIsReadFromWhereTheTaskRan(t *testing.T) {
+	root := project(t, "src/index.ts", "site/src/index.ts")
+	abs, ambiguous, ok := NewResolver(root).ResolveIn(filepath.Join(root, "site"), "src/index.ts")
+	if !ok || ambiguous {
+		t.Fatalf("ok=%v ambiguous=%v", ok, ambiguous)
+	}
+	if abs != filepath.Join(root, "site/src/index.ts") {
+		t.Errorf("got %s, want the one under the task's directory", abs)
+	}
+}
+
+// Left to the index, a same-named file under the task's directory is the one it meant.
+func TestTheIndexPrefersTheTasksDirectory(t *testing.T) {
+	root := project(t, "api/view.go", "site/deep/view.go")
+	abs, ambiguous, ok := NewResolver(root).ResolveIn(filepath.Join(root, "site"), "view.go")
+	if !ok {
+		t.Fatal("not found")
+	}
+	if ambiguous {
+		t.Error("one candidate under the task's directory is not a guess")
+	}
+	if abs != filepath.Join(root, "site/deep/view.go") {
+		t.Errorf("got %s", abs)
+	}
+}
+
+// Nothing under the task's directory: the project answers, as it did before.
+func TestATaskDirectoryWithNothingInItFallsBackToTheProject(t *testing.T) {
+	root := project(t, "src/index.ts", "site/other.ts")
+	abs, _, ok := NewResolver(root).ResolveIn(filepath.Join(root, "site"), "src/index.ts")
+	if !ok || abs != filepath.Join(root, "src/index.ts") {
+		t.Errorf("got %s, %v", abs, ok)
+	}
+}
