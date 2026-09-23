@@ -407,9 +407,30 @@ func Ask(dir string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// Discover runs `task --list-all` in dir and returns the tasks, minus the `*:default`
-// entries — in a UI where a namespace is itself a selectable row, a task whose only job is
-// "show available tasks" is noise.
+// canonical is the name a task is run by. `dev:default` is what `task dev` runs, so it is
+// listed as `dev` — which lands it on the `dev` group row, runnable the way a root-level
+// `sec` beside `sec:secrets` is. In a UI where a namespace is itself a selectable row, a
+// `default` row underneath it would be noise; a namespace row that cannot be run when
+// `task dev` starts the whole product is a hole.
+//
+// The root `default` has no such name — it is `task` with no argument — and stays out.
+func canonical(t Task) (Task, bool) {
+	if t.Name == "default" {
+		return t, false
+	}
+	if ns, ok := strings.CutSuffix(t.Name, ":default"); ok {
+		t.Name = ns
+		// go-task lists the namespace itself as an alias of its default. That is now its
+		// name, not an alias of it.
+		t.Aliases = slices.DeleteFunc(t.Aliases, func(a string) bool { return a == ns })
+	}
+	return t, true
+}
+
+// Discover runs `task --list-all` in dir and returns the tasks.
+//
+// A root-level `dev` and an included `dev:default` are both reachable to go-task, but
+// `task dev` runs the root one, so that is the one kept when the two collide.
 func Discover(dir string) ([]Task, error) {
 	declared := DangerPatterns(dir)
 
@@ -426,11 +447,16 @@ func Discover(dir string) ([]Task, error) {
 	}
 
 	var tasks []Task
+	seen := map[string]bool{}
 	for line := range strings.SplitSeq(string(stdout), "\n") {
 		t, ok := parseEntry(line)
-		if !ok || t.Name == "default" || strings.HasSuffix(t.Name, ":default") {
+		if ok {
+			t, ok = canonical(t)
+		}
+		if !ok || seen[t.Name] {
 			continue
 		}
+		seen[t.Name] = true
 		if len(declared) > 0 {
 			t.Dangerous = false
 			for _, p := range declared {
@@ -503,7 +529,16 @@ func Details(dir string) (map[string]Detail, error) {
 
 	out := make(map[string]Detail, len(listing.Tasks))
 	for _, t := range listing.Tasks {
-		out[t.Name] = Detail{
+		// Keyed the way Discover names them, so `dev:default` lands on `dev`; a root-level
+		// `dev` wins the collision, the same as there.
+		named, ok := canonical(Task{Name: t.Name})
+		if !ok {
+			continue
+		}
+		if _, taken := out[named.Name]; taken {
+			continue
+		}
+		out[named.Name] = Detail{
 			Where:    Where{File: t.Location.Taskfile, Line: t.Location.Line},
 			UpToDate: t.UpToDate,
 		}

@@ -301,3 +301,30 @@ func TestAColouredListingStillParses(t *testing.T) {
 		t.Errorf("desc = %q", got.Desc)
 	}
 }
+
+func TestNamespaceDefaultIsNamedByItsNamespace(t *testing.T) {
+	got, ok := canonical(Task{Name: "dev:default", Aliases: []string{"dev", "d"}})
+	if !ok {
+		t.Fatal("expected the task to be kept")
+	}
+	if got.Name != "dev" {
+		t.Errorf("name = %q", got.Name)
+	}
+	// go-task adds the namespace itself as an alias of its default; that is the name now.
+	if !reflect.DeepEqual(got.Aliases, []string{"d"}) {
+		t.Errorf("aliases = %v", got.Aliases)
+	}
+}
+
+func TestRootDefaultIsDropped(t *testing.T) {
+	if _, ok := canonical(Task{Name: "default"}); ok {
+		t.Error("the root default has no name to run it by")
+	}
+}
+
+func TestOrdinaryNamesPassThrough(t *testing.T) {
+	got, ok := canonical(Task{Name: "backend:migrate:down"})
+	if !ok || got.Name != "backend:migrate:down" {
+		t.Errorf("got %+v, %v", got, ok)
+	}
+}

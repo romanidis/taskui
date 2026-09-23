@@ -2522,7 +2522,28 @@ func runRowsFor(r *run.Run, foldOf func(string) Fold, peek int, filter *rowFilte
 	// Pushed in reverse so siblings come out in invocation order.
 	stack := []frame{{r.Root, 0}}
 
-	for len(stack) > 0 {
+	for {
+		if len(stack) == 0 {
+			// Whatever go-task ran that the graph never reached. `--summary` refuses to
+			// describe an `internal: true` task, so a root whose deps hide behind one —
+			// docco's `dev` → `dev:all` → {`dev:backend`, `site:dev`} — resolves to a graph
+			// that stops at the internal task, while the output plainly carries the tasks
+			// beyond it. They hang off the root, at the depth their real parent would have
+			// had, rather than off nothing: the alternative was a run whose logs were all
+			// captured and none shown.
+			var strays []string
+			for _, name := range r.Order {
+				if !seen[name] {
+					strays = append(strays, name)
+				}
+			}
+			if len(strays) == 0 {
+				break
+			}
+			for _, name := range slices.Backward(strays) {
+				stack = append(stack, frame{name, 1})
+			}
+		}
 		top := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 

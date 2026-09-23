@@ -20,8 +20,12 @@ inline in the root `Taskfile.yml` rather than included from their own files, so 
 namespace is this in" and "where do I go to edit it" have different answers. A file pivot
 is a few lines away — `location.taskfile` is already parsed — but it is not wired up yet.
 
-**`*:default` tasks are dropped.** In a UI where a namespace is itself a selectable row, a
-task whose only job is "show available tasks" is noise.
+**`*:default` tasks become their namespace row.** `dev:default` is what `task dev` runs, so
+it is listed as `dev` and lands on the `dev` group row, which is then runnable — the same
+shape as a root-level `sec` beside `sec:secrets`. A `default` row underneath would be noise
+in a UI where the namespace is itself a selectable row; a namespace row that cannot be run
+when `task dev` starts the whole product is a hole. The root `default` has no name to run
+it by and stays out.
 
 **Production tasks are flagged `⚠` and need a confirmation.** `⏎` runs things for real and
 a fuzzy filter puts every task one keypress away, so the dangerous ones stop and ask:

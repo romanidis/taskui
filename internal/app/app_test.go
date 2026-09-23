@@ -2,6 +2,7 @@ package app
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -335,6 +336,24 @@ func rendered(a *App) []string {
 		}
 	}
 	return out
+}
+
+func TestTasksTheGraphNeverReachedStillShow(t *testing.T) {
+	// `dev` runs `dev:all`, which is internal, so `--summary` stops there and the graph
+	// never learns about the deps behind it. Their output arrives regardless.
+	a := appWithRun(t, "dev", run.Edge{Parent: "dev", Children: []string{"dev:all"}}, run.Edge{Parent: "dev:all"})
+	a.Run.Feed("dev:backend", "listening on :8080")
+	a.Run.Feed("site:dev", "hugo server")
+	a.RebuildRunRows()
+
+	got := taskRows(a)
+	want := []string{"dev", "  dev:all", "  dev:backend", "  site:dev"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("rows = %v, want %v", got, want)
+	}
+	if !slices.Contains(rendered(a), "line listening on :8080") {
+		t.Errorf("the stray task's output should render: %v", rendered(a))
+	}
 }
 
 func TestTheRunTreeFollowsInvocationOrder(t *testing.T) {
