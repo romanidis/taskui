@@ -55,6 +55,9 @@ const KeepHistory = 2000
 // than one repository, an agent per worktree) can append at once without a lock.
 const compactAt = 10000
 
+// compactSlack is how much a compaction has to drop to be worth rewriting the ledger for.
+const compactSlack = compactAt / 10
+
 type TaskEntry struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
@@ -233,6 +236,14 @@ func compactHistory(base string) error {
 		keep = append(keep, m)
 	}
 
+	// Only when it is worth a rewrite. Past compactAt with nothing to drop — six busy
+	// projects, each within its KeepHistory — every later save re-read and rewrote the whole
+	// file to remove nothing, which is the rewrite-per-run the append-only ledger exists to
+	// avoid, and one line over a project's limit did the same to remove one.
+	if len(all)-len(keep) < compactSlack {
+		return nil
+	}
+
 	var b strings.Builder
 	for _, m := range slices.Backward(keep) {
 		blob, err := json.Marshal(m)
@@ -242,12 +253,9 @@ func compactHistory(base string) error {
 		b.Write(blob)
 		b.WriteByte('\n')
 	}
-
-	tmp := historyPath(base) + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, historyPath(base))
+	// A temporary file of its own rather than a fixed `.tmp`, which two processes
+	// compacting at once both wrote into.
+	return writeAtomic(historyPath(base), []byte(b.String()))
 }
 
 // sortNewestFirst is the order every reader wants: most recent run first, ties broken by id

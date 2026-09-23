@@ -274,8 +274,8 @@ type GraphReady struct{ Graph graph.Graph }
 
 // Partial is output with no newline yet — an interactive prompt. `Do you want to proceed?
 // (y/n) ` never terminates its line, so a strictly line-based reader shows nothing at all
-// and the run just appears to hang.
-type Partial struct{ Text string }
+// and the run just appears to hang. Task is the one its tag named, empty when it had none.
+type Partial struct{ Task, Text string }
 
 // Redacting says how many distinct secrets the redactor is masking, so the UI can say
 // whether output has been through it.
@@ -935,9 +935,12 @@ func (r *Run) apply(event Event) {
 
 	case Partial:
 		r.lastOutput = time.Now()
-		name := r.Root
-		if r.hasActive {
-			name = r.active
+		name := r.canonical(e.Task)
+		if name == "" {
+			name = r.Root
+			if r.hasActive {
+				name = r.active
+			}
 		}
 		r.touch(name)
 		if r.provisional != nil && r.provisional.task == name {
@@ -1182,6 +1185,18 @@ func (r *Run) settle(exit int) {
 
 // capture drives `task --output prefixed <root>` on a pty and streams parsed events,
 // blocking until the child exits.
+// partialOf is a fragment as a Partial, with go-task's tag read off it the way parseLine
+// reads one off a whole line. Without it a fragment of `[b] …` kept the tag as text and was
+// put under whichever task spoke last, which under parallel deps is often another one.
+func partialOf(text string) Partial {
+	for _, event := range parseLine(text) {
+		if line, ok := event.(LineEvent); ok {
+			return Partial{Task: line.Task, Text: line.Raw}
+		}
+	}
+	return Partial{Text: text}
+}
+
 // maxPending is how long an unterminated line is allowed to grow before it is broken.
 const maxPending = 16 << 10
 
@@ -1294,9 +1309,15 @@ func (r *Run) capture(dir string, redactor *redact.Redactor) error {
 			}
 
 			// Whatever is left has no newline yet. Emit it anyway: a prompt never gets
-			// one, and waiting for it means the run looks hung.
+			// one, and waiting for it means the run looks hung — all but a tail that
+			// could be the start of a secret still arriving. Masking needs the whole
+			// secret, so until it is all here its first half is just text, and it was
+			// shown as such until the rest of the line caught up.
 			if len(pending) > 0 {
-				r.send(Partial{Text: mask(redactor, applyOverwrites(string(pending)))})
+				text := mask(redactor, applyOverwrites(string(pending)))
+				if text = text[:len(text)-redactor.Unfinished(text)]; text != "" {
+					r.send(partialOf(text))
+				}
 			}
 		}
 		if err != nil {

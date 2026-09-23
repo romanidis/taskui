@@ -242,7 +242,13 @@ func projectCommand(cmd *cobra.Command, root string, tasks []task.Task, config t
 	case opts.dump != "":
 		return true, dumpPivot(opts.dump, app.New(tasks, root).WithConfig(config))
 	case opts.graph != "":
-		printGraph(root, opts.graph)
+		// Checked against the listing first: go-task answers an unknown name with nothing,
+		// which printed the name alone as a one-node graph and exited 0 — the same answer
+		// as a real task that runs nothing else.
+		if !listed(tasks, opts.graph) {
+			return true, fmt.Errorf("no task called %s — `taskui --list` shows them", opts.graph)
+		}
+		printGraph(out, root, opts.graph)
 		return true, nil
 	// Like --graph, this reads the project rather than the archive. Gaps exit ExitFound
 	// rather than ExitFailed: `task precommit` fails on either, and a script that wants to
@@ -254,6 +260,19 @@ func projectCommand(cmd *cobra.Command, root string, tasks []task.Task, config t
 		return true, nil
 	}
 	return false, nil
+}
+
+// listed reports whether name is a task go-task would run by that name: one in the list, by
+// its name or an alias, or a namespace's default spelled out in full — `dev:default` is
+// listed as `dev`, and go-task still accepts the long form.
+func listed(tasks []task.Task, name string) bool {
+	short := strings.TrimSuffix(name, ":default")
+	for _, t := range tasks {
+		if t.Name == name || t.Name == short || slices.Contains(t.Aliases, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func printTaskListText(out io.Writer, tasks []task.Task) {
@@ -398,18 +417,7 @@ func rootRun(cmd *cobra.Command, args []string) error {
 			}
 			return runHeadless(root, opts.runTask, shellwords.Split(opts.args), opts.quickfix)
 		}
-		a := app.New(tasks, root).WithConfig(config)
-		a.StartEnrichment()
-		if err := a.StartRun(opts.runTask); err != nil {
-			return err
-		}
-		// Starting a run no longer takes the screen — the picker keeps it and shows the
-		// run under the task. This flag is documented as rendering the run view, so it
-		// asks for it.
-		a.ResumeRun()
-		a.AwaitDetails(detailGrace)
-		drive(a, opts.keys)
-		return screenshot(a, opts.screenshot, "")
+		return screenshotRun(cmd.OutOrStdout(), app.New(tasks, root).WithConfig(config))
 	}
 
 	a := app.New(tasks, root).WithConfig(config)
@@ -437,7 +445,7 @@ func rootRun(cmd *cobra.Command, args []string) error {
 		// Its own grace, and a longer one: this walk is a process spawn per node and the
 		// listing's budget was set for one call.
 		a.AwaitCoverage(coverGrace)
-		return screenshot(a, opts.screenshot, opts.keys)
+		return screenshot(cmd.OutOrStdout(), a, opts.screenshot, opts.keys)
 	}
 
 	// Where each task is written, and whether it is up to date. Started here rather than in
@@ -583,7 +591,7 @@ func dumpPivot(mode string, a *app.App) error {
 	return nil
 }
 
-func printGraph(root, rootTask string) {
+func printGraph(out io.Writer, root, rootTask string) {
 	g := graph.Resolve(root, rootTask)
 	// Print the tree, marking revisits rather than expanding them twice.
 	seen := map[string]bool{}
@@ -601,7 +609,7 @@ func printGraph(root, rootTask string) {
 		if repeat {
 			mark = "  (already shown)"
 		}
-		if _, err := fmt.Printf("%s%s%s\n", strings.Repeat("  ", top.depth), top.name, mark); err != nil {
+		if _, err := fmt.Fprintf(out, "%s%s%s\n", strings.Repeat("  ", top.depth), top.name, mark); err != nil {
 			return // piping into `head` closes the pipe on us
 		}
 		if !repeat {
@@ -893,7 +901,31 @@ const detailGrace = 5 * time.Second
 // the check is worth running on at all.
 const coverGrace = 20 * time.Second
 
-func screenshot(a *app.App, size, feed string) error {
+// screenshotRun is `--run` with `--screenshot`: the run view of a real run, drawn once it
+// is over, and the run's status to exit with.
+func screenshotRun(out io.Writer, a *app.App) error {
+	a.StartEnrichment()
+	if err := a.StartRun(opts.runTask); err != nil {
+		return err
+	}
+	// Starting a run no longer takes the screen — the picker keeps it and shows the run
+	// under the task. This flag is documented as rendering the run view, so it asks for it.
+	a.ResumeRun()
+	started := a.Run
+	a.AwaitDetails(detailGrace)
+	drive(a, opts.keys)
+	if err := screenshot(out, a, opts.screenshot, ""); err != nil {
+		return err
+	}
+	// Still `--run`: the frame is what was asked to be seen, and the status is still the
+	// task's. It used to be 0 whatever the task did.
+	if started != nil && started.Finished() && started.Exit != 0 {
+		return exitWith(started.Exit)
+	}
+	return nil
+}
+
+func screenshot(out io.Writer, a *app.App, size, feed string) error {
 	w, h, err := parseSize(size)
 	if err != nil {
 		return err
@@ -913,11 +945,11 @@ func screenshot(a *app.App, size, feed string) error {
 		// Nothing here is a terminal, so lipgloss would otherwise decide there is no point
 		// colouring anything. Saying otherwise is the whole request.
 		lipgloss.SetColorProfile(termenv.TrueColor)
-		fmt.Println(a.RenderFrame(w, h))
+		_, _ = fmt.Fprintln(out, a.RenderFrame(w, h))
 		return nil
 	}
 	for _, l := range a.RenderHeadless(w, h) {
-		if _, err := fmt.Println(l); err != nil {
+		if _, err := fmt.Fprintln(out, l); err != nil {
 			return nil //nolint:nilerr // piping into `head` closes the pipe on us
 		}
 	}

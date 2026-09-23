@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/romanidis/taskui/internal/run"
 )
@@ -99,11 +100,19 @@ type Sink struct {
 	mu  sync.Mutex
 	w   io.WriteCloser
 	enc *json.Encoder
+	// conn is set when the destination is a socket, which is the one kind of destination
+	// whose reader can stop reading while taskui still holds the other end.
+	conn net.Conn
+	// broken is a socket that has stopped taking events. Nothing more is sent to it.
+	broken bool
 	// Lines says whether output lines go out too. The `--json` stream sends them, because
 	// its consumer is drawing the run; a TUI with a host attached does not, because the
 	// terminal in front of you is already showing them.
 	Lines bool
 }
+
+// sendTimeout is how long one event may wait on a socket before the host is given up on.
+const sendTimeout = time.Second
 
 // Open dials a destination for events.
 //
@@ -127,18 +136,37 @@ func Open(path string) (*Sink, error) {
 
 // New wraps an already-open destination.
 func New(w io.WriteCloser) *Sink {
-	return &Sink{w: w, enc: json.NewEncoder(w)}
+	s := &Sink{w: w, enc: json.NewEncoder(w)}
+	if conn, ok := w.(net.Conn); ok {
+		s.conn = conn
+	}
+	return s
 }
 
 // Send writes one event. Errors are dropped on purpose: a host that closed the socket has
 // stopped caring, and a run must not fail because nobody is listening any more.
+//
+// On a socket, with a deadline. Send is called from the UI loop, and a host that stopped
+// reading — an editor busy, hung, or stopped at a breakpoint — let the socket fill and
+// then held every later write, which froze taskui with it. Past the deadline the host is
+// given up on for good: the next write would only wait the same second again, and a TUI
+// that stutters once a second is not much better than one that stops. `--run --json` on
+// stdout keeps blocking, because there the reader's pace is the whole point.
 func (s *Sink) Send(event any) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.enc.Encode(event)
+	if s.broken {
+		return
+	}
+	if s.conn != nil {
+		_ = s.conn.SetWriteDeadline(time.Now().Add(sendTimeout))
+	}
+	if err := s.enc.Encode(event); err != nil && s.conn != nil {
+		s.broken = true
+	}
 }
 
 // Close releases the destination.

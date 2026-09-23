@@ -3,9 +3,13 @@ package events_test
 import (
 	"bytes"
 	"encoding/json"
+	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/romanidis/taskui/internal/events"
 	"github.com/romanidis/taskui/internal/run"
@@ -189,5 +193,49 @@ func TestAFragmentMovedToAnotherTaskCostsTheFirstNothing(t *testing.T) {
 	}
 	if !slices.Contains(lines, "a2-should-appear") {
 		t.Errorf("a's lines = %v", lines)
+	}
+}
+
+// A host that stops reading must not stop taskui. The socket fills, and then every write
+// waited on it — from the UI loop — for as long as the host stayed away.
+func TestAHostThatStopsReadingDoesNotHoldTheSender(t *testing.T) {
+	//nolint:usetesting // a unix socket's path has to fit in 104 bytes, and t.TempDir's does not
+	dir, err := os.MkdirTemp("", "ev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "s.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	// Accepts, and never reads a byte.
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			t.Cleanup(func() { _ = conn.Close() })
+		}
+	}()
+
+	sink, err := events.Open(socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sink.Close() })
+
+	done := make(chan struct{})
+	go func() {
+		payload := strings.Repeat("x", 64<<10)
+		for range 200 {
+			sink.Send(events.Line{Type: "line", Text: payload})
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("sending to a host that stopped reading blocked the sender")
 	}
 }

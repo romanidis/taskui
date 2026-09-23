@@ -3,6 +3,7 @@ package diff
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -260,4 +261,71 @@ func mutate(r *rand.Rand, in []string) []string {
 		}
 	}
 	return out
+}
+
+// Two `go test` logs where every package line carries its own timing: the case that used to
+// cost a 145MB trace and then fall back to "all of it changed".
+func timedLogs(n int) ([]string, []string) {
+	older, newer := make([]string, n), make([]string, n)
+	for i := range n {
+		if i%10 == 0 {
+			older[i] = fmt.Sprintf("ok  \tpkg%d\t0.%03ds", i, i%997)
+			newer[i] = fmt.Sprintf("ok  \tpkg%d\t0.%03ds", i, (i+1)%997)
+			continue
+		}
+		older[i] = "=== RUN   Test" + strconv.Itoa(i)
+		newer[i] = older[i]
+	}
+	return older, newer
+}
+
+func TestLogsThatDifferAllThroughStillAlign(t *testing.T) {
+	older, newer := timedLogs(20000)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	s := Count(Lines(older, newer))
+	runtime.ReadMemStats(&after)
+
+	if s.Removed != 2000 || s.Added != 2000 || s.Same != 18000 {
+		t.Errorf("got %+v, want the 2000 timing lines each way and the rest shared", s)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 64<<20 {
+		t.Errorf("allocated %dMB aligning two logs", allocated>>20)
+	}
+}
+
+// With unique lines in the mix, the anchors carry most of the alignment; the edits still
+// have to rebuild both sides, with every line number where it belongs.
+func TestAnchoredEditsReconstructBothSidesWithTheirNumbers(t *testing.T) {
+	r := rand.New(rand.NewSource(11))
+	for range 300 {
+		older := make([]string, r.Intn(80))
+		for i := range older {
+			if r.Intn(3) == 0 {
+				older[i] = fmt.Sprintf("common%d", r.Intn(4))
+			} else {
+				older[i] = fmt.Sprintf("u%d", r.Intn(1000))
+			}
+		}
+		newer := mutate(r, older)
+		var gotOld, gotNew []string
+		for _, e := range Lines(older, newer) {
+			if e.Op != Ins {
+				gotOld = append(gotOld, e.Text)
+				if e.OldLine != len(gotOld) {
+					t.Fatalf("old line %d numbered %d", len(gotOld), e.OldLine)
+				}
+			}
+			if e.Op != Del {
+				gotNew = append(gotNew, e.Text)
+				if e.NewLine != len(gotNew) {
+					t.Fatalf("new line %d numbered %d", len(gotNew), e.NewLine)
+				}
+			}
+		}
+		if strings.Join(gotOld, "\n") != strings.Join(older, "\n") ||
+			strings.Join(gotNew, "\n") != strings.Join(newer, "\n") {
+			t.Fatalf("does not reconstruct:\nold %q\nnew %q", older, newer)
+		}
+	}
 }

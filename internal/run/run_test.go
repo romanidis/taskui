@@ -1048,3 +1048,61 @@ func TestABreakLeavesRoomForASecretStillArriving(t *testing.T) {
 		t.Errorf("cut = %d: the start of a secret still arriving would go out unmasked", cut)
 	}
 }
+
+// A fragment carries go-task's tag like a whole line does, and belongs to the task it names.
+func TestAFragmentGoesToTheTaskItsTagNames(t *testing.T) {
+	if got := partialOf("[b] half of a li"); got.Task != "b" || got.Text != "half of a li" {
+		t.Errorf("partialOf = %+v", got)
+	}
+	g := GraphFrom(Edge{Parent: "all", Children: []string{"a", "b"}}, Edge{Parent: "a"}, Edge{Parent: "b"})
+	g.Deps["all"] = []string{"a", "b"}
+	r := Detached("all", g)
+	r.Feed("a", "a is talking")
+	r.apply(partialOf("[b] half of a li"))
+	if lines := r.Tasks["b"].Lines; len(lines) != 1 || lines[0].Plain != "half of a li" {
+		t.Errorf("b = %v; a = %v", r.Tasks["b"].Lines, r.Tasks["a"].Lines)
+	}
+}
+
+// A secret written in two halves is not on screen as its first half while the second is
+// on its way: masking needs the whole secret, so the tail that could start one waits.
+func TestHalfASecretIsNotShownWhileTheRestIsComing(t *testing.T) {
+	needsGoTask(t)
+	dir := taskfile(t, `version: "3"
+env:
+  API_TOKEN: sk-abcdef123456
+tasks:
+  leak:
+    cmds:
+      - printf 'token=sk-abc'; sleep 1; printf 'def123456 done\n'
+`)
+	// Interactive, so go-task passes the unterminated half through rather than holding
+	// the line back until its newline.
+	r, err := Start(dir, "leak", nil, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sawPartial := false
+	deadline := time.Now().Add(15 * time.Second)
+	for !r.Finished() && time.Now().Before(deadline) {
+		r.Poll()
+		for _, task := range r.Tasks {
+			for _, l := range task.Lines {
+				// The echo is the command as written, which spells the half out itself.
+				if l.IsCommand {
+					continue
+				}
+				if strings.Contains(l.Plain, "token=") && !strings.Contains(l.Plain, "done") {
+					sawPartial = true
+				}
+				if strings.Contains(l.Plain, "sk-abc") {
+					t.Fatalf("half a secret on screen: %q", l.Plain)
+				}
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !sawPartial {
+		t.Log("never caught the line half-written; the check above proved nothing this time")
+	}
+}

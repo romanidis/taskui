@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // saveMany archives n runs of distinct tasks in one project, oldest first.
@@ -218,5 +219,41 @@ func TestTheLedgerLivesBesideTheRuns(t *testing.T) {
 	saveMany(t, base, "/proj", 1)
 	if _, err := os.Stat(filepath.Join(base, "history.ndjson")); err != nil {
 		t.Errorf("want the ledger in the state directory: %v", err)
+	}
+}
+
+// Past compactAt with nothing to drop — six projects, each within what it keeps — there is
+// nothing for a rewrite to do, and every save used to do it anyway. So did a single line
+// over one project's limit.
+func TestCompactionLeavesALedgerItCannotShrinkMuchAlone(t *testing.T) {
+	base := t.TempDir()
+	var b strings.Builder
+	n := int64(0)
+	for p := range 6 {
+		for range KeepHistory {
+			n++
+			b.WriteString(`{"version":1,"id":"r` + itoa(n) + `","root":"r","dir":"/p` + itoa(int64(p)) +
+				`","started_unix":` + itoa(n) + "}\n")
+		}
+	}
+	// One over the limit: droppable, and not worth a rewrite on its own.
+	b.WriteString(`{"version":1,"id":"extra","root":"r","dir":"/p0","started_unix":0}` + "\n")
+	if err := os.WriteFile(historyPath(base), []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(historyPath(base), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := compactHistory(base); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(historyPath(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(old) {
+		t.Error("the ledger was rewritten to drop almost nothing")
 	}
 }

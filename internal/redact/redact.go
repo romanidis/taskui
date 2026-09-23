@@ -183,6 +183,25 @@ func (r *Redactor) Cut(text string, want int) int {
 	return want
 }
 
+// Unfinished is how many bytes at the end of text could be the start of a secret that has
+// not finished arriving: the longest tail of text that some secret begins with.
+//
+// A line shown before its newline is only ever part of what is coming, and a secret split
+// by a read boundary is not a secret to Redact until it is whole. Holding the tail back
+// until then costs a few characters of a line that is still being written.
+func (r *Redactor) Unfinished(text string) int {
+	longest := 0
+	for _, secret := range r.secrets {
+		for n := min(len(secret)-1, len(text)); n > longest; n-- {
+			if strings.HasSuffix(text, secret[:n]) {
+				longest = n
+				break
+			}
+		}
+	}
+	return longest
+}
+
 // Len is how many distinct secrets are being masked.
 func (r *Redactor) Len() int { return len(r.secrets) }
 

@@ -103,3 +103,18 @@ func TestACutNeverFallsInsideASecret(t *testing.T) {
 		}
 	}
 }
+
+func TestUnfinishedIsTheTailASecretStartsWith(t *testing.T) {
+	r := New([]string{"sk-abcdef123456"})
+	for text, want := range map[string]int{
+		"token=sk-abc":   len("sk-abc"),
+		"token=s":        1,
+		"nothing here":   0,
+		"":               0,
+		Marker + " done": 0,
+	} {
+		if got := r.Unfinished(text); got != want {
+			t.Errorf("Unfinished(%q) = %d, want %d", text, got, want)
+		}
+	}
+}
