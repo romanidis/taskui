@@ -302,7 +302,7 @@ type App struct {
 	// Confirm is whatever is waiting on a yes. `⏎` runs things for real, and a fuzzy
 	// filter puts every task one keypress away, so the ones that touch production get a
 	// stop — as do the two ways of killing a run you cannot see.
-	Confirm *Confirm
+	Confirm Confirm
 
 	// SendingInput sends keystrokes to the running task instead of to taskui.
 	// Deliberately a mode: half the run view's keys are single letters, and `y` meaning

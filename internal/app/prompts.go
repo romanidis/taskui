@@ -10,8 +10,7 @@ import (
 // confirmBar is the confirmation line. It takes precedence over every other footer:
 // nothing else is happening until it is answered.
 func (a *App) confirmBar() (line, bool) {
-	pending := a.Confirm
-	if pending == nil {
+	if a.Confirm == nil {
 		return nil, false
 	}
 	t := a.Theme
@@ -19,20 +18,20 @@ func (a *App) confirmBar() (line, bool) {
 	// subject is what keeps "run deploy:prod" from reading like "stop deploy:prod" at a
 	// glance — these are the two questions it is least acceptable to confuse.
 	var verb, subject, why, does string
-	switch pending.Kind {
+	switch c := a.Confirm.(type) {
 	case ConfirmRun:
-		subject = "task " + pending.Name
-		if len(pending.Args) > 0 {
-			subject += " " + strings.Join(pending.Args, " ")
+		subject = "task " + c.Name
+		if len(c.Args) > 0 {
+			subject += " " + strings.Join(c.Args, " ")
 		}
 		why = "  —  this one touches production.  "
-		if pending.Reason == WouldStopRunning {
+		if c.Reason == WouldStopRunning {
 			why = "  —  this stops the run already going.  "
 		}
 		verb, does = " run ", " to run"
 	case ConfirmQuit:
 		verb, does = " quit ", " to quit"
-		switch pending.Live {
+		switch c.Live {
 		case 0:
 			// Nothing to lose, so there is no warning to give — but the question is still
 			// asked, so `q` never means "gone" without a second keystroke.
@@ -40,11 +39,11 @@ func (a *App) confirmBar() (line, bool) {
 		case 1:
 			why = "  —  1 run is still going, and quitting stops it.  "
 		default:
-			why = fmt.Sprintf("  —  %d runs are still going, and quitting stops them.  ", pending.Live)
+			why = fmt.Sprintf("  —  %d runs are still going, and quitting stops them.  ", c.Live)
 		}
 		// The detached ones are the point of having detached them, and a prompt that only
 		// counted what it was about to kill would be leaving out the good news.
-		if n := pending.Detached; n > 0 {
+		if n := c.Detached; n > 0 {
 			why = strings.TrimSuffix(why, "  ") +
 				fmt.Sprintf(
 					"  %s will keep running.  ",
@@ -53,17 +52,17 @@ func (a *App) confirmBar() (line, bool) {
 		}
 	case ConfirmRunMarked:
 		verb, does = " run ", " to run"
-		subject = fmt.Sprintf("%d marked tasks", pending.Live)
-		if pending.Live == 1 {
+		subject = fmt.Sprintf("%d marked tasks", len(c.Names))
+		if len(c.Names) == 1 {
 			subject = "1 marked task"
 		}
 		// Named, because the whole reason this is one question rather than several is that
 		// the dangerous ones are in a batch with tasks that are not.
-		why = "  —  " + pending.Name + " touches production.  "
+		why = "  —  " + strings.Join(c.Dangerous, ", ") + " touches production.  "
 	case ConfirmStopAll:
 		verb, does = " stop ", " to stop"
-		subject = fmt.Sprintf("all %d runs", pending.Live)
-		if pending.Live == 1 {
+		subject = fmt.Sprintf("all %d runs", c.Live)
+		if c.Live == 1 {
 			subject = "1 run"
 		}
 		why = "  —  including the ones you are not looking at.  "

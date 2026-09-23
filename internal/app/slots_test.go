@@ -177,7 +177,7 @@ func TestSixLiveSlotsTakeNothingNew(t *testing.T) {
 
 func TestDecliningABatchSaysItWasNotRun(t *testing.T) {
 	a := sample(t)
-	a.Confirm = &Confirm{Kind: ConfirmRunMarked, Name: "deploy", Reason: TouchesProduction}
+	a.Confirm = ConfirmRunMarked{Names: []string{"deploy"}, Dangerous: []string{"deploy"}}
 	a.ConfirmNo()
 	if a.Status != "not run" {
 		t.Errorf("status = %q", a.Status)
@@ -298,7 +298,7 @@ func TestRerunningAnOldRunRestartsTheLiveOne(t *testing.T) {
 	defer a.KillAll()
 
 	a.RerunSelected()
-	if a.Confirm == nil || a.Confirm.Kind != ConfirmRun || a.Confirm.Reason != WouldStopRunning {
+	if c, ok := a.Confirm.(ConfirmRun); !ok || c.Reason != WouldStopRunning {
 		t.Fatalf("confirm = %+v, want the restart question", a.Confirm)
 	}
 	a.ConfirmYes()

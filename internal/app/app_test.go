@@ -649,7 +649,7 @@ func TestForceRerunForcesAndPlainRerunDoesNot(t *testing.T) {
 
 	a.cursorToTask("build")
 	a.RerunSelected()
-	if a.Confirm == nil || a.Confirm.Force {
+	if c, ok := a.Confirm.(ConfirmRun); !ok || c.Force {
 		t.Errorf("`r` should re-run it the way it was run: %+v", a.Confirm)
 	}
 	if a.ForceNext {
@@ -658,7 +658,7 @@ func TestForceRerunForcesAndPlainRerunDoesNot(t *testing.T) {
 
 	a.Confirm = nil
 	a.ForceRerunSelected()
-	if a.Confirm == nil || !a.Confirm.Force {
+	if c, ok := a.Confirm.(ConfirmRun); !ok || !c.Force {
 		t.Errorf("`⇧R` should turn the checks off: %+v", a.Confirm)
 	}
 }
@@ -670,7 +670,7 @@ func TestPlainRerunKeepsAForcedRunForced(t *testing.T) {
 
 	a.cursorToTask("build")
 	a.RerunSelected()
-	if a.Confirm == nil || !a.Confirm.Force {
+	if c, ok := a.Confirm.(ConfirmRun); !ok || !c.Force {
 		t.Errorf("force should have been inherited: %+v", a.Confirm)
 	}
 }
@@ -685,7 +685,7 @@ func TestPlainRerunLeavesWhatFArmedAlone(t *testing.T) {
 	if !a.ForceNext {
 		t.Error("`r` switched off the force `F` had armed")
 	}
-	if a.Confirm == nil || a.Confirm.Force {
+	if c, ok := a.Confirm.(ConfirmRun); !ok || c.Force {
 		t.Errorf("…while the re-run itself goes the way the run went: %+v", a.Confirm)
 	}
 }

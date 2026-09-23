@@ -416,7 +416,7 @@ func (a *App) action(k Key, screen Screen) keys.Action {
 // the last task finished. A key that sometimes exits instantly is a key you learn not to
 // press.
 func (a *App) quit() bool {
-	a.Confirm = &Confirm{Kind: ConfirmQuit, Live: a.InFlightCount(), Detached: a.DetachedCount()}
+	a.Confirm = ConfirmQuit{Live: a.InFlightCount(), Detached: a.DetachedCount()}
 	return false
 }
 

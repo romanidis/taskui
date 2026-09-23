@@ -332,7 +332,7 @@ func (a *App) RequestStopAll() {
 		a.Status = "nothing is running"
 		return
 	}
-	a.Confirm = &Confirm{Kind: ConfirmStopAll, Live: live}
+	a.Confirm = ConfirmStopAll{Live: live}
 }
 
 // StopAll stops every live slot, reporting what was reached.

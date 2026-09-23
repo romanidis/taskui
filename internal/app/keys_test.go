@@ -266,7 +266,7 @@ func TestRestartingALiveSlotAsksFirst(t *testing.T) {
 
 	a.RerunSelected()
 
-	if a.Confirm == nil || a.Confirm.Kind != ConfirmRun || a.Confirm.Reason != WouldStopRunning {
+	if c, ok := a.Confirm.(ConfirmRun); !ok || c.Reason != WouldStopRunning {
 		t.Errorf("should be waiting on a yes, and saying why: %+v", a.Confirm)
 	}
 }
@@ -333,7 +333,7 @@ func TestQuittingAsksBeforeStoppingAnything(t *testing.T) {
 	if a.quit() {
 		t.Error("should not have left")
 	}
-	if a.Confirm == nil || a.Confirm.Kind != ConfirmQuit || a.Confirm.Live != 2 {
+	if c, ok := a.Confirm.(ConfirmQuit); !ok || c.Live != 2 {
 		t.Fatalf("confirm = %+v", a.Confirm)
 	}
 
@@ -359,7 +359,7 @@ func TestQuittingAsksEvenWithNothingRunning(t *testing.T) {
 	if a.quit() {
 		t.Error("should not have left on the first press")
 	}
-	if a.Confirm == nil || a.Confirm.Kind != ConfirmQuit || a.Confirm.Live != 0 {
+	if c, ok := a.Confirm.(ConfirmQuit); !ok || c.Live != 0 {
 		t.Fatalf("confirm = %+v", a.Confirm)
 	}
 
@@ -470,7 +470,7 @@ func TestStopAllAsksThenStopsEverySlot(t *testing.T) {
 	defer a.KillAll()
 
 	a.RequestStopAll()
-	if a.Confirm == nil || a.Confirm.Kind != ConfirmStopAll || a.Confirm.Live != 2 {
+	if c, ok := a.Confirm.(ConfirmStopAll); !ok || c.Live != 2 {
 		t.Fatalf("confirm = %+v", a.Confirm)
 	}
 
@@ -1034,7 +1034,7 @@ func TestShiftIReRunsInteractively(t *testing.T) {
 	}
 	// The run is live, so restarting it is asked about — and the answer restarts it
 	// interactively, rather than only focusing the run that is stuck.
-	if a.Confirm == nil || a.Confirm.Reason != WouldStopRunning || !a.Confirm.Interactive {
+	if c, ok := a.Confirm.(ConfirmRun); !ok || c.Reason != WouldStopRunning || !c.Interactive {
 		t.Errorf("confirm = %+v", a.Confirm)
 	}
 }
@@ -1248,7 +1248,7 @@ func TestTheWheelMovesTheCursor(t *testing.T) {
 // question that vanished because the mouse moved would be a question you never answered.
 func TestTheWheelDoesNotAnswerAConfirmation(t *testing.T) {
 	a := sample(t)
-	a.Confirm = &Confirm{Kind: ConfirmRun, Name: "deploy", Reason: TouchesProduction}
+	a.Confirm = ConfirmRun{Name: "deploy", Reason: TouchesProduction}
 
 	a.handleWheel(tea.MouseWheelDown)
 

@@ -496,10 +496,11 @@ func TestEveryScreenRendersAtEveryAwkwardSize(t *testing.T) {
 			a.SendingInput = false
 
 			// Every shape of the confirmation bar, since each builds its own line.
-			for _, pending := range []*Confirm{
-				{Kind: ConfirmRun, Name: "deploy:backend", Args: []string{"--force"}, Reason: TouchesProduction},
-				{Kind: ConfirmQuit, Live: 3},
-				{Kind: ConfirmStopAll, Live: 1},
+			for _, pending := range []Confirm{
+				ConfirmRun{Name: "deploy:backend", Args: []string{"--force"}, Reason: TouchesProduction},
+				ConfirmRunMarked{Names: []string{"deploy:backend", "lint"}, Dangerous: []string{"deploy:backend"}},
+				ConfirmQuit{Live: 3},
+				ConfirmStopAll{Live: 1},
 			} {
 				a.Confirm = pending
 				a.RenderHeadless(w, h)

@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/romanidis/taskui/internal/run"
 )
@@ -96,12 +95,7 @@ func (a *App) RunMarked() {
 			}
 		}
 		if len(dangerous) > 0 {
-			a.Confirm = &Confirm{
-				Kind:   ConfirmRunMarked,
-				Name:   strings.Join(dangerous, ", "),
-				Reason: TouchesProduction,
-				Live:   len(names),
-			}
+			a.Confirm = ConfirmRunMarked{Names: names, Dangerous: dangerous}
 			return
 		}
 	}
