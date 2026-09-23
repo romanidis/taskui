@@ -21,6 +21,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/romanidis/taskui/internal/graph"
@@ -230,10 +231,11 @@ func compactHistory(base string) error {
 	kept := map[string]int{}
 	keep := make([]Manifest, 0, len(all))
 	for _, m := range all {
-		if kept[m.Dir] >= KeepHistory {
+		project := resolveDir(m.Dir)
+		if kept[project] >= KeepHistory {
 			continue
 		}
-		kept[m.Dir]++
+		kept[project]++
 		keep = append(keep, m)
 	}
 
@@ -549,6 +551,45 @@ func exists(path string) bool {
 	return err == nil
 }
 
+// SameDir reports whether two paths name the same project directory, however each was
+// spelled.
+//
+// The archive is keyed by the directory a run was made in, and comparing the strings split a
+// project in two whenever it was reached by two paths: through a symlink and without one, or
+// as `/var` and `/private/var`, which macOS hands out for one place.
+func SameDir(a, b string) bool {
+	return a == b || resolveDir(a) == resolveDir(b)
+}
+
+// resolved remembers what each directory resolves to. Every question about one project walks
+// the whole archive, which names the same few directories thousands of times over.
+var (
+	resolvedMu sync.Mutex
+	resolved   = map[string]string{}
+)
+
+// resolveDir is a directory as the filesystem knows it, symlinks resolved. One that no longer
+// exists resolves as far as its nearest parent that does, so a project deleted since its runs
+// were saved still matches itself.
+func resolveDir(dir string) string {
+	resolvedMu.Lock()
+	out, ok := resolved[dir]
+	resolvedMu.Unlock()
+	if ok {
+		return out
+	}
+	out = filepath.Clean(dir)
+	if target, err := filepath.EvalSymlinks(out); err == nil {
+		out = target
+	} else if parent := filepath.Dir(out); parent != out {
+		out = filepath.Join(resolveDir(parent), filepath.Base(out))
+	}
+	resolvedMu.Lock()
+	resolved[dir] = out
+	resolvedMu.Unlock()
+	return out
+}
+
 // RepoOf identifies the repository a directory belongs to, the same for every worktree of
 // it.
 //
@@ -758,7 +799,7 @@ func LastOutcomes(base, project string) map[string]Outcome {
 	out := map[string]Outcome{}
 	// List is newest first, so the first sighting of a task is its latest.
 	for _, manifest := range List(base) {
-		if manifest.Dir != project {
+		if !SameDir(manifest.Dir, project) {
 			continue
 		}
 		for _, entry := range manifest.Tasks {
@@ -816,7 +857,7 @@ func (p Point) Command() string {
 func Timeline(base, project, task string) []Point {
 	var out []Point
 	for _, m := range List(base) {
-		if project != "" && m.Dir != project {
+		if project != "" && !SameDir(m.Dir, project) {
 			continue
 		}
 		for _, e := range m.Tasks {
@@ -953,7 +994,7 @@ func Flaky(base, project string) []Flake {
 	seen := map[key]*Flake{}
 
 	for _, m := range List(base) {
-		if (project != "" && m.Dir != project) || m.Commit == "" || strings.HasSuffix(m.Commit, "-dirty") {
+		if (project != "" && !SameDir(m.Dir, project)) || m.Commit == "" || strings.HasSuffix(m.Commit, "-dirty") {
 			continue
 		}
 		for _, e := range m.Tasks {

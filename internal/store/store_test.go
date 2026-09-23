@@ -177,6 +177,35 @@ func TestOutcomesAreScopedToTheProject(t *testing.T) {
 	}
 }
 
+// A project reached through a symlink is that project, not a second one beside it. macOS
+// does this to everybody — `/var` is `/private/var` — and history that depended on which
+// spelling the shell handed over was split in two.
+func TestAProjectReachedThroughASymlinkKeepsOneHistory(t *testing.T) {
+	base := t.TempDir()
+	project := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(project, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(base, link, finishedRun("all")); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := LastOutcomes(base, project)["child"]; !ok {
+		t.Error("a run made through the link is missing from the directory's outcomes")
+	}
+	if len(Timeline(base, project, "child")) != 1 {
+		t.Error("and from its timeline")
+	}
+	if !SameDir(link, project) || SameDir(link, base) {
+		t.Error("SameDir does not tell the directories apart")
+	}
+	// A project deleted since is still itself, by whatever path its runs were saved under.
+	if !SameDir(filepath.Join(link, "gone"), filepath.Join(project, "gone")) {
+		t.Error("a directory that no longer exists stopped matching itself")
+	}
+}
+
 // A task that was never reached has no outcome — that is not the same as passing.
 func TestSkippedTasksHaveNoOutcome(t *testing.T) {
 	base := t.TempDir()

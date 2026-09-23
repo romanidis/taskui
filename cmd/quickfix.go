@@ -33,7 +33,7 @@ func printQuickfix(out io.Writer, root, only string) error {
 		// The ledger remembers further back than the output is kept, and a quickfix list is
 		// built out of the text. Walk past what is only remembered to the newest run there is
 		// still something to read.
-		if m.Dir != root || !store.HasOutput(base, m.ID) {
+		if !store.SameDir(m.Dir, root) || !store.HasOutput(base, m.ID) {
 			continue
 		}
 		r, err := store.Load(base, m)

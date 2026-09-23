@@ -41,7 +41,7 @@ func (s HistoryScope) String() string {
 func (a *App) OpenLastRun() bool {
 	here := a.Root
 	for _, m := range store.List(a.stateDir) {
-		if m.Dir != here {
+		if !store.SameDir(m.Dir, here) {
 			continue
 		}
 		a.History = []store.Manifest{m}
@@ -85,7 +85,7 @@ func (a *App) reloadHistory() {
 // manifests written before `Repo` existed have none, and answering "not the same repo" for
 // a run made in this very directory would lose history the narrow scope always showed.
 func (a *App) inHistoryScope(m store.Manifest) bool {
-	if m.Dir == a.Root {
+	if store.SameDir(m.Dir, a.Root) {
 		return true
 	}
 	return a.HistoryScope == ScopeRepo && a.repoDir() != "" && m.Repo == a.repoDir()
@@ -200,7 +200,7 @@ func (a *App) otherWorktrees() bool {
 		return false
 	}
 	for _, m := range store.List(a.stateDir) {
-		if m.Repo == repo && m.Dir != a.Root {
+		if m.Repo == repo && !store.SameDir(m.Dir, a.Root) {
 			return true
 		}
 	}

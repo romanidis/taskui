@@ -139,7 +139,7 @@ type Scope struct {
 }
 
 func (s Scope) keeps(m store.Manifest) bool {
-	if s.Project != "" && m.Dir != s.Project {
+	if s.Project != "" && !store.SameDir(m.Dir, s.Project) {
 		return false
 	}
 	if !s.Since.IsZero() && time.Unix(m.StartedUnix, 0).Before(s.Since) {
