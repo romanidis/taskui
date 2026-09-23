@@ -17,7 +17,7 @@ local M = {}
 ---@field open_quickfix boolean Open the quickfix window when it is filled from a failure.
 ---@field notify boolean Say how a run went — for when the terminal is not the window you are in.
 ---@field keys table<string, string|false> The two keys the host owns inside the terminal; the rest belong to taskui.
----@field jump_key string taskui's own jump key, which `run()` types to reach a task. Set it if a taskui config moved it.
+---@field jump_key string taskui's own jump key, which `run()` types to reach a task. Set it if your config moves it.
 M.defaults = {
   binary = "taskui",
   project = nil,
