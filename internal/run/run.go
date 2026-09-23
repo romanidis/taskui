@@ -19,6 +19,7 @@ package run
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -327,18 +328,116 @@ func (Exited) event()      {}
 // feels like stopping.
 const stopGrace = time.Second
 
-// stop records whether this run was stopped rather than left to finish, shared with the
-// capture goroutine.
+// process is the child behind a run, and everything that reaches it: starting it, typing at
+// it, stopping it and reaping it.
 //
-// The capture goroutine is the only place a stopped run can be cleaned up from. Killing
-// the group needs the leader's pid, and the leader stops being a safe thing to name the
-// moment it is waited on — that pid goes back into circulation, and signalling a recycled
-// one means signalling a stranger. Between EOF and that wait is the whole window, and it
-// belongs to the goroutine that owns both.
-type stop struct {
+// It is the part of a run that more than one goroutine touches, so every field is a lock or
+// an atomic. A run with no child behind it, stored or built for a test, has one all the
+// same: the flags are how the UI tells a run it asked to stop from one it did not, and
+// there is simply never a leader to signal.
+type process struct {
+	// mu guards the leader and its terminal, which the capture goroutine publishes once
+	// the child has started.
+	mu     sync.Mutex
+	leader *os.Process
+	master *os.File
+	// reapMu keeps the group signal and the wait on the leader from overlapping.
+	reapMu sync.Mutex
+	// reaped is set by the capture goroutine once it has waited on the leader, which is the
+	// moment the leader's pid stops being safe to signal.
+	reaped atomic.Bool
+
+	// cancelled and killed are written by whoever stops the run — the UI, or a signal
+	// handler on a goroutine of its own — and read by the capture goroutine deciding
+	// whether to start the child at all.
+	cancelled atomic.Bool
+	// killed records whether the polite signals have already been sent and ignored. Kept
+	// so a second `x` can escalate rather than sending a process the same signal it just
+	// sat through.
+	killed atomic.Bool
 	// now: something asked this run to stop and then asked again, or is quitting: skip what
 	// is left of the grace.
 	now atomic.Bool
+}
+
+// start runs cmd on a pty of its own and publishes it, unless the run was stopped first.
+//
+// Started and published under one lock, with the stop checked inside it. stop sets the flag
+// before it looks for a leader, so either this sees the flag and never starts the child, or
+// stop sees the leader and signals it. Checked only before, the child could start in the
+// gap after a stop that found nothing to signal, and run to completion — which is what `x`
+// during graph resolution did.
+func (p *process) start(cmd *exec.Cmd) (*os.File, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cancelled.Load() {
+		return nil, errStoppedBeforeStart
+	}
+	master, err := pty.StartWithSize(cmd, &pty.Winsize{
+		Rows: 50,
+		// Wide, so tools that wrap to the terminal width do not hard-wrap the capture at
+		// something narrow. The UI wraps for display instead.
+		Cols: 200,
+	})
+	if err != nil {
+		return nil, err
+	}
+	p.leader, p.master = cmd.Process, master
+	return master, nil
+}
+
+// write types at the child. False when there is no child yet, or its terminal would not
+// take the bytes.
+func (p *process) write(bytes []byte) bool {
+	p.mu.Lock()
+	master := p.master
+	p.mu.Unlock()
+	if master == nil {
+		return false
+	}
+	_, err := master.Write(bytes)
+	return err == nil
+}
+
+// stop sends the polite signals Run.Cancel describes, and leaves reapGroup to insist once
+// the grace is up.
+func (p *process) stop() {
+	// First, so a capture goroutine that has not started the child yet never does.
+	p.cancelled.Store(true)
+	p.mu.Lock()
+	leader := p.leader
+	p.mu.Unlock()
+	if leader == nil {
+		return
+	}
+	// Under reapMu, and only if the leader has not been waited on: once it has, its pid is
+	// back in circulation and the signal would go to a stranger. Tried rather than waited
+	// for, because whoever holds it is reaping this run already, and waiting would hang
+	// the UI on that.
+	if !p.reapMu.TryLock() {
+		return
+	}
+	if !p.reaped.Load() {
+		// SIGTERM first so the tools get to clean up after themselves.
+		_ = syscall.Kill(-leader.Pid, syscall.SIGTERM)
+		// SIGHUP is the backstop for a child that never became a group leader — and is
+		// still catchable, which is the point.
+		_ = leader.Signal(syscall.SIGHUP)
+	}
+	p.reapMu.Unlock()
+	go p.reapGroup()
+}
+
+// kill takes the group now, without waiting out the grace.
+func (p *process) kill() {
+	// All three: a kill that arrives before anything was asked politely still has to leave
+	// a stopped run behind, and one the capture goroutine will not start if it has not yet.
+	p.cancelled.Store(true)
+	p.killed.Store(true)
+	p.now.Store(true)
+	// Safe on a group that is already gone: reapGroup looks, under the lock the reaping
+	// takes, before it sends anything to a pid that may belong to somebody else by now.
+	go p.reapGroup()
 }
 
 // Stored is a finished run being rebuilt from the archive.
@@ -360,6 +459,14 @@ type Stored struct {
 	RedactedSecrets int
 }
 
+// Run is one invocation of a task, and everything known about it so far.
+//
+// It belongs to whoever calls Poll — the UI, or a headless loop — and only that goroutine
+// reads or writes it, with two exceptions built to be shared. proc is the child: a signal
+// handler can stop the run from a goroutine of its own, the capture goroutine starts the
+// child and reaps it, and a stop leaves a goroutine behind to take the group. events is
+// what the capture goroutine fills and Poll drains, which is how everything it learns
+// reaches the run without its ever being handed the run.
 type Run struct {
 	Root string
 	// Args are the extra argv passed after the task name — `NAME=backend`, `-- -p ingest`.
@@ -391,25 +498,7 @@ type Run struct {
 	stored   bool
 	storedID string
 
-	mu     sync.Mutex
-	proc   *os.Process
-	master *os.File
-	stop   stop
-	// reapMu keeps the group signal and the wait on the leader from overlapping.
-	reapMu sync.Mutex
-
-	// reaped is set by the capture goroutine on its way out. Read from the escalation
-	// goroutine, which is why it is an atomic rather than HasExit.
-	reaped atomic.Bool
-
-	// cancelled and killed are atomics because they are written by whoever stops the run —
-	// the UI, or a signal handler on a goroutine of its own — and read by the capture
-	// goroutine deciding whether to start the child at all.
-	cancelled atomic.Bool
-	// killed records whether the polite signals have already been sent and ignored. Kept
-	// so a second `x` can escalate rather than sending a process the same signal it just
-	// sat through.
-	killed atomic.Bool
+	proc process
 
 	// provisional is where the not-yet-terminated line lives, so the next read replaces it
 	// rather than stacking up a copy per 8KB chunk.
@@ -417,8 +506,9 @@ type Run struct {
 	lastOutput  time.Time
 	active      string
 	hasActive   bool
-	events      *queue
-	drained     bool
+	// events is what the capture goroutine sends, and nil for a run with none behind it.
+	events  *queue
+	drained bool
 	// names is how the project spells its tasks; nil for a run with no project behind it,
 	// which leaves every name as it arrived.
 	names task.Names
@@ -490,44 +580,65 @@ func Start(dir, root string, args []string, interactive, force bool) (*Run, erro
 		events:      &queue{},
 	}
 
-	go func() {
-		// Resolve first: the tree should be on screen, greyed out, before any output
-		// arrives to fill it in. The same call yields the environment dump the redactor is
-		// built from, so masking is in place before the first line.
-		redactor := redact.Empty()
-		// Read alongside: the names the graph and the output are spelled in, and the
-		// Taskfile's own env, which the summaries leave out.
-		var project task.Project
-		var wg sync.WaitGroup
-		wg.Go(func() { project = task.ReadProject(dir) })
-		// A graph we could not resolve is not fatal — we still capture output, just
-		// without the nesting. Redaction is then empty, which is why the run view says so
-		// rather than implying output has been checked.
-		g, summary := graph.ResolveDetailed(dir, root)
-		wg.Wait()
-		r.send(Naming{Names: project.Names})
-		if len(g.Edges) > 0 {
-			redactor = redact.Harvest(summary, project.Env)
-			r.send(GraphReady{Graph: g})
-		}
-		r.send(Redacting{N: redactor.Len()})
-
-		switch err := r.capture(dir, redactor); {
-		case errors.Is(err, errStoppedBeforeStart):
-			r.send(Exited{Code: -1})
-		case err != nil:
-			r.send(LineEvent{Raw: fmt.Sprintf("taskui: could not start `task %s`: %v", root, err)})
-			r.send(Exited{Code: -1})
-		}
-	}()
-
+	// Handed what it shares with the run and nothing more: the process it starts and reaps,
+	// and the queue it fills. Everything else on a Run belongs to whoever calls Poll, and a
+	// goroutine that is never given the run cannot reach any of it.
+	go capture(&r.proc, r.events, dir, root, r.argv())
 	return r, nil
 }
 
-func (r *Run) send(e Event) { r.events.push(e) }
+// capture is the capture goroutine: it works out what the run will look like, then runs it,
+// and reports all of it as events.
+func capture(p *process, events *queue, dir, root string, argv []string) {
+	// Resolve first: the tree should be on screen, greyed out, before any output arrives to
+	// fill it in. The same call yields the environment dump the redactor is built from, so
+	// masking is in place before the first line.
+	redactor := redact.Empty()
+	// Read alongside: the names the graph and the output are spelled in, and the Taskfile's
+	// own env, which the summaries leave out.
+	var project task.Project
+	var wg sync.WaitGroup
+	wg.Go(func() { project = task.ReadProject(dir) })
+	// A graph we could not resolve is not fatal — we still capture output, just without the
+	// nesting. Redaction is then empty, which is why the run view says so rather than
+	// implying output has been checked.
+	g, summary := graph.ResolveDetailed(dir, root)
+	wg.Wait()
+	events.push(Naming{Names: project.Names})
+	if len(g.Edges) > 0 {
+		redactor = redact.Harvest(summary, project.Env)
+		events.push(GraphReady{Graph: g})
+	}
+	events.push(Redacting{N: redactor.Len()})
+
+	switch err := drive(p, events, dir, argv, redactor); {
+	case errors.Is(err, errStoppedBeforeStart):
+		events.push(Exited{Code: -1})
+	case err != nil:
+		events.push(LineEvent{Raw: fmt.Sprintf("taskui: could not start `task %s`: %v", root, err)})
+		events.push(Exited{Code: -1})
+	}
+}
+
+// argv is what go-task is invoked with: the output mode, the task, then the flags.
+func (r *Run) argv() []string {
+	mode := "prefixed"
+	if r.Interactive {
+		mode = "interleaved"
+	}
+	argv := []string{"--output", mode, r.Root}
+	// `--force` before the user's own arguments: theirs may include a `--` separator,
+	// after which everything is CLI_ARGS rather than a flag.
+	if r.Force {
+		argv = append(argv, "--force")
+	}
+	// Passed through verbatim, already split shell-style: `--` and `NAME=value` are just
+	// argv entries to go-task.
+	return append(argv, r.Args...)
+}
 
 func (r *Run) Finished() bool  { return r.HasExit }
-func (r *Run) Cancelled() bool { return r.cancelled.Load() }
+func (r *Run) Cancelled() bool { return r.proc.cancelled.Load() }
 
 // Outcome is how the run as a whole is going: Running until it ends, then Ok or Failed by
 // its exit status. A run's answer is the same kind as its tasks', and it was worked out by
@@ -553,7 +664,7 @@ func (r *Run) ExitCode() int {
 
 // Killed is true once SIGKILL has gone out. There is nothing louder left to try, so the UI
 // stops offering to stop it harder.
-func (r *Run) Killed() bool { return r.killed.Load() }
+func (r *Run) Killed() bool { return r.proc.killed.Load() }
 
 // over reports whether there is no longer a process to stop, safely from any goroutine.
 //
@@ -566,7 +677,7 @@ func (r *Run) over() bool {
 	if r.events == nil {
 		return r.HasExit
 	}
-	return r.reaped.Load()
+	return r.proc.reaped.Load()
 }
 
 // IsStored is true when this Run came off disk rather than off a pty. The run view uses it
@@ -590,16 +701,7 @@ func (r *Run) TaskNames() []string {
 // SendInput sends keystrokes to the running task. `wrangler` and friends ask questions;
 // without this the only answer taskui can give is to kill them.
 func (r *Run) SendInput(bytes []byte) bool {
-	if r.Finished() {
-		return false
-	}
-	r.mu.Lock()
-	master := r.master
-	r.mu.Unlock()
-	if master == nil {
-		return false
-	}
-	if _, err := master.Write(bytes); err != nil {
+	if r.Finished() || !r.proc.write(bytes) {
 		return false
 	}
 
@@ -707,34 +809,12 @@ func (r *Run) LooksLikeAPrompt() bool {
 // goroutine checks this flag under the same lock it starts the child under, so a stop that
 // lands first means the child is never started.
 func (r *Run) Cancel() {
+	// A run that is over has nothing left to stop, and marking it stopped would make one
+	// that finished on its own read as cancelled.
 	if r.over() {
 		return
 	}
-	// Tell the capture goroutine this was a stop, not an ending. It is what turns the
-	// group's survivors into its problem rather than nobody's.
-	r.cancelled.Store(true)
-	r.mu.Lock()
-	proc := r.proc
-	r.mu.Unlock()
-	if proc == nil {
-		return
-	}
-	// Under reapMu, and only if the leader has not been waited on: once it has, its pid is
-	// back in circulation and the signal would go to a stranger. Tried rather than waited
-	// for, because whoever holds it is reaping this run already, and waiting would hang
-	// the UI on that.
-	if !r.reapMu.TryLock() {
-		return
-	}
-	if !r.reaped.Load() {
-		// SIGTERM first so the tools get to clean up after themselves.
-		_ = syscall.Kill(-proc.Pid, syscall.SIGTERM)
-		// SIGHUP is the backstop for a child that never became a group leader — and is
-		// still catchable, which is the point.
-		_ = proc.Signal(syscall.SIGHUP)
-	}
-	r.reapMu.Unlock()
-	go r.reapGroup()
+	r.proc.stop()
 }
 
 // reapGroup takes what is left of the process group once the grace is up.
@@ -755,12 +835,12 @@ func (r *Run) Cancel() {
 //
 // Killing the group is what frees the pty on both, so the read ends because the run is
 // over rather than the run ending because the read did.
-func (r *Run) reapGroup() {
+func (p *process) reapGroup() {
 	// go-task exits the instant it is signalled; its commands are still reacting. Wait out
 	// the grace before insisting, unless somebody already has.
 	deadline := time.Now().Add(stopGrace)
-	for time.Now().Before(deadline) && !r.stop.now.Load() {
-		if r.reaped.Load() {
+	for time.Now().Before(deadline) && !p.now.Load() {
+		if p.reaped.Load() {
 			return
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -769,18 +849,36 @@ func (r *Run) reapGroup() {
 	// Under the same lock the capture goroutine waits on, so the group can never be
 	// signalled after the leader has been reaped: that pid goes straight back into
 	// circulation, and signalling a recycled one means signalling a stranger.
-	r.reapMu.Lock()
-	defer r.reapMu.Unlock()
-	if r.reaped.Load() {
+	p.reapMu.Lock()
+	defer p.reapMu.Unlock()
+	if p.reaped.Load() {
 		return
 	}
-	r.mu.Lock()
-	proc := r.proc
-	r.mu.Unlock()
-	if proc != nil {
-		_ = syscall.Kill(-proc.Pid, syscall.SIGKILL)
-		_ = proc.Signal(syscall.SIGKILL)
+	p.mu.Lock()
+	leader := p.leader
+	p.mu.Unlock()
+	if leader != nil {
+		_ = syscall.Kill(-leader.Pid, syscall.SIGKILL)
+		_ = leader.Signal(syscall.SIGKILL)
 	}
+}
+
+// wait reaps the leader and says how it exited: -1 when it cannot tell.
+//
+// Under the same lock reapGroup signals under, which is what keeps the two apart. A pid
+// names its group only until it is waited on; after that it names whatever the OS hands it
+// to next, and a signal arriving in that window would go to a stranger.
+func (p *process) wait(cmd *exec.Cmd) int {
+	code := -1
+	p.reapMu.Lock()
+	if err := cmd.Wait(); err == nil {
+		code = 0
+	} else if state := cmd.ProcessState; state != nil {
+		code = state.ExitCode()
+	}
+	p.reaped.Store(true)
+	p.reapMu.Unlock()
+	return code
 }
 
 // Kill insists, and stops waiting about it.
@@ -793,22 +891,7 @@ func (r *Run) reapGroup() {
 // Not what stopping does first. SIGKILL runs no cleanup handler, which on a compose stack
 // means the containers stay up with nothing left to take them down — so this is a second,
 // deliberate press rather than the opening move.
-func (r *Run) Kill() {
-	r.cancelled.Store(true)
-	r.killed.Store(true)
-	// Set both: a Kill that arrives before anything was asked politely still has to leave
-	// the capture goroutine a stopped run to clean up after.
-	r.stop.now.Store(true)
-	if r.over() {
-		// The capture goroutine has already reaped the group on its way out, and the pid
-		// that named it belongs to somebody else by now. Setting the flags above is all
-		// there is left to do — signalling anything here would be signalling a stranger.
-		return
-	}
-	// `now` is already set, so this takes the group immediately rather than waiting out a
-	// grace nobody asked for a second time.
-	go r.reapGroup()
-}
+func (r *Run) Kill() { r.proc.kill() }
 
 // Command is what was actually invoked, for the header and the history list.
 func (r *Run) Command() string {
@@ -1240,8 +1323,6 @@ func (r *Run) settle(exit int) {
 	}
 }
 
-// capture drives `task --output prefixed <root>` on a pty and streams parsed events,
-// blocking until the child exits.
 // partialOf is a fragment as a Partial, with go-task's tag read off it the way parseLine
 // reads one off a whole line. Without it a fragment of `[b] …` kept the tag as text and was
 // put under whichever task spoke last, which under parallel deps is often another one.
@@ -1276,21 +1357,8 @@ func breakAt(redactor *redact.Redactor, pending []byte) (int, bool) {
 // graph was still being resolved.
 var errStoppedBeforeStart = errors.New("stopped before it started")
 
-func (r *Run) capture(dir string, redactor *redact.Redactor) error {
-	mode := "prefixed"
-	if r.Interactive {
-		mode = "interleaved"
-	}
-	argv := []string{"--output", mode, r.Root}
-	// `--force` before the user's own arguments: theirs may include a `--` separator,
-	// after which everything is CLI_ARGS rather than a flag.
-	if r.Force {
-		argv = append(argv, "--force")
-	}
-	// Passed through verbatim, already split shell-style: `--` and `NAME=value` are just
-	// argv entries to go-task.
-	argv = append(argv, r.Args...)
-
+// drive runs `task` on a pty and relays what it prints, blocking until the child exits.
+func drive(p *process, events *queue, dir string, argv []string, redactor *redact.Redactor) error {
 	cmd := exec.Command("task", argv...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
@@ -1302,30 +1370,28 @@ func (r *Run) capture(dir string, redactor *redact.Redactor) error {
 		"FORCE_COLOR=1",           // the node ecosystem
 	)
 
-	// Started and published under one lock, with the stop checked inside it. Cancel sets
-	// the flag before it looks for a process, so either this sees the flag and never
-	// starts the child, or Cancel sees the process and signals it. Checked only before,
-	// the child could start in the gap after a stop that found nothing to signal, and run
-	// to completion — which is what `x` during graph resolution did.
-	r.mu.Lock()
-	if r.cancelled.Load() {
-		r.mu.Unlock()
-		return errStoppedBeforeStart
-	}
-	master, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Rows: 50,
-		// Wide, so tools that wrap to the terminal width do not hard-wrap the capture at
-		// something narrow. The UI wraps for display instead.
-		Cols: 200,
-	})
+	master, err := p.start(cmd)
 	if err != nil {
-		r.mu.Unlock()
 		return err
 	}
-	r.proc = cmd.Process
-	r.master = master
-	r.mu.Unlock()
+	relay(master, events, redactor)
 
+	// The pty is at EOF, which means nothing is holding the slave open any more: go-task
+	// has gone, and so has anything it left behind that was attached to the terminal. A
+	// run that was stopped got there because reapGroup took the group; one that ended on
+	// its own got there by finishing.
+	code := p.wait(cmd)
+	_ = master.Close()
+	events.push(Exited{Code: code})
+	return nil
+}
+
+// relay reads the pty until it closes, passing what it prints on as events.
+//
+// The read that ends it fails, and that is not worth reporting: some systems say the other
+// end of a pty has gone with an error rather than an EOF, and the exit status is the answer
+// either way.
+func relay(master io.Reader, events *queue, redactor *redact.Redactor) {
 	buf := make([]byte, 8192)
 	var pending []byte
 	for {
@@ -1347,7 +1413,7 @@ func (r *Run) capture(dir string, redactor *redact.Redactor) error {
 				// channel, so no later code path can leak what it never received.
 				text := mask(redactor, applyOverwrites(string(line)))
 				for _, event := range parseLine(text) {
-					r.send(event)
+					events.push(event)
 				}
 			}
 
@@ -1360,7 +1426,7 @@ func (r *Run) capture(dir string, redactor *redact.Redactor) error {
 					break
 				}
 				for _, event := range parseLine(mask(redactor, applyOverwrites(string(pending[:cut])))) {
-					r.send(event)
+					events.push(event)
 				}
 				pending = pending[cut:]
 			}
@@ -1373,36 +1439,14 @@ func (r *Run) capture(dir string, redactor *redact.Redactor) error {
 			if len(pending) > 0 {
 				text := mask(redactor, applyOverwrites(string(pending)))
 				if text = text[:len(text)-redactor.Unfinished(text)]; text != "" {
-					r.send(partialOf(text))
+					events.push(partialOf(text))
 				}
 			}
 		}
 		if err != nil {
-			break
+			return
 		}
 	}
-
-	// The pty is at EOF, which means nothing is holding the slave open any more: go-task
-	// has gone, and so has anything it left behind that was attached to the terminal. A
-	// run that was stopped got there because reapGroup took the group; one that ended on
-	// its own got there by finishing.
-	//
-	// Reaping under the same lock reapGroup uses is what keeps the two apart. A pid names
-	// its group only until it is waited on; after that it names whatever the OS hands it
-	// to next, and a signal arriving in that window would go to a stranger.
-	code := -1
-	r.reapMu.Lock()
-	if err := cmd.Wait(); err == nil {
-		code = 0
-	} else if state := cmd.ProcessState; state != nil {
-		code = state.ExitCode()
-	}
-	r.reaped.Store(true)
-	r.reapMu.Unlock()
-
-	_ = master.Close()
-	r.send(Exited{Code: code})
-	return nil
 }
 
 func indexByte(b []byte, c byte) int {
