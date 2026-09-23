@@ -1417,7 +1417,7 @@ dimmer half of the ANSI palette very close to the background — there is a loud
 to go:
 
 ```
-mkdir -p ~/.config/taskui && cp config.high-contrast.yaml ~/.config/taskui/config.yaml
+mkdir -p ~/.config/taskui && cp -n config.high-contrast.yaml ~/.config/taskui/config.yaml
 ```
 
 Values are an ANSI name (`red`, `bright-blue`, `purple`), a `#rrggbb`, or a 0–255 palette

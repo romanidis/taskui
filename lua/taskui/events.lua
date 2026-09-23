@@ -80,7 +80,12 @@ function M.finished(run)
   local failed = run.status == "failed"
   local when = config.options.quickfix
   if when == "always" or (when == "on_failure" and failed) then
-    require("taskui.cli").quickfix(run.root, function(items, err)
+    -- No task named, so the binary takes the ones that failed. Naming the run's
+    -- own root narrowed the list to that task's output, and an aggregate's —
+    -- `ci` running `test` — names no files at all. And the run's own directory,
+    -- not wherever Neovim has been `:cd`-ed to since, whose archive is some
+    -- other project's.
+    require("taskui.cli").quickfix(nil, function(items, err)
       if err or #items == 0 then
         return
       end
@@ -88,7 +93,7 @@ function M.finished(run)
       if failed and config.options.open_quickfix then
         vim.cmd("copen")
       end
-    end)
+    end, run.dir)
   end
   if config.options.notify then
     local took = M.duration(run.duration_ms)

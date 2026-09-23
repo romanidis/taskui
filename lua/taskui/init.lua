@@ -121,24 +121,42 @@ function M.quickfix(name)
   end)
 end
 
---- Every task name, for command completion. Fetched in the background the
---- first time, so the first `<Tab>` is empty rather than slow — a completion
+--- Every task name, for command completion, by project. Fetched in the
+--- background, so the first `<Tab>` is empty rather than slow — a completion
 --- that blocks the editor for four seconds is worse than one that arrives a
 --- moment later.
----@type string[]
+---@type table<string, string[]>
 local names = {}
 
+--- The projects whose listing is on its way.
+---@type table<string, boolean>
+local listing = {}
+
+--- Answered from the last listing, and asked again in the background every time,
+--- so a `<Tab>` after editing the Taskfile sees the edit: filled once, the list
+--- went stale for the rest of the session. One listing at a time, and each
+--- replaces the last — a `<Tab>` pressed while the first was still on its way
+--- started another, and both appended to one list, so every name came back
+--- twice.
 ---@return string[]
 function M.task_names()
-  if #names == 0 and cli.available() then
+  local project = config.project()
+  if not listing[project] and cli.available() then
+    listing[project] = true
     cli.list(function(tasks)
-      for _, task in ipairs(tasks or {}) do
-        table.insert(names, task.name)
+      listing[project] = nil
+      if not tasks then
+        return
       end
-      table.sort(names)
+      local fresh = {}
+      for _, task in ipairs(tasks) do
+        table.insert(fresh, task.name)
+      end
+      table.sort(fresh)
+      names[project] = fresh
     end)
   end
-  return names
+  return names[project] or {}
 end
 
 --- A statusline component: what is running, or what just failed.

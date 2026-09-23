@@ -751,12 +751,16 @@ func Setup(v *viper.Viper, explicit string) error {
 	_ = v.BindEnv("theme")
 
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); ok {
-			// No config file at all is the normal case, not an error.
-			return nil
-		}
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
+		// No config file at all is the normal case, not an error — unless one was named.
+		// `--config` pointing at a file that is not there is a typo, and running on the
+		// defaults as though it had been read is the one answer that hides it.
+		if explicit == "" {
+			if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); ok {
+				return nil
+			}
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
 		}
 		return err
 	}

@@ -36,7 +36,7 @@ const (
 // root.go had registered any flags — and RegisterFlagCompletionFunc against a flag that does
 // not exist yet is an error, which is how this was found.
 func registerCompletions() {
-	for _, name := range []string{flagRun, flagGraph, flagTimeline, flagDiff} {
+	for _, name := range []string{flagRun, flagGraph, flagTimeline, flagDiff, flagTask} {
 		mustComplete(name, completeTasks)
 	}
 	mustComplete(flagDump, completePivots)

@@ -45,9 +45,14 @@ vim.api.nvim_create_user_command("TaskUI", function(cmd)
 end, {
   nargs = "*",
   desc = "taskui: browse and run the project's tasks",
-  complete = function(lead, line)
+  complete = function(lead, line, pos)
     local taskui = require("taskui")
-    local words = vim.split(vim.trim(line), "%s+")
+    -- The words before the one being completed, counted on the line as typed.
+    -- Trimmed first, `:TaskUI run ` lost the space that finishes `run`, read as
+    -- a verb still being typed, and offered the verbs again after it.
+    local typed = line:sub(1, pos or #line)
+    local words = vim.split(vim.trim(typed:sub(1, #typed - #lead)), "%s+")
+    table.insert(words, lead)
     -- The first argument completes to a verb or straight to a task name; after
     -- `run` or `edit` it is always a task.
     if #words <= 2 then

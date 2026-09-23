@@ -14,9 +14,10 @@ local M = {}
 --- The argv for one invocation: the configured binary, the project directory
 --- as the positional argument, then whatever was asked for.
 ---@param args string[]
+---@param dir string|nil The project, when it is not the configured one.
 ---@return string[]
-local function argv(args)
-  local cmd = { config.options.binary, config.project() }
+local function argv(args, dir)
+  local cmd = { config.options.binary, dir or config.project() }
   vim.list_extend(cmd, args)
   return cmd
 end
@@ -31,8 +32,9 @@ end
 --- Runs the binary and hands back its whole output, on the main loop.
 ---@param args string[]
 ---@param on_done fun(code: integer, stdout: string, stderr: string)
-local function collect(args, on_done)
-  vim.system(argv(args), { text = true }, function(res)
+---@param dir string|nil
+local function collect(args, on_done, dir)
+  vim.system(argv(args, dir), { text = true }, function(res)
     vim.schedule(function()
       on_done(res.code, res.stdout or "", res.stderr or "")
     end)
@@ -64,7 +66,8 @@ end
 --- only the run knows, and Neovim would resolve it against its own.
 ---@param task string|nil Narrow to one task's output.
 ---@param on_done fun(items: table[], err: string|nil)
-function M.quickfix(task, on_done)
+---@param dir string|nil The project whose archive to read, when it is not the configured one.
+function M.quickfix(task, on_done, dir)
   local args = { "--quickfix" }
   if task and task ~= "" then
     vim.list_extend(args, { "--task", task })
@@ -88,7 +91,7 @@ function M.quickfix(task, on_done)
       end
     end
     on_done(items, nil)
-  end)
+  end, dir)
 end
 
 --- Starts a run and streams its events.

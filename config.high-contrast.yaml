@@ -3,7 +3,9 @@
 # close to the background.
 #
 # Install with:
-#   mkdir -p ~/.config/taskui && cp config.high-contrast.yaml ~/.config/taskui/config.yaml
+#   mkdir -p ~/.config/taskui && cp -n config.high-contrast.yaml ~/.config/taskui/config.yaml
+#
+# `-n` so it never replaces a config you already have; merge the lines you want by hand.
 #
 # Every key is optional. `taskui --dump-config` prints all of them with their defaults.
 
@@ -12,9 +14,9 @@ colors:
   # screen, so it is the one worth turning up first.
   dim: bright-white
 
-  # Line numbers and fold glyphs. Slightly quieter than the text they sit beside, but
-  # still meant to be readable.
-  gutter: bright-cyan
+  # Line numbers, fold glyphs and tree guides. Slightly quieter than the text they sit
+  # beside, but still meant to be readable.
+  faint: bright-cyan
 
   # `default` means reverse video, which cannot be invisible whatever your colourscheme
   # is. Swap in a real colour only if you know it contrasts with your background.

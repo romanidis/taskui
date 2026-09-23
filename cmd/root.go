@@ -160,13 +160,15 @@ func init() {
 		"print the namespaces an aggregate task claims and does not reach, and exit")
 	f.BoolVar(&opts.matrix, "matrix", false,
 		"with --lint: print the whole aggregate-by-namespace table rather than only the gaps")
-	f.StringVar(&opts.searchTask, "task", "", "narrow --search to one task's output")
+	f.StringVar(&opts.searchTask, "task", "", "narrow --search or --quickfix to one task's output")
 	f.StringVar(&opts.since, "since", "", "narrow --search to runs newer than this: 90m, 2d, 3w")
 	f.StringVar(
 		&opts.keys,
 		"keys",
 		"",
-		"keys to play before a --screenshot, as if typed: `^d` is a control chord, 0x09 0x0a 0x1b are ⇥ ⏎ esc, everything else is itself",
+		// No backquotes: pflag takes the first backquoted word for the value's placeholder,
+		// which listed this flag as `--keys ^d`.
+		"keys to play before a --screenshot, as if typed: ^d is a control chord, 0x09 0x0a 0x1b are ⇥ ⏎ esc, everything else is itself",
 	)
 	f.StringVar(&opts.themeName, "theme", "", "look to use — see --list-themes")
 	f.BoolVar(
@@ -191,11 +193,16 @@ func init() {
 	registerCompletions()
 }
 
+// errReadingConfig is what went wrong reading the config file, kept for rootRun to report.
+var errReadingConfig error
+
 // initConfig points Viper at the config file and binds `TASKUI_*` to the same keys.
+//
+// A config that cannot be read at all is held rather than printed. Printed here, it went
+// to stderr a moment before the TUI took the screen, so nobody saw it, and taskui ran on
+// the defaults with exit status 0 while the manual promised 1.
 func initConfig() {
-	if err := theme.Setup(v, opts.configPath); err != nil {
-		fmt.Fprintf(os.Stderr, "taskui: %v\n", err)
-	}
+	errReadingConfig = theme.Setup(v, opts.configPath)
 }
 
 // archiveCommand runs whichever of the archive-reading flags was given, and reports whether
@@ -326,6 +333,12 @@ func rootRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Unreadable is not the same as wrong. A bad value in a file that parsed is reported in
+	// the status bar and the rest of the file still applies; a file that did not parse, or
+	// is not there when `--config` named it, has nothing in it to apply.
+	if errReadingConfig != nil {
+		return fmt.Errorf("could not read the config: %w", errReadingConfig)
+	}
 	config := theme.FromViper(v)
 	// The flag beats the config file, so a look can be tried without committing to it.
 	if opts.themeName != "" {

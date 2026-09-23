@@ -129,12 +129,24 @@ function M.open()
     vim.api.nvim_win_set_buf(M.win, M.buf)
     -- The job has to be started with the terminal buffer current, which is
     -- what termopen and its jobstart successor both require.
+    local started = false
     vim.api.nvim_win_call(M.win, function()
-      if not start_job() then
-        return
+      started = start_job()
+      if started then
+        M.bind()
       end
-      M.bind()
     end)
+    if not started then
+      -- Nothing is running in it, so it goes. Kept, the next open() found a
+      -- valid buffer, showed it again and started nothing, and a start that
+      -- failed once failed for the rest of the session.
+      M.close()
+      if valid_buf() then
+        vim.api.nvim_buf_delete(M.buf, { force = true })
+      end
+      M.buf = nil
+      return
+    end
   else
     open_window()
   end

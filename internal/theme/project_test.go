@@ -124,3 +124,16 @@ func TestARefusedOrderingKeyIsReportedOnce(t *testing.T) {
 		}
 	}
 }
+
+// The README tells people to install this file, so it has to load without a word of
+// complaint. It carried a colour key the rendering redesign renamed, and every launch
+// with it reported one.
+func TestTheShippedHighContrastConfigLoadsCleanly(t *testing.T) {
+	config := Load(filepath.Join("..", "..", "config.high-contrast.yaml"))
+	if len(config.Problems) != 0 {
+		t.Errorf("problems: %v", config.Problems)
+	}
+	if config.Theme.Colors.Faint.IsDefault() {
+		t.Error("the file's faint colour did not land")
+	}
+}

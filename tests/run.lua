@@ -50,6 +50,9 @@ vim.fn.writefile({
   "      - 'echo \"running 42 tests\"'",
   "      - 'echo \"    order_test.go:88:12: want 1200, got 1180\"'",
   "      - 'exit 1'",
+  "  ci:",
+  "    desc: What CI runs",
+  "    cmds: [{task: test}]",
 }, project .. "/Taskfile.yml")
 vim.fn.writefile({ "package p" }, project .. "/order_test.go")
 
@@ -125,6 +128,41 @@ check("it is a terminal buffer, not a rendered one", function()
   end
 end)
 
+-- --- completion ------------------------------------------------------------
+
+-- Every <Tab> while the first listing is on its way used to start another, and
+-- each one appended to the same list.
+check("task names complete once each, however often <Tab> is pressed", function()
+  local taskui = require("taskui")
+  for _ = 1, 3 do
+    taskui.task_names()
+  end
+  wait_for("the listing", function()
+    return #taskui.task_names() > 0
+  end, 8000)
+  vim.wait(500)
+  local seen = {}
+  for _, name in ipairs(taskui.task_names()) do
+    if seen[name] then
+      error("listed twice: " .. name .. " in " .. vim.inspect(taskui.task_names()))
+    end
+    seen[name] = true
+  end
+end)
+
+-- `:TaskUI run ` has finished `run`; what comes next is a task, never a verb.
+check("after run, completion offers tasks and not verbs", function()
+  local offered = vim.fn.getcompletion("TaskUI run ", "cmdline")
+  if not vim.tbl_contains(offered, "build") then
+    error("no task offered: " .. vim.inspect(offered))
+  end
+  for _, verb in ipairs({ "stop", "open", "close", "edit" }) do
+    if vim.tbl_contains(offered, verb) then
+      error("offered the verb " .. verb .. ": " .. vim.inspect(offered))
+    end
+  end
+end)
+
 -- --- the events --------------------------------------------------------------
 
 check("running a task reports itself down the socket", function()
@@ -177,6 +215,36 @@ check("the quickfix list comes from the binary, with absolute paths", function()
   end
   assert_contains(first.text, "want 1200, got 1180")
   vim.cmd("cclose")
+end)
+
+-- The list a finished run fills comes from the tasks that failed, in the
+-- project the run was in. It used to ask for the run's own name, and `ci`'s
+-- own output names no files; and it asked about wherever Neovim was, which
+-- after a `:cd` is another project's archive.
+check("a failed aggregate fills the quickfix list from what failed under it", function()
+  local options = require("taskui.config").options
+  local quickfix, cwd = options.quickfix, options.project
+  options.quickfix = "on_failure"
+  options.project = vim.fn.tempname()
+  vim.fn.setqflist({}, "r")
+  local ok, err = pcall(function()
+    require("taskui").run("ci")
+    wait_for("ci to finish", function()
+      local run = events.runs["ci"]
+      return run and run.status ~= "running"
+    end)
+    wait_for("the quickfix list", function()
+      return #vim.fn.getqflist() > 0
+    end, 8000)
+  end)
+  options.quickfix, options.project = quickfix, cwd
+  if not ok then
+    error(err, 0)
+  end
+  local first = vim.fn.getqflist()[1]
+  if not vim.fn.bufname(first.bufnr):find("order_test.go", 1, true) then
+    error("first entry is " .. vim.fn.bufname(first.bufnr))
+  end
 end)
 
 -- The esc that `run()` sends first has to arrive as an esc. A terminal encodes
@@ -270,6 +338,34 @@ end)
 
 check("checkhealth runs", function()
   require("taskui.health").check()
+end)
+
+-- A buffer with nothing running in it was kept, and found valid by the next
+-- open(), which showed it again and started nothing.
+check("a terminal that failed to start starts the next time", function()
+  term.stop()
+  wait_for("the terminal to go", function()
+    return not (term.buf and vim.api.nvim_buf_is_valid(term.buf))
+  end, 5000)
+  -- The notification too: headless, an error-level one is raised as an error,
+  -- where in an editor it is only shown.
+  local jobstart, notify = vim.fn.jobstart, vim.notify
+  vim.fn.jobstart = function()
+    return 0
+  end
+  vim.notify = function() end
+  local ok, err = pcall(term.open)
+  vim.fn.jobstart, vim.notify = jobstart, notify
+  if not ok then
+    error(err, 0)
+  end
+  if term.buf and vim.api.nvim_buf_is_valid(term.buf) then
+    error("the buffer of a start that failed was kept")
+  end
+  term.open()
+  wait_for("taskui to start", function()
+    return term.job ~= nil and screen():find("tasks", 1, true) ~= nil
+  end)
 end)
 
 term.stop()

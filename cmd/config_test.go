@@ -315,3 +315,37 @@ func TestFlakyReportsAFindingNotAFailure(t *testing.T) {
 		t.Errorf("got %q", out.String())
 	}
 }
+
+// A config that cannot be read exits 1 and says why, as the manual says it does. Before,
+// the error went to stderr just ahead of the TUI taking the screen, and taskui carried on
+// with the defaults and exit status 0.
+func TestAConfigThatCannotBeReadIsAnError(t *testing.T) {
+	inTempConfig(t)
+	t.Cleanup(func() { opts.configPath, opts.list = "", false })
+	broken := filepath.Join(t.TempDir(), "broken.yaml")
+	if err := os.WriteFile(broken, []byte("colors: [unclosed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, path := range map[string]string{
+		"missing":  filepath.Join(t.TempDir(), "typo.yaml"),
+		"unparsed": broken,
+	} {
+		_, err := execute(t, "--config", path, "--list", t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), "could not read the config") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+}
+
+// Having no config file at all is the ordinary case, and stays one.
+func TestNoConfigFileIsNotAnError(t *testing.T) {
+	inTempConfig(t)
+	t.Cleanup(func() { opts.configPath, opts.listThemes = "", false })
+	opts.configPath = ""
+	if _, err := execute(t, "--list-themes"); err != nil {
+		t.Fatal(err)
+	}
+	if errReadingConfig != nil {
+		t.Errorf("errReadingConfig = %v", errReadingConfig)
+	}
+}
