@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/romanidis/taskui/internal/theme"
 )
@@ -104,6 +106,10 @@ func (l line) renderRow(width int, selected bool, t theme.Theme, phase, at, line
 	if width <= 0 {
 		return ""
 	}
+	// Narrower than the frame itself: the two edges alone would overrun it.
+	if width < frameWidth {
+		return strings.Repeat(" ", width)
+	}
 	left, leftStyle := " ", lipgloss.NewStyle()
 	right, rightStyle := " ", lipgloss.NewStyle()
 
@@ -179,10 +185,10 @@ func (l line) render(width int, selected bool, sel theme.Color) string {
 			break
 		}
 		text := s.text
-		runes := []rune(text)
-		if used+len(runes) > width {
-			runes = runes[:width-used]
-			text = string(runes)
+		w := cells(text)
+		if used+w > width {
+			text = ansi.Truncate(text, width-used, "")
+			w = cells(text)
 		}
 		if text == "" {
 			continue
@@ -198,7 +204,7 @@ func (l line) render(width int, selected bool, sel theme.Color) string {
 			rendered = underlineOn + rendered + underlineOff
 		}
 		b.WriteString(rendered)
-		used += len(runes)
+		used += w
 	}
 	if used < width {
 		pad := strings.Repeat(" ", width-used)
@@ -211,37 +217,106 @@ func (l line) render(width int, selected bool, sel theme.Color) string {
 	return b.String()
 }
 
+// cells is how many terminal columns text takes: a CJK character or an emoji takes two, a
+// combining accent none.
+//
+// Everything that lays a row out measures with this, and that is the whole point of it.
+// Counting runes instead had a line of Japanese output take twice the columns it was given
+// and push the row's right edge off the screen, and it had to be the same function
+// everywhere — a row measured one way and cut another is a row that overflows.
+//
+// A tab has no width here, so text with tabs in it has to go through expandTabs first.
+func cells(text string) int { return ansi.StringWidth(text) }
+
+// tabStop is where a terminal puts its tab stops: every eight columns.
+const tabStop = 8
+
+// expandTabs replaces each tab with the spaces that reach the next tab stop, counted from
+// the start of text — which for a line of output is where the program that printed it
+// thought its line began.
+//
+// `go test` prints `ok  \tgithub.com/x/y\t0.012s`, and a tab is not a width until it is
+// drawn: measured as nothing and then rendered as several columns, it made a row wider than
+// the space it had been given.
+func expandTabs(text string) string {
+	if !strings.Contains(text, "\t") {
+		return text
+	}
+	var b strings.Builder
+	col := 0
+	for i, part := range strings.Split(text, "\t") {
+		if i > 0 {
+			n := tabStop - col%tabStop
+			b.WriteString(strings.Repeat(" ", n))
+			col += n
+		}
+		b.WriteString(part)
+		col += cells(part)
+	}
+	return b.String()
+}
+
 // wrap breaks text to fit width, preferring word boundaries but hard-splitting anything
 // that cannot fit — file paths and long type signatures routinely exceed a whole line, and
 // leaving them to overflow is how the end of an error message goes missing.
+//
+// Measured in cells, like everything else that lays out a row. The space after a word is
+// kept where it fits and dropped where it does not: it is what separates the word from the
+// next, and at the end of a row there is no next. A continuation row never starts with one.
 func wrap(text string, width int) []string {
 	if width <= 0 {
 		return []string{text}
 	}
 	var out []string
-	var line []rune
+	var line strings.Builder
+	used := 0
+	flush := func() {
+		out = append(out, line.String())
+		line.Reset()
+		used = 0
+	}
 
 	for _, word := range splitInclusive(text, ' ') {
-		w := []rune(word)
-		if len(line)+len(w) > width && len(line) > 0 {
-			out = append(out, string(line))
-			line = line[:0]
+		if used == 0 && len(out) > 0 {
+			if word = strings.TrimLeft(word, " "); word == "" {
+				continue
+			}
 		}
-		if len(w) > width {
-			// A single token longer than the line: hard-split it.
-			for _, c := range w {
-				if len(line) == width {
-					out = append(out, string(line))
-					line = line[:0]
+		body := strings.TrimRight(word, " ")
+		spaces := len(word) - len(body)
+		if used > 0 && used+cells(body) > width {
+			flush()
+		}
+		if cells(body) > width {
+			// A single token longer than the line: hard-split it, a full row at a time —
+			// the flush above means it always starts on a row of its own.
+			for rest := body; rest != ""; {
+				piece := ansi.Truncate(rest, width, "")
+				if piece == "" {
+					// Wider than the whole row on its own — a wide character in a column of
+					// one. It goes anyway, rather than never going anywhere.
+					_, size := utf8.DecodeRuneInString(rest)
+					piece = rest[:size]
 				}
-				line = append(line, c)
+				line.WriteString(piece)
+				used += cells(piece)
+				rest = rest[len(piece):]
+				if rest != "" {
+					flush()
+				}
 			}
 		} else {
-			line = append(line, w...)
+			line.WriteString(body)
+			used += cells(body)
+		}
+		if room := width - used; room > 0 && spaces > 0 {
+			n := min(spaces, room)
+			line.WriteString(strings.Repeat(" ", n))
+			used += n
 		}
 	}
-	if len(line) > 0 || len(out) == 0 {
-		out = append(out, string(line))
+	if used > 0 || line.Len() > 0 || len(out) == 0 {
+		out = append(out, line.String())
 	}
 	return out
 }
@@ -267,17 +342,16 @@ func splitInclusive(s string, sep byte) []string {
 //
 // The counterpart to wrap, and the reason a peek window can promise a number of lines:
 // five lines has to mean five lines, and one 300-character stack frame wrapped into nine
-// rows would mean showing one of them. Counts characters rather than display columns,
-// exactly as wrap does, so the two agree about where the edge is.
+// rows would mean showing one of them. Counts cells, exactly as wrap does, so the two agree
+// about where the edge is.
 func clip(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(text)
-	if len(runes) <= width {
+	if cells(text) <= width {
 		return text
 	}
-	return string(runes[:width-1]) + "…"
+	return ansi.Truncate(text, width, "…")
 }
 
 // columnBounds says where each column starts, given a first visible row.

@@ -636,15 +636,19 @@ func readOrder(v *viper.Viper) (pivot.Order, []string) {
 		}
 	}
 
-	if v.IsSet("pin") {
-		for _, pattern := range v.GetStringSlice("pin") {
-			if pattern = strings.TrimSpace(pattern); pattern != "" {
-				order.Pins = append(order.Pins, pattern)
-			}
+	order.Pins = readPins(v)
+	return order, problems
+}
+
+// readPins reads `pin:`, the one part of the ordering a project file may also set.
+func readPins(v *viper.Viper) []string {
+	var pins []string
+	for _, pattern := range v.GetStringSlice("pin") {
+		if pattern = strings.TrimSpace(pattern); pattern != "" {
+			pins = append(pins, pattern)
 		}
 	}
-
-	return order, problems
+	return pins
 }
 
 // The built-in pivot names, repeated here so the config validator does not have to

@@ -35,6 +35,9 @@ colors:
 
   location: "#7d56f4"
 
+  marked: "#7d56f4"
+  covers: "#7d56f4"
+
   diff-added: "#43d9ad"
   diff-removed: "#ff5f87"
 

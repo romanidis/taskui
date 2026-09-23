@@ -55,6 +55,8 @@ colors:
   # row — not a status, not a link, not the accent.
   marked: "#ff9e64"
 
+  covers: "#7dcfff"
+
   diff-added: "#9ece6a"
   diff-removed: "#f7768e"
 

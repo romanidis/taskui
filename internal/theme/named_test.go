@@ -590,3 +590,56 @@ func TestWordmarkFramesMustBeOneColumn(t *testing.T) {
 		t.Error("a refused sequence should leave the wordmark alone")
 	}
 }
+
+// default.yaml is the base every theme extends and the one `--dump-theme` teaches from, so
+// it names every key. A theme that pins its colours pins all of them: one it left out falls
+// through to default's ANSI names, and a theme that promises the same look on every
+// terminal quietly stops keeping the promise on those rows. `selection-blink` is the
+// exception — leaving it out is how a theme says its bar flashes rather than pulses.
+func TestShippedThemesSetEveryKeyTheyShould(t *testing.T) {
+	keysIn := func(body, section string) map[string]bool {
+		out := map[string]bool{}
+		in := false
+		for line := range strings.SplitSeq(body, "\n") {
+			switch {
+			case strings.HasPrefix(line, section+":"):
+				in = true
+			case line != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "#"):
+				in = false
+			case in && strings.HasPrefix(line, "  ") && !strings.HasPrefix(strings.TrimSpace(line), "#"):
+				if key, _, ok := strings.Cut(strings.TrimSpace(line), ":"); ok {
+					out[key] = true
+				}
+			}
+		}
+		return out
+	}
+	entries, err := builtin.ReadDir("themes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		blob, err := builtin.ReadFile("themes/" + e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(blob)
+		colours := keysIn(body, "colors")
+		base := e.Name() == "default.yaml"
+		pinned := strings.Contains(body, `"#`)
+		for _, f := range colorFields {
+			if colours[f.key] || (!base && (!pinned || f.key == "selection-blink")) {
+				continue
+			}
+			t.Errorf("%s: no colour for %s", e.Name(), f.key)
+		}
+		if base {
+			glyphs := keysIn(body, "glyphs")
+			for _, f := range glyphFields {
+				if !glyphs[f.key] {
+					t.Errorf("%s: no glyph for %s", e.Name(), f.key)
+				}
+			}
+		}
+	}
+}

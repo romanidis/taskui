@@ -50,6 +50,19 @@ func (a *App) tick() tea.Cmd {
 
 func (a *App) Init() tea.Cmd { return a.tick() }
 
+// animationPhase is the frame the animation is on at now: one per Interval since it began.
+//
+// Counted from the clock rather than from ticks, because the tick is the poll loop's and
+// runs at the poll loop's rate — every 200ms idle and every 50ms during a run — whenever
+// that is faster than the theme's own frame. Counting ticks played synthwave's two-second
+// frames ten times too fast while idle and forty times too fast while anything ran.
+func (a *App) animationPhase(now time.Time) int {
+	if a.animStart.IsZero() {
+		a.animStart = now
+	}
+	return int(now.Sub(a.animStart) / a.Theme.Animation.Interval)
+}
+
 // Update is the loop's one door, which is what lets the status line be timed in one place:
 // whatever a message did to it, expireStatus sees the result on the way out.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -86,7 +99,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if a.Theme.Animation.Moves() {
-			a.Phase++
+			a.Phase = a.animationPhase(time.Now())
 		}
 		a.PollRun()
 		a.PollWatch()

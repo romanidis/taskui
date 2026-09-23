@@ -620,9 +620,9 @@ func TestAWrappedDescriptionMakesItsRowTaller(t *testing.T) {
 		return a
 	}
 	height := func(a *App) int {
-		for _, r := range a.Rows {
+		for i, r := range a.Rows {
 			if a.Tree.Nodes[r.Node].Task != pivot.NoTask {
-				return len(a.treeItem(r, false, 56))
+				return len(a.treeItem(i, 56))
 			}
 		}
 		t.Fatal("no task row")

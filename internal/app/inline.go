@@ -14,8 +14,6 @@ package app
 // own too, for the same reason: a task opened here is open there.
 
 import (
-	"strings"
-
 	"github.com/romanidis/taskui/internal/pivot"
 	"github.com/romanidis/taskui/internal/run"
 )
@@ -186,7 +184,7 @@ func (a *App) RebuildPickerRows() {
 	anchor := a.pickerAnchor()
 
 	rows := make([]PickerRow, 0, len(a.Rows))
-	for i, row := range a.Rows {
+	for i := range a.Rows {
 		rows = append(rows, PickerRow{Tree: i})
 
 		name, ok := a.taskNameOfTreeRow(i)
@@ -206,7 +204,7 @@ func (a *App) RebuildPickerRows() {
 		// the same rule: a guide below a row promises a sibling, so the last child of a
 		// group carries none. The rails are built over the whole block, root row included,
 		// so a task knows whether another follows it.
-		rails := guides(inline, a.Theme.Glyphs, a.blockRail(i, row))
+		rails := guides(inline, a.Theme.Glyphs, a.blockRail(i))
 		// The root's own row is the picker row the block hangs under. Drawing it again
 		// would say the same name twice, one line apart.
 		for at, rr := range inline[1:] {
@@ -222,14 +220,12 @@ func (a *App) RebuildPickerRows() {
 // belongs to, then that row's own continuation — a vertical while the group has more rows
 // below, nothing on the last one, where a vertical would promise a sibling that is not
 // there. It is the rule a wrapped description already follows.
-func (a *App) blockRail(tree int, row pivot.Row) string {
-	g := a.Theme.Glyphs
-	indent := strings.Repeat(g.GuideVertical+" ", max(0, row.Depth-1))
-	cont := g.GuideVertical
+func (a *App) blockRail(tree int) string {
+	cont := a.Theme.Glyphs.GuideVertical
 	if a.lastOfParent(tree) {
 		cont = " "
 	}
-	return indent + cont + " "
+	return a.treeIndent(tree) + cont + " "
 }
 
 // anchor is the row the cursor was on, by identity rather than by index.

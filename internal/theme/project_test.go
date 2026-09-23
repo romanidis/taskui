@@ -110,3 +110,17 @@ func TestAMissingProjectFileIsNotAProblemAndABrokenOneIs(t *testing.T) {
 		t.Error("a file that does not parse said nothing")
 	}
 }
+
+// `sort:` is the reader's to set, and a project that sets it is told so once — not also
+// told that the value it should not have set was a bad one.
+func TestARefusedOrderingKeyIsReportedOnce(t *testing.T) {
+	project := LoadProject(writeProject(t, "sort: bogus\ngroups: sideways\n"))
+	if len(project.Problems) != 2 {
+		t.Errorf("want one line per refused key, got %d: %v", len(project.Problems), project.Problems)
+	}
+	for _, p := range project.Problems {
+		if strings.Contains(p, "is not") {
+			t.Errorf("a refused key's value was judged as well: %q", p)
+		}
+	}
+}

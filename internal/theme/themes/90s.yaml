@@ -44,6 +44,9 @@ colors:
   # act on. Green and red for the two sides of a diff, as they have been since diff.
   location: "#00f0ff"
 
+  marked: "#00f0ff"
+  covers: "#ffe94a"
+
   diff-added: "#3dff88"
   diff-removed: "#ff3b3b"
 

@@ -44,6 +44,11 @@ colors:
 
   location: "#01cdfe"
 
+  # The accent rather than `mode`, which is status-ok's green here: a marked task must not
+  # read as one that passed.
+  marked: "#ff71ce"
+  covers: "#fffb96"
+
   diff-added: "#05ffa1"
   diff-removed: "#ff4d6d"
 

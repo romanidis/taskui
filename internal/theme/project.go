@@ -73,9 +73,10 @@ func LoadProject(root string) Project {
 	project.Pivots = pivots
 	project.Problems = append(project.Problems, prefixed(path, problems)...)
 
-	order, problems := readOrder(v)
-	project.Pins = order.Pins
-	project.Problems = append(project.Problems, prefixed(path, problems)...)
+	// Only the pins: `sort:` and `groups:` are the reader's to set, and refusals says so
+	// once. Validating them as well had `sort: bogus` reported twice, once as a bad value
+	// and once as a key the project may not set.
+	project.Pins = readPins(v)
 
 	project.Problems = append(project.Problems, refusals(path, v)...)
 	return project

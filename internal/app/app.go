@@ -551,6 +551,8 @@ type App struct {
 	// theme that asked to animate; everything else leaves it at zero, which is also what
 	// keeps `--screenshot` deterministic.
 	Phase int
+	// animStart is when the animation began, which Phase is counted from.
+	animStart time.Time
 
 	// stateDir is where runs are archived. A field rather than a call so tests can point
 	// it somewhere disposable.

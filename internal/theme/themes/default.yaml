@@ -12,6 +12,9 @@ colors:
   selection: default
   selection-light: cyan
   selection-shade: dark-gray
+  # Left default, a theme that blinks flashes its bar off on the dark frames. Naming a colour
+  # here makes the bar pulse between the two instead.
+  selection-blink: default
 
   mode: yellow
   alias: blue
@@ -30,6 +33,9 @@ colors:
   match-bg: magenta
 
   location: cyan
+
+  marked: yellow
+  covers: blue
 
   diff-added: green
   diff-removed: red
@@ -62,6 +68,8 @@ glyphs:
 
   command: "❯"
   warning: "⚠"
+  marked: "◉"
+  covers: "↑"
   bar: "▄"
 
   diff-added: "+"

@@ -70,6 +70,9 @@ colors:
   # A location is a link, and a link in 1999 was blue and underlined. It is still underlined.
   location: "#0060ff"
 
+  marked: "#b8a1ff"
+  covers: "#87ceeb"
+
   diff-added: "#60e000"
   diff-removed: "#ff0090"
 

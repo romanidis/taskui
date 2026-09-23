@@ -9,7 +9,6 @@ import (
 
 	"github.com/romanidis/taskui/internal/diff"
 	"github.com/romanidis/taskui/internal/keys"
-	"github.com/romanidis/taskui/internal/theme"
 )
 
 // --- timeline ---------------------------------------------------------------------
@@ -133,7 +132,7 @@ func (a *App) drawTimeline(width, height int) []string {
 			}
 			l = append(l, styled(padRight(shortCommit(p.Commit), 10), style))
 		}
-		l = append(l, styled(p.Command(), fg(theme.Default)))
+		l = append(l, styled(p.Command(), fg(t.Colors.Text)))
 		out = append(out, l.renderRow(width, i == a.TimelineCursor, t, a.Phase, 0, 1))
 	}
 	return out
@@ -239,7 +238,7 @@ func (a *App) drawDiff(width, height int) []string {
 			continue
 		}
 
-		marker, style := " ", fg(theme.Default)
+		marker, style := " ", fg(t.Colors.Text)
 		switch row.Op {
 		case diff.Ins:
 			marker, style = t.Glyphs.DiffAdded, fg(t.Colors.DiffAdded)
@@ -256,7 +255,7 @@ func (a *App) drawDiff(width, height int) []string {
 			styled(numberOrBlank(row.New, pad), fg(t.Colors.Faint)),
 			styled(marker+" ", style),
 		}
-		l = append(l, a.textWithLocations(clip(row.Text, room), style)...)
+		l = append(l, a.textWithLocations(clip(expandTabs(row.Text), room), style)...)
 		out = append(out, l.renderRow(width, selected, t, a.Phase, 0, 1))
 	}
 	return out
@@ -370,7 +369,7 @@ func (a *App) drawProfile(width, height int) []string {
 				fg(statusStyle(c.Status, t)),
 			))
 		}
-		l = append(l, styled(c.Name, fg(theme.Default)))
+		l = append(l, styled(c.Name, fg(t.Colors.Text)))
 
 		// An aggregate's own time is nearly all its children's; saying so stops the row
 		// reading as though `all` were somehow slow by itself.

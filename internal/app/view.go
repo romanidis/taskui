@@ -6,10 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/romanidis/taskui/internal/keys"
@@ -198,6 +196,10 @@ func (a *App) RenderHeadless(w, h int) []string {
 func (a *App) header(subject string, state []span) line {
 	mark := a.wordmark()
 	l := line{plain(" "), styled(mark, fgBold(a.Theme.Colors.Accent))}
+	stateWidth := 0
+	for _, s := range state {
+		stateWidth += cells(s.text)
+	}
 	// `taskui · taskui` — the wordmark, then a directory that happens to share its name —
 	// reads as a bug, and spends the most valuable row on the screen saying it twice.
 	//
@@ -205,17 +207,18 @@ func (a *App) header(subject string, state []span) line {
 	// `{project}` in it is caught by the same rule that catches one whose name happens to
 	// match.
 	if subject != "" && !strings.EqualFold(subject, plainWordmark(mark)) {
-		l = append(l,
-			styled(" "+a.Theme.Glyphs.Separator+" ", fg(a.Theme.Colors.Faint)),
-			styled(subject, bold()))
+		sep := " " + a.Theme.Glyphs.Separator + " "
+		// The subject gives way, not the state. A run with long arguments made the subject
+		// wide enough to push the state off the right edge, and the state is where PASSED,
+		// the elapsed time and the exit code are — the part of the header you look at.
+		room := a.Width - 1 - cells(" "+mark+sep) - stateWidth - 1
+		if room > 0 {
+			l = append(l, styled(sep, fg(a.Theme.Colors.Faint)), styled(clip(subject, room), bold()))
+		}
 	}
 	used := 0
 	for _, s := range l {
-		used += utf8.RuneCountInString(s.text)
-	}
-	stateWidth := 0
-	for _, s := range state {
-		stateWidth += utf8.RuneCountInString(s.text)
+		used += cells(s.text)
 	}
 	l = append(l, plain(strings.Repeat(" ", max(1, a.Width-1-used-stateWidth))))
 	return append(l, state...)
@@ -337,7 +340,10 @@ func (a *App) detailHeader() line {
 
 func (a *App) drawDetail(width, height int) []string {
 	t := a.Theme
-	room := max(0, width-4)
+	// What renderRow leaves a row once the frame and the jiggle's room are taken, less the
+	// two-space indent. Measured from the frame alone, a theme that jiggles lost the last
+	// character of every wrapped summary line off the end of its row.
+	room := max(0, a.bodyWidth(width)-2)
 	d := a.Detail
 	var lines []line
 
@@ -518,7 +524,7 @@ func (a *App) drawHelp(width, height int) []string {
 }
 
 func padRight(s string, width int) string {
-	if n := utf8.RuneCountInString(s); n < width {
+	if n := cells(s); n < width {
 		return s + strings.Repeat(" ", width-n)
 	}
 	return s
@@ -605,14 +611,16 @@ func (a *App) drawHistory(width, height int) []string {
 		for _, e := range m.Tasks {
 			lines += e.Lines
 		}
-		commandStyle := fg(theme.Default)
+		commandStyle := fg(t.Colors.Text)
 		if m.Failed() {
 			commandStyle = fg(t.Colors.StatusFailed)
 		}
 		l := line{
 			styled(glyph+" ", fgBold(colour)),
 			styled(padRight(ago(m.StartedUnix), 10), fg(t.Colors.Dim)),
-			styled(padRight(m.Command(), 30), commandStyle),
+			// Cut as well as padded: a longer command pushed that row's duration and line
+			// count out of the columns every other row keeps them in.
+			styled(padRight(clip(m.Command(), 30), 30), commandStyle),
 			styled(fmt.Sprintf("%8s  %6d lines", duration(millis(m.DurationMs)), lines), fg(t.Colors.Dim)),
 		}
 		// Only present when a cross-run search is narrowing the list.
@@ -769,7 +777,7 @@ func (a *App) runRowLines(r *run.Run, row RunRow, gutter string, width int) []li
 	if r == nil {
 		return nil
 	}
-	width = max(0, width-utf8.RuneCountInString(gutter))
+	width = max(0, width-cells(gutter))
 
 	if row.IsTask {
 		tr, hasTask := r.Tasks[row.Name]
@@ -793,7 +801,7 @@ func (a *App) runRowLines(r *run.Run, row RunRow, gutter string, width int) []li
 			}
 		}
 
-		nameStyle := fg(theme.Default)
+		nameStyle := fg(t.Colors.Text)
 		switch status {
 		case run.Failed:
 			nameStyle = fgBold(t.Colors.StatusFailed)
@@ -858,9 +866,9 @@ func (a *App) runRowLines(r *run.Run, row RunRow, gutter string, width int) []li
 		if tail.Len() > 0 {
 			used := 0
 			for _, sp := range l {
-				used += utf8.RuneCountInString(sp.text)
+				used += cells(sp.text)
 			}
-			gap := max(2, width+utf8.RuneCountInString(gutter)-used-utf8.RuneCountInString(tail.String()))
+			gap := max(2, width+cells(gutter)-used-cells(tail.String()))
 			l = append(l, plain(strings.Repeat(" ", gap)), styled(tail.String(), fg(t.Colors.Dim)))
 		}
 		return []line{l}
@@ -871,7 +879,7 @@ func (a *App) runRowLines(r *run.Run, row RunRow, gutter string, width int) []li
 		// Through CommandText, which takes go-task's `[test] ` off the echo: the task's
 		// header is a few rows above, and restating it on every command it runs spends
 		// fifteen columns of a build log saying what the indentation already says.
-		text = run.CommandText(tr.Lines[row.Index])
+		text = displayText(tr.Lines[row.Index])
 		isCommand = tr.Lines[row.Index].IsCommand
 	}
 
@@ -913,10 +921,13 @@ func (a *App) runRowLines(r *run.Run, row RunRow, gutter string, width int) []li
 	pad := gutterFor(r)
 	room := max(8, width-(pad+1+markerCells))
 
-	base := fg(theme.Default)
+	// `text` and `command` are the theme's names for exactly these two: ordinary output and
+	// go-task's echo of what it is running. Drawing the echo in the alias colour left a
+	// theme's `command` colour set and never shown.
+	base := fg(t.Colors.Text)
 	switch {
 	case isCommand:
-		base = fg(t.Colors.Alias)
+		base = fg(t.Colors.Command)
 	case isFailure(text):
 		base = fg(t.Colors.StatusFailed)
 	}
@@ -1105,12 +1116,21 @@ func runRowHeight(r *run.Run, row RunRow, gutter string, width int) int {
 	text := ""
 	if r != nil {
 		if t, ok := r.Tasks[row.Task]; ok && row.Index < len(t.Lines) {
-			text = t.Lines[row.Index].Plain
+			text = displayText(t.Lines[row.Index])
 		}
 	}
-	prefix := utf8.RuneCountInString(gutter) + gutterFor(r) + 1 + markerCells
+	prefix := cells(gutter) + gutterFor(r) + 1 + markerCells
 	return len(wrap(text, max(8, width-prefix)))
 }
+
+// displayText is a line of output as the run view draws it: a command echo without
+// go-task's `task: [name] ` prefix, and tabs expanded.
+//
+// One function for the drawing and the measuring both. They used to disagree — the height
+// was measured on the whole echo and the row drawn without its prefix — so a 50-character
+// command at width 60 was measured as two rows and drawn as one, which left blank rows at
+// the bottom of the body and could tip a run that fitted into columns.
+func displayText(l run.Line) string { return expandTabs(run.CommandText(l)) }
 
 func (a *App) drawRun(width, height int) []string {
 	if a.Run == nil {
@@ -1244,7 +1264,7 @@ func (a *App) pivotNames() []span {
 
 	width := len(names) - 1
 	for _, n := range names {
-		width += utf8.RuneCountInString(n)
+		width += cells(n)
 	}
 	if width > pivotNamesBudget {
 		return []span{
@@ -1333,8 +1353,46 @@ func (a *App) coveredBy(row pivot.Row, node pivot.Node) (string, bool) {
 // lastOfParent reports whether the row at i is the final child of whatever contains it, so
 // the guide can be a corner rather than a tee. Without it every branch looks like it has a
 // sibling below, including the ones that do not.
+//
+// Found by looking past the row's own subtree rather than at the next row. Under an open
+// group the next row is its own first child, which says nothing about whether the group has
+// a sibling — so the last group of a namespace drew a tee, open, with nothing below it.
 func (a *App) lastOfParent(i int) bool {
-	return i+1 >= len(a.Rows) || a.Rows[i+1].Depth < a.Rows[i].Depth
+	for j := i + 1; j < len(a.Rows); j++ {
+		switch {
+		case a.Rows[j].Depth < a.Rows[i].Depth:
+			return true
+		case a.Rows[j].Depth == a.Rows[i].Depth:
+			return false
+		}
+	}
+	return true
+}
+
+// treeIndent is the guide columns in front of row i's own: one per level between the top
+// and its parent, a vertical where the ancestor at that level still has a sibling to come
+// and blank where it was the last. A vertical in every column ran each rail on past the end
+// of its group, promising rows that were not there.
+func (a *App) treeIndent(i int) string {
+	g := a.Theme.Glyphs
+	depth := a.Rows[i].Depth
+	cols := make([]string, max(0, depth-1))
+	for c := range cols {
+		cols[c] = "  "
+	}
+	// Walking up, the first row met at each shallower depth is the ancestor at that depth:
+	// the list is the tree flattened in order, so nothing shallower can come between.
+	want := depth - 1
+	for j := i - 1; j >= 0 && want >= 1; j-- {
+		if a.Rows[j].Depth != want {
+			continue
+		}
+		if !a.lastOfParent(j) {
+			cols[want-1] = g.GuideVertical + " "
+		}
+		want--
+	}
+	return strings.Join(cols, "")
 }
 
 // treeItem builds one row of the task tree: guide, label, description, signals.
@@ -1391,8 +1449,9 @@ func (a *App) inlineFoldBadge(name string) (span, bool) {
 	return styled(mark+" ", fg(a.Theme.Colors.Faint)), true
 }
 
-func (a *App) treeItem(row pivot.Row, last bool, width int) []line {
+func (a *App) treeItem(i, width int) []line {
 	t := a.Theme
+	row, last := a.Rows[i], a.lastOfParent(i)
 	node := a.Tree.Nodes[row.Node]
 
 	// Tree guides, so depth is something you see rather than something you count.
@@ -1405,7 +1464,7 @@ func (a *App) treeItem(row pivot.Row, last bool, width int) []line {
 	// to need to be one. A group below the top now spends the first column on its branch and
 	// the second on its fold marker, so it sits with its siblings and still says it opens.
 	g := t.Glyphs
-	indent := strings.Repeat(g.GuideVertical+" ", max(0, row.Depth-1))
+	indent := a.treeIndent(i)
 	branch := g.GuideBranch
 	if last {
 		branch = g.GuideLast
@@ -1425,7 +1484,7 @@ func (a *App) treeItem(row pivot.Row, last bool, width int) []line {
 		glyph = branch + " "
 	}
 
-	labelStyle := fg(theme.Default)
+	labelStyle := fg(a.Theme.Colors.Text)
 	if node.IsGroup() {
 		labelStyle = bold()
 	}
@@ -1445,7 +1504,7 @@ func (a *App) treeItem(row pivot.Row, last bool, width int) []line {
 		styled(glyph, glyphStyle),
 		styled(node.Label, labelStyle),
 	}
-	used := max(1, row.Depth)*2 + utf8.RuneCountInString(node.Label)
+	used := max(1, row.Depth)*2 + cells(node.Label)
 
 	// Everything that is not content — the count, an alias, how it went — right-anchors
 	// into a signal column against the edge, so all of it ends where the eye expects it.
@@ -1462,7 +1521,7 @@ func (a *App) treeItem(row pivot.Row, last bool, width int) []line {
 	// you open it.
 	if covers, ok := a.coversColumn(row, node, used, width); ok {
 		l = append(l, plain(strings.Repeat(" ", max(1, nameColumn-used))), covers)
-		used = nameColumn + utf8.RuneCountInString(covers.text)
+		used = nameColumn + cells(covers.text)
 	}
 
 	var extra []line
@@ -1511,7 +1570,7 @@ func (a *App) treeItem(row pivot.Row, last bool, width int) []line {
 		// rows hang under the first, and carry the guide down with them.
 		signalWidth := 0
 		for _, sp := range signals {
-			signalWidth += utf8.RuneCountInString(sp.text)
+			signalWidth += cells(sp.text)
 		}
 		room := width - nameColumn - signalWidth - 2
 		if task.Desc != "" && room >= 12 {
@@ -1528,7 +1587,7 @@ func (a *App) treeItem(row pivot.Row, last bool, width int) []line {
 					plain(strings.Repeat(" ", max(1, nameColumn-used))),
 					styled(chunks[0], fg(t.Colors.Dim)),
 				)
-				used = nameColumn + utf8.RuneCountInString(chunks[0])
+				used = nameColumn + cells(chunks[0])
 				first = 1
 			}
 			// A wrapped description used to leave the guide column blank, which broke the
@@ -1536,16 +1595,17 @@ func (a *App) treeItem(row pivot.Row, last bool, width int) []line {
 			// task with a two-line description put a gap in it that read as the end of the
 			// group. The guide continues instead — except on the last child, where there
 			// is nothing below to connect to and a vertical would promise a sibling that
-			// does not exist.
+			// does not exist, and at the top level, where the row itself draws no guide
+			// for the vertical to continue.
 			cont := g.GuideVertical
-			if last {
+			if last || row.Depth == 0 {
 				cont = " "
 			}
 			prefix := indent + cont + " "
 			for _, chunk := range chunks[first:] {
 				extra = append(extra, line{
 					styled(prefix, fg(t.Colors.Faint)),
-					plain(strings.Repeat(" ", max(0, nameColumn-utf8.RuneCountInString(prefix)))),
+					plain(strings.Repeat(" ", max(0, nameColumn-cells(prefix)))),
 					styled(chunk, fg(t.Colors.Dim)),
 				})
 			}
@@ -1555,7 +1615,7 @@ func (a *App) treeItem(row pivot.Row, last bool, width int) []line {
 	if len(signals) > 0 {
 		signalWidth := 0
 		for _, sp := range signals {
-			signalWidth += utf8.RuneCountInString(sp.text)
+			signalWidth += cells(sp.text)
 		}
 		l = append(l, plain(strings.Repeat(" ", max(2, width-used-signalWidth))))
 		l = append(l, signals...)
@@ -1580,7 +1640,7 @@ func (a *App) drawTree(width, height int) []string {
 	item := func(i int) []line {
 		row := a.PickerRows[i]
 		if !row.IsRun() {
-			return a.treeItem(a.Rows[row.Tree], a.lastOfParent(row.Tree), a.bodyWidth(colWidth))
+			return a.treeItem(row.Tree, a.bodyWidth(colWidth))
 		}
 		r := a.slotRun(row.Root)
 		if r == nil {
@@ -1657,15 +1717,12 @@ func (a *App) composeColumns(
 				// len(item), not 1: this is the one place a row can be more than a line
 				// tall, and the rail has to know so it does not animate itself into pieces.
 				text := l.renderRow(colWidth, selected, a.Theme, a.Phase, li, len(item))
+				// The gap to the next column is outside the row: its shade glyph is the row's
+				// right edge. Painting the gap in the selection colour ran the bar past that
+				// edge, and did it on every frame, so a blinking theme's bar went dark while
+				// the gap beside it stayed lit.
 				if pad := widths[c] - colWidth; pad > 0 {
-					if selected {
-						text += selectionOf(
-							lipgloss.NewStyle(),
-							a.Theme.Colors.Selection,
-						).Render(strings.Repeat(" ", pad))
-					} else {
-						text += strings.Repeat(" ", pad)
-					}
+					text += strings.Repeat(" ", pad)
 				}
 				cols[c][at] = text
 				at++
@@ -1793,7 +1850,7 @@ func (a *App) hintBar(section *keys.Section) line {
 	if hasHelp {
 		tail = help.Display() + " keys"
 	}
-	tailW := utf8.RuneCountInString(tail)
+	tailW := cells(tail)
 	hints := keys.FooterHints(section, a.Keymap)
 	fits := keys.FooterFits(hints, a.Width-1, tailW+hintGap)
 
@@ -1805,7 +1862,7 @@ func (a *App) hintBar(section *keys.Section) line {
 			used += 3
 		}
 		l = append(l, styled(b.Keys, fg(t.Colors.Accent)), plain(" "), styled(b.Footer, fg(t.Colors.Dim)))
-		used += utf8.RuneCountInString(b.Keys) + 1 + utf8.RuneCountInString(b.Footer)
+		used += cells(b.Keys) + 1 + cells(b.Footer)
 	}
 	l = append(l, plain(strings.Repeat(" ", max(hintGap, a.Width-used-tailW-1))))
 	if !hasHelp {
@@ -1835,7 +1892,7 @@ func (a *App) argsPrompt() (line, bool) {
 	if a.argsComp != nil {
 		used := 0
 		for _, s := range l {
-			used += utf8.RuneCountInString(s.text)
+			used += cells(s.text)
 		}
 		return append(l, a.argsCandidateStrip(used)...), true
 	}
@@ -1864,12 +1921,12 @@ func (a *App) argsCandidateStrip(used int) []span {
 	c := a.argsComp
 	t := a.Theme
 	count := fmt.Sprintf("   %d/%d ⇥", c.idx+1, len(c.cands))
-	budget := a.Width - 1 - used - utf8.RuneCountInString(count)
+	budget := a.Width - 1 - used - cells(count)
 
 	var out []span
 	for i := 1; i < len(c.cands); i++ {
 		pick := c.cands[(c.idx+i)%len(c.cands)]
-		width := 2 + utf8.RuneCountInString(pick)
+		width := 2 + cells(pick)
 		if width > budget {
 			break
 		}
