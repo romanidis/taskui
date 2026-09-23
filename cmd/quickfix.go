@@ -123,7 +123,7 @@ func interesting(r *run.Run, only string) []string {
 	if len(failed) > 0 {
 		return failed
 	}
-	if r.HasExit && r.Exit == 0 {
+	if r.Outcome() == run.Ok {
 		return nil
 	}
 	return order

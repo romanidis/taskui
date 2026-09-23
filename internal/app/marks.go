@@ -200,7 +200,7 @@ func (a *App) RerunFailed() {
 	}
 	failed := a.FailedTasks()
 	if len(failed) == 0 {
-		if a.Run.Finished() && a.Run.Exit == 0 {
+		if a.Run.Outcome() == run.Ok {
 			a.Status = "nothing in `" + a.Run.Command() + "` failed"
 		} else {
 			a.Status = "nothing has failed yet"

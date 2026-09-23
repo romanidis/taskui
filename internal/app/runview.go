@@ -46,13 +46,7 @@ func (a *App) runHeader() line {
 		return line{}
 	}
 
-	status := run.Running
-	if r.Finished() {
-		status = run.Failed
-		if r.Exit == 0 {
-			status = run.Ok
-		}
-	}
+	status := r.Outcome()
 
 	var l line
 	if r.Interactive && !r.Finished() {
@@ -110,7 +104,7 @@ func (a *App) runHeader() line {
 		state = append(state, plain("   "))
 	}
 	state = append(state, statusChip(status, t), styled("   "+duration(elapsedOf(r)), fg(t.Colors.Dim)))
-	if r.HasExit && r.Exit != 0 {
+	if r.Outcome() == run.Failed {
 		state = append(state, styled(fmt.Sprintf("   exit %d", r.Exit), fg(t.Colors.StatusFailed)))
 	}
 	return a.header(r.Command(), state)

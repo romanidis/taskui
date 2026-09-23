@@ -286,10 +286,7 @@ func (d *Deltas) Finish(s *Sink, r *run.Run, saved string) {
 		return
 	}
 	d.closed = true
-	code := -1
-	if r.HasExit {
-		code = r.Exit
-	}
+	code := r.ExitCode()
 	s.Send(Exit{
 		Type: "exit", Root: r.Root, Code: code,
 		DurationMs: r.Duration.Milliseconds(),

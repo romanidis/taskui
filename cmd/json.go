@@ -160,10 +160,7 @@ func streamRun(out io.Writer, dir, target string, argv []string) error {
 	r.Poll()
 	deltas.Flush(sink, r)
 
-	exit := -1
-	if r.HasExit {
-		exit = r.Exit
-	}
+	exit := r.ExitCode()
 	// Saved like any other run: a run is a run whichever front end started it, and one that
 	// left nothing behind could not be searched, diffed or timelined afterwards.
 	saved, err := store.Save(store.StateDir(), dir, r)

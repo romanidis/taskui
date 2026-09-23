@@ -229,10 +229,7 @@ func (a *App) slotBadge(name string) ([]span, bool) {
 			styled(duration(time.Since(r.Started)), fg(t.Colors.Dim)),
 		}, true
 	}
-	status := run.Failed
-	if r.Exit == 0 {
-		status = run.Ok
-	}
+	status := r.Outcome()
 	took := time.Since(r.Started)
 	if r.HasDuration {
 		took = r.Duration

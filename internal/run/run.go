@@ -517,6 +517,28 @@ func (r *Run) send(e Event) { r.events.push(e) }
 func (r *Run) Finished() bool  { return r.HasExit }
 func (r *Run) Cancelled() bool { return r.cancelled.Load() }
 
+// Outcome is how the run as a whole is going: Running until it ends, then Ok or Failed by
+// its exit status. A run's answer is the same kind as its tasks', and it was worked out by
+// hand wherever one was wanted.
+func (r *Run) Outcome() Status {
+	switch {
+	case !r.HasExit:
+		return Running
+	case r.Exit == 0:
+		return Ok
+	default:
+		return Failed
+	}
+}
+
+// ExitCode is the run's exit status, or -1 while it has none.
+func (r *Run) ExitCode() int {
+	if r.HasExit {
+		return r.Exit
+	}
+	return -1
+}
+
 // Killed is true once SIGKILL has gone out. There is nothing louder left to try, so the UI
 // stops offering to stop it harder.
 func (r *Run) Killed() bool { return r.killed.Load() }

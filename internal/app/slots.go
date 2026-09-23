@@ -82,7 +82,7 @@ func (a *App) noteFinished() {
 		if a.Screen == ScreenRun && a.FocusSeq == slot.Seq {
 			continue
 		}
-		if a.Bell == theme.BellFailed && r.Exit == 0 {
+		if a.Bell == theme.BellFailed && r.Outcome() == run.Ok {
 			continue
 		}
 		a.pendingBell = true
@@ -256,13 +256,7 @@ func (a *App) restoreView(v slotView) {
 // Slots lists every open run, in slot-bar order.
 func (a *App) Slots() []SlotInfo {
 	describe := func(r *run.Run, seq uint64, focused bool) SlotInfo {
-		status := run.Running
-		if r.Finished() {
-			status = run.Failed
-			if r.Exit == 0 {
-				status = run.Ok
-			}
-		}
+		status := r.Outcome()
 		elapsed := time.Since(r.Started)
 		if r.HasDuration {
 			elapsed = r.Duration

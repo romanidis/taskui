@@ -68,10 +68,7 @@ func runHeadless(dir, target string, argv []string, quickfix bool) error {
 			stack = append(stack, frame{c, top.depth + 1})
 		}
 	}
-	exit := -1
-	if r.HasExit {
-		exit = r.Exit
-	}
+	exit := r.ExitCode()
 	// With --quickfix the output is a list an editor parses, so nothing else may go to
 	// stdout: not the tree, not the exit line, not where it was saved.
 	if !quickfix {
@@ -166,7 +163,7 @@ func screenshotRun(out io.Writer, a *app.App) error {
 	}
 	// Still `--run`: the frame is what was asked to be seen, and the status is still the
 	// task's. It used to be 0 whatever the task did.
-	if started != nil && started.Finished() && started.Exit != 0 {
+	if started != nil && started.Outcome() == run.Failed {
 		return exitWith(started.Exit)
 	}
 	return nil

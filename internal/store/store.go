@@ -443,7 +443,7 @@ func writeRun(base, projectDir string, r *run.Run, id string, started int64) (st
 		Commit:          headCommit(projectDir),
 		StartedUnix:     started,
 		DurationMs:      r.Duration.Milliseconds(),
-		Exit:            exitOf(r),
+		Exit:            r.ExitCode(),
 		RedactedSecrets: r.RedactedSecrets,
 		Tasks:           entries,
 		Edges:           r.Graph.Edges,
@@ -598,13 +598,6 @@ func gitOutput(dir string, args ...string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
-}
-
-func exitOf(r *run.Run) int {
-	if r.HasExit {
-		return r.Exit
-	}
-	return -1
 }
 
 // List returns every run taskui remembers, newest first — which is more than it still holds

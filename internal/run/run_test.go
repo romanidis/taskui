@@ -1106,3 +1106,19 @@ tasks:
 		t.Log("never caught the line half-written; the check above proved nothing this time")
 	}
 }
+
+func TestARunsOutcomeFollowsItsExit(t *testing.T) {
+	r := Detached("all", GraphFrom(Edge{Parent: "all"}))
+	if r.Outcome() != Running || r.ExitCode() != -1 {
+		t.Errorf("going: %v, %d", r.Outcome(), r.ExitCode())
+	}
+	r.Finish(0)
+	if r.Outcome() != Ok || r.ExitCode() != 0 {
+		t.Errorf("passed: %v, %d", r.Outcome(), r.ExitCode())
+	}
+	failed := Detached("all", GraphFrom(Edge{Parent: "all"}))
+	failed.Finish(201)
+	if failed.Outcome() != Failed || failed.ExitCode() != 201 {
+		t.Errorf("failed: %v, %d", failed.Outcome(), failed.ExitCode())
+	}
+}

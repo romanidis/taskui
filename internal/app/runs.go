@@ -245,7 +245,7 @@ func (a *App) saveParked(i int) {
 	}
 	parked := a.Parked[i]
 	name := parked.Run.Root
-	ok := parked.Run.Exit == 0
+	ok := parked.Run.Outcome() == run.Ok
 	path, err := a.archive(parked.Run, parked.view.savedTo)
 	if err != nil {
 		a.Status = fmt.Sprintf("could not save `task %s`: %v", name, err)
