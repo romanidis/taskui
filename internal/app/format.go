@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/romanidis/taskui/internal/run"
 )
@@ -51,4 +52,11 @@ func elapsedOf(r *run.Run) time.Duration {
 		return r.Duration
 	}
 	return time.Since(r.Started)
+}
+
+// withoutLastRune is s with its last character taken off: backspace, for the five prompts
+// that only ever type at their end. The args prompt has a caret and edits in place.
+func withoutLastRune(s string) string {
+	_, size := utf8.DecodeLastRuneInString(s)
+	return s[:len(s)-size]
 }

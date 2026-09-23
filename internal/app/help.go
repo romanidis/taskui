@@ -34,10 +34,7 @@ func (a *App) PushHelpFind(c rune) {
 }
 
 func (a *App) PopHelpFind() {
-	runes := []rune(a.HelpQuery)
-	if len(runes) > 0 {
-		a.HelpQuery = string(runes[:len(runes)-1])
-	}
+	a.HelpQuery = withoutLastRune(a.HelpQuery)
 	a.HelpOffset = 0
 }
 

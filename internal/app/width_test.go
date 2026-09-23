@@ -234,3 +234,11 @@ func TestARowNarrowerThanItsFrameStillFitsIt(t *testing.T) {
 		}
 	}
 }
+
+func TestBackspaceTakesOffOneCharacter(t *testing.T) {
+	for in, want := range map[string]string{"lint": "lin", "адрес": "адре", "a😀": "a", "": ""} {
+		if got := withoutLastRune(in); got != want {
+			t.Errorf("withoutLastRune(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -38,10 +38,7 @@ func (a *App) PushJump(c rune) {
 }
 
 func (a *App) PopJump() {
-	runes := []rune(a.JumpQuery)
-	if len(runes) > 0 {
-		a.JumpQuery = string(runes[:len(runes)-1])
-	}
+	a.JumpQuery = withoutLastRune(a.JumpQuery)
 	a.applyJump()
 }
 

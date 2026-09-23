@@ -121,10 +121,7 @@ func (a *App) PushHistorySearch(c rune) {
 }
 
 func (a *App) PopHistorySearch() {
-	runes := []rune(a.HistoryQuery)
-	if len(runes) > 0 {
-		a.HistoryQuery = string(runes[:len(runes)-1])
-	}
+	a.HistoryQuery = withoutLastRune(a.HistoryQuery)
 	a.applyHistorySearch()
 }
 

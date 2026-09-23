@@ -278,10 +278,7 @@ func (a *App) PushQuery(c rune) {
 
 func (a *App) PopQuery() {
 	keep := a.SelectedTask()
-	runes := []rune(a.Query)
-	if len(runes) > 0 {
-		a.Query = string(runes[:len(runes)-1])
-	}
+	a.Query = withoutLastRune(a.Query)
 	a.Rebuild(keep)
 }
 

@@ -126,9 +126,6 @@ func (a *App) PushSearch(c rune) {
 }
 
 func (a *App) PopSearch() {
-	runes := []rune(a.SearchInput)
-	if len(runes) > 0 {
-		a.SearchInput = string(runes[:len(runes)-1])
-	}
+	a.SearchInput = withoutLastRune(a.SearchInput)
 	a.ApplySearch()
 }
