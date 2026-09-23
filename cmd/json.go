@@ -118,7 +118,7 @@ func printTimelineJSON(out io.Writer, root, taskName string) error {
 	for _, p := range points {
 		page = append(page, pointJSON{
 			RunID: p.RunID, Root: p.Root, When: p.WhenUnix,
-			Status: p.Status, DurationMs: p.DurationMs, Lines: p.Lines, Commit: p.Commit,
+			Status: p.Status.String(), DurationMs: p.DurationMs, Lines: p.Lines, Commit: p.Commit,
 		})
 	}
 	enc := json.NewEncoder(out)

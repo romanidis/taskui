@@ -883,3 +883,27 @@ func TestAnAbandonedSaveIsPruned(t *testing.T) {
 		t.Errorf("the finished run should be untouched: %v", List(base))
 	}
 }
+
+// The archive stores a status by its name, and still does with the field typed: an old
+// manifest reads back, and a new one is written the way every older build expects.
+func TestStatusesAreStoredByName(t *testing.T) {
+	blob, err := json.Marshal(TaskEntry{Name: "test", Status: run.Skipped})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(blob), `"status":"Skipped"`) {
+		t.Errorf("written as %s", blob)
+	}
+	var back TaskEntry
+	if err := json.Unmarshal([]byte(`{"name":"test","status":"Failed"}`), &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Status != run.Failed {
+		t.Errorf("read back as %v", back.Status)
+	}
+	// A name from a newer build is not an error: it reads as Pending, as it always did.
+	err = json.Unmarshal([]byte(`{"name":"test","status":"Cancelled"}`), &back)
+	if err != nil || back.Status != run.Pending {
+		t.Errorf("unknown status: %v, %v", back.Status, err)
+	}
+}

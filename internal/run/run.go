@@ -85,6 +85,18 @@ func (s Status) String() string {
 	}
 }
 
+// MarshalText writes a status by its name, which is what the archive has always stored:
+// manifests read `"status": "Ok"`, and a Status that marshalled as its number would be a
+// format change made by accident.
+func (s Status) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
+
+// UnmarshalText reads a name back. One this build does not know reads as Pending, as
+// StatusFromString always has, so a manifest a newer build wrote still loads.
+func (s *Status) UnmarshalText(text []byte) error {
+	*s = StatusFromString(string(text))
+	return nil
+}
+
 func StatusFromString(s string) Status {
 	switch s {
 	case "Ok":

@@ -447,8 +447,8 @@ func TestEveryScreenRendersAtEveryAwkwardSize(t *testing.T) {
 	// twenty-column terminal is most of it.
 	a.TimelineOf = "task001"
 	a.Timeline = []store.Point{
-		{RunID: "a", Root: "task000", WhenUnix: 1, Status: "Ok", DurationMs: 1200, Lines: 30},
-		{RunID: "b", Root: "task001", WhenUnix: 2, Status: "Failed", DurationMs: 90, Lines: 4},
+		{RunID: "a", Root: "task000", WhenUnix: 1, Status: run.Ok, DurationMs: 1200, Lines: 30},
+		{RunID: "b", Root: "task001", WhenUnix: 2, Status: run.Failed, DurationMs: 90, Lines: 4},
 	}
 	a.showDiff(
 		"task001",

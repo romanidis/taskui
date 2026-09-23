@@ -59,8 +59,9 @@ const compactAt = 10000
 const compactSlack = compactAt / 10
 
 type TaskEntry struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	Name string `json:"name"`
+	// Status is written by name, `"Ok"`, as it always has been.
+	Status run.Status `json:"status"`
 	// Note is why it did not run, when it did not. Omitted-friendly, so manifests written
 	// before skips were explained still load.
 	Note       string `json:"note,omitempty"`
@@ -422,7 +423,7 @@ func writeRun(base, projectDir string, r *run.Run, id string, started int64) (st
 
 		entries = append(entries, TaskEntry{
 			Name:       name,
-			Status:     t.Status.String(),
+			Status:     t.Status,
 			Note:       t.Note,
 			DurationMs: t.Duration().Milliseconds(),
 			Lines:      len(t.Lines),
@@ -694,7 +695,7 @@ func Load(base string, manifest Manifest) (*run.Run, error) {
 			order = append(order, entry.Name)
 		}
 		restored := run.RestoredTask(
-			run.StatusFromString(entry.Status),
+			entry.Status,
 			lines,
 			time.Duration(entry.DurationMs)*time.Millisecond,
 		)
@@ -761,13 +762,13 @@ func LastOutcomes(base, project string) map[string]Outcome {
 			continue
 		}
 		for _, entry := range manifest.Tasks {
-			if entry.Status == "Pending" || entry.Status == "Skipped" {
+			if entry.Status == run.Pending || entry.Status == run.Skipped {
 				continue
 			}
 			if _, seen := out[entry.Name]; seen {
 				continue
 			}
-			out[entry.Name] = Outcome{Ok: entry.Status == "Ok", WhenUnix: manifest.StartedUnix}
+			out[entry.Name] = Outcome{Ok: entry.Status == run.Ok, WhenUnix: manifest.StartedUnix}
 		}
 	}
 	return out
@@ -787,14 +788,14 @@ type Point struct {
 	WhenUnix int64
 	// Commit is the git revision the project was at, or empty.
 	Commit     string
-	Status     string
+	Status     run.Status
 	DurationMs int64
 	Lines      int
 	// File is the basename its output was written under, for reading it back.
 	File string
 }
 
-func (p Point) Ok() bool { return p.Status == "Ok" }
+func (p Point) Ok() bool { return p.Status == run.Ok }
 
 // Command is how the run this task was part of was invoked, for naming it on screen.
 func (p Point) Command() string {
@@ -819,7 +820,7 @@ func Timeline(base, project, task string) []Point {
 			continue
 		}
 		for _, e := range m.Tasks {
-			if e.Name != task || e.Status == "Pending" || e.Status == "Skipped" {
+			if e.Name != task || e.Status == run.Pending || e.Status == run.Skipped {
 				continue
 			}
 			out = append(out, Point{
@@ -956,7 +957,7 @@ func Flaky(base, project string) []Flake {
 			continue
 		}
 		for _, e := range m.Tasks {
-			if e.Status != "Ok" && e.Status != "Failed" {
+			if e.Status != run.Ok && e.Status != run.Failed {
 				continue
 			}
 			k := key{e.Name, shellwords.Join(m.Args), m.Commit}
@@ -965,7 +966,7 @@ func Flaky(base, project string) []Flake {
 				f = &Flake{Task: e.Name, Args: m.Args, Commit: m.Commit}
 				seen[k] = f
 			}
-			if e.Status == "Ok" {
+			if e.Status == run.Ok {
 				f.Passed++
 			} else {
 				f.Failed++
