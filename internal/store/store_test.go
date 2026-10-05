@@ -206,6 +206,41 @@ func TestAProjectReachedThroughASymlinkKeepsOneHistory(t *testing.T) {
 	}
 }
 
+// A run started from a directory inside a project is that project's run: go-task found the
+// same Taskfile further up and ran the same task. Keyed by the directory alone, `taskui` in
+// `web/src` kept a second history that the project's own timeline never showed.
+func TestARunMadeInsideTheProjectIsInItsHistory(t *testing.T) {
+	base := t.TempDir()
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, "Taskfile.yml"), []byte("version: '3'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(project, "web", "src")
+	// A directory with a Taskfile of its own is a project of its own, as it is to go-task.
+	nested := filepath.Join(project, "tools")
+	for _, dir := range []string{inside, nested} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(nested, "Taskfile.yml"), []byte("version: '3'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(base, inside, finishedRun("all")); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(Timeline(base, project, "child")) != 1 {
+		t.Error("a run made inside the project is missing from its timeline")
+	}
+	if !SameDir(inside, project) {
+		t.Error("a directory inside the project is not the project")
+	}
+	if SameDir(nested, project) {
+		t.Error("a nested project with its own Taskfile was folded into the one above it")
+	}
+}
+
 // A task that was never reached has no outcome — that is not the same as passing.
 func TestSkippedTasksHaveNoOutcome(t *testing.T) {
 	base := t.TempDir()

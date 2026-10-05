@@ -27,6 +27,7 @@ import (
 	"github.com/romanidis/taskui/internal/graph"
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/shellwords"
+	"github.com/romanidis/taskui/internal/task"
 )
 
 // KeepRuns is how many runs' *output* to keep. A full `task all` on a large repo is a lot of
@@ -231,7 +232,7 @@ func compactHistory(base string) error {
 	kept := map[string]int{}
 	keep := make([]Manifest, 0, len(all))
 	for _, m := range all {
-		project := resolveDir(m.Dir)
+		project := projectOf(m.Dir)
 		if kept[project] >= KeepHistory {
 			continue
 		}
@@ -556,9 +557,21 @@ func exists(path string) bool {
 //
 // The archive is keyed by the directory a run was made in, and comparing the strings split a
 // project in two whenever it was reached by two paths: through a symlink and without one, or
-// as `/var` and `/private/var`, which macOS hands out for one place.
+// as `/var` and `/private/var`, which macOS hands out for one place — or from a directory
+// inside it, where go-task finds the same Taskfile further up.
 func SameDir(a, b string) bool {
-	return a == b || resolveDir(a) == resolveDir(b)
+	return a == b || projectOf(a) == projectOf(b)
+}
+
+// projectOf is the project a directory belongs to: resolved as resolveDir resolves it, then
+// up to the Taskfile that governs it. A directory that is gone keeps its resolved spelling,
+// because walking up from it could land in an unrelated Taskfile above where it used to be.
+func projectOf(dir string) string {
+	out := resolveDir(dir)
+	if _, err := os.Stat(out); err != nil {
+		return out
+	}
+	return task.ProjectDir(out)
 }
 
 // resolved remembers what each directory resolves to. Every question about one project walks

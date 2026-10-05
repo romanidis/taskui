@@ -247,7 +247,7 @@ func rootRun(cmd *cobra.Command, args []string) error {
 	config := theme.FromViper(v)
 	// And the project gets the last word on the two things that are about its own task list
 	// — which never includes what your terminal looks like or what your keys do.
-	config = config.WithProject(theme.LoadProject(root))
+	config = config.WithProject(theme.LoadProject(task.ProjectDir(root)))
 
 	// Searching the archive reads stored runs, not the project — it must work from
 	// anywhere, including a directory with no Taskfile in it.

@@ -43,6 +43,28 @@ func TestFindUpWalksToTheProjectAbove(t *testing.T) {
 	}
 }
 
+// The danger list belongs to the project, not to the directory taskui was started in. Read
+// from there, `taskui` in `web/src` found no list, fell back to the heuristic, and ran a
+// listed task that the heuristic did not catch without asking.
+func TestTheDangerListAppliesFromInsideTheProject(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{"Taskfile.yml": "version: '3'\n", DangerFile: "wipe\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deep := filepath.Join(dir, "web", "src")
+	if err := os.MkdirAll(deep, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if got := DangerPatterns(deep); len(got) != 1 || got[0] != "wipe" {
+		t.Errorf("DangerPatterns from inside the project = %v, want [wipe]", got)
+	}
+	if got := ProjectDir(deep); got != dir {
+		t.Errorf("ProjectDir = %q, want %q", got, dir)
+	}
+}
+
 func TestWriteStarterLeavesSomethingGoTaskCanRead(t *testing.T) {
 	dir := t.TempDir()
 	path, err := WriteStarter(dir)

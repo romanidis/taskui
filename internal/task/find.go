@@ -31,6 +31,19 @@ func Find(dir string) string {
 	return ""
 }
 
+// ProjectDir is the directory of the Taskfile that governs dir, or dir itself when none does.
+//
+// It is what "this project" means for everything taskui keeps about one: the danger list,
+// the project's own config, and which stored runs are its history. Taken from the directory
+// taskui was started in instead, `taskui` from `web/src` read none of those — so a task on
+// the danger list ran without asking, and the runs made there were a second history.
+func ProjectDir(dir string) string {
+	if path := FindUp(dir); path != "" {
+		return filepath.Dir(path)
+	}
+	return dir
+}
+
 // FindUp is the Taskfile that governs dir: the one in it, or the nearest above it.
 //
 // Walking up is what go-task does, so a subdirectory of a project is not a project without

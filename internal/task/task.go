@@ -222,7 +222,7 @@ func GlobMatch(pattern, name string) bool {
 // disagreeing about which tasks are dangerous is worse than either alone — once you have
 // written the list down, that list is the answer.
 func DangerPatterns(dir string) []string {
-	return ReadPatterns(filepath.Join(dir, DangerFile))
+	return ReadPatterns(filepath.Join(ProjectDir(dir), DangerFile))
 }
 
 // ReadPatterns reads a project's list of task globs: one per line, `#` starting a comment,
