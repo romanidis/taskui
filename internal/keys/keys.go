@@ -210,7 +210,7 @@ var defaults = []binding{
 	{Watch, 'W', "watch"},
 	{Yank, 'y', "yank"},
 	{YankAll, 'Y', "yank-all"},
-	{AllProjects, 'a', "all-projects"},
+	{AllProjects, 's', "all-projects"},
 	{Fold, 'o', "fold"},
 	{FoldAll, 'O', "fold-all"},
 	{CloseSlot, 'X', "close-slot"},
@@ -370,9 +370,11 @@ type bound struct {
 
 // Keymap says which character triggers which action.
 //
-// Screens are separate maps because the same key means different things depending on where
-// you are — `a` is "run with arguments" in the picker and "all projects" in the history
-// list, and `i` arms interactive mode in one and types at the task in the other.
+// Screens are separate maps because not every action means something on every screen, and a
+// key free on one is not free on another. A key means one thing wherever it is bound: `a`
+// used to run with arguments in the picker and widen the history list, `i` to arm a mode in
+// one screen and type at the task in another, and a keymap that changes meaning with the
+// screen is several keymaps sharing a set of letters.
 type Keymap struct {
 	picker   []bound
 	run      []bound
@@ -674,7 +676,10 @@ var Picker = Section{
 		// No footer label: with `space fold` and `o output` both on the line, the footer is
 		// full — and folding the whole tree at once is a thing you go looking for, where
 		// the two single-row keys are things you press without thinking.
-		b("{fold-all} ⇥", "fold or unfold every group"),
+		b("{fold-all}", "fold or unfold every group"),
+		// No footer label: it only means anything with a run open, and then the run under
+		// its row is what the footer is already pointing at.
+		b("⇥ ⇧⇥", "go to the next / previous open run, under its task"),
 		f("⏎", "run the task, or every marked one — the run unfolds under its row", "run"),
 		f("{mark}", "mark a task to run alongside others", "mark"),
 		b("{clear-marks}", "clear every mark"),

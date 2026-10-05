@@ -271,7 +271,8 @@ In the picker:
 | `space` | fold or unfold a group |
 | `←` `→` | the same fold, for hands that reach for a tree's keys |
 | `o` | how much of the run under a task: hidden, a peek, all of it |
-| `⇧O` `⇥` | fold or unfold every group |
+| `⇧O` | fold or unfold every group |
+| `⇥` `⇧⇥` | go to the next / previous open run, under its task |
 | `⏎` | run the task, or every marked one — the run unfolds under its row |
 | `m` | mark a task to run alongside others |
 | `⇧M` | clear every mark |
@@ -588,7 +589,7 @@ git worktree is a different directory holding the same project, so on the day yo
 every task's history starts again from nothing — `⇧H` on a test you have been running for
 months shows a task that has never run.
 
-So `a` in the history list widens a rung at a time rather than toggling:
+So `s` in the history list widens its scope a rung at a time rather than toggling:
 
 ```
 this project  →  this repo  →  all projects

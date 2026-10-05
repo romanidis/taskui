@@ -280,6 +280,44 @@ func (a *App) CycleSlot(delta int) {
 	a.FocusSlot(slots[next].Seq)
 }
 
+// GoToRun is ⇥ in the picker: the cursor onto the next open run's task, in slot-bar order,
+// with its slot focused so `v` opens the run you are looking at. From a row that is not one
+// of theirs the first press goes to the focused run.
+func (a *App) GoToRun(delta int) {
+	slots := a.Slots()
+	if len(slots) == 0 {
+		a.Status = "nothing is open — ⏎ starts a run under its task"
+		return
+	}
+	here := ""
+	if ti := a.SelectedTask(); ti >= 0 {
+		here = a.Tasks[ti].Name
+	}
+	on, focused := -1, 0
+	for i, s := range slots {
+		if s.Root == here {
+			on = i
+		}
+		if s.Focused {
+			focused = i
+		}
+	}
+	next := focused
+	if on >= 0 {
+		n := len(slots)
+		next = ((on+delta)%n + n) % n
+	}
+	target := slots[next].Root
+	a.FocusSlot(slots[next].Seq)
+	a.Screen = ScreenPicker
+	for ti, t := range a.Tasks {
+		if t.Name == target {
+			a.Rebuild(ti)
+			break
+		}
+	}
+}
+
 // FocusSlotNumber jumps straight to slot n, counting from one as the bar labels them.
 func (a *App) FocusSlotNumber(n int) {
 	slots := a.Slots()

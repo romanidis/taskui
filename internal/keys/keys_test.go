@@ -335,3 +335,23 @@ func TestNoFooterLabelNamesAnotherActionOnItsScreen(t *testing.T) {
 		}
 	}
 }
+
+// A key means one thing wherever it is bound. `/` filtered in one screen and found in
+// another, `f` the reverse, `i` armed a mode here and typed at a task there, and `a` ran
+// with arguments in the picker and widened the history list: a keymap whose keys change
+// meaning with the screen is several keymaps sharing a set of letters.
+func TestAKeyMeansOneThingOnEveryScreen(t *testing.T) {
+	km := NewKeymap()
+	meaning := map[Chord]Action{}
+	where := map[Chord]string{}
+	for _, s := range km.screens() {
+		for _, b := range s.m {
+			if was, ok := meaning[b.chord]; ok && was != b.action {
+				t.Errorf("%s is %s in %s and %s in %s", b.chord.Display(),
+					ActionName(was), where[b.chord], ActionName(b.action), s.name)
+				continue
+			}
+			meaning[b.chord], where[b.chord] = b.action, s.name
+		}
+	}
+}

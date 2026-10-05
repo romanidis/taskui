@@ -365,3 +365,33 @@ func TestAProfileOpenAcrossTheEndOfARunShowsHowItEnded(t *testing.T) {
 		}
 	}
 }
+
+// ⇥ means the next run on every screen. In the picker each run grows under its own task, so
+// the next run is the next of those rows — and ⇥ used to fold the whole tree there instead.
+func TestTabInThePickerGoesToTheNextOpenRun(t *testing.T) {
+	a := appWith(t, []string{"build", "lint", "test"})
+	for _, name := range []string{"lint", "test"} {
+		r := run.Detached(name, run.GraphFrom(run.Edge{Parent: name}))
+		a.OpenRunForTest(r)
+	}
+	a.Screen = ScreenPicker
+	a.Rebuild(0) // the cursor on build, which has no run
+	folds := len(a.Rows)
+
+	press(a, Tab())
+	first := a.Tasks[a.SelectedTask()].Name
+	if a.Run == nil || first != a.Run.Task {
+		t.Fatalf("⇥ from a row with no run landed on %q, focused %v", first, a.Run)
+	}
+	press(a, Tab())
+	second := a.Tasks[a.SelectedTask()].Name
+	if second == first || second != a.Run.Task {
+		t.Errorf("the second ⇥ landed on %q after %q, focused %s", second, first, a.Run.Task)
+	}
+	if a.Screen != ScreenPicker {
+		t.Errorf("⇥ left the picker: %v", a.Screen)
+	}
+	if len(a.Rows) != folds {
+		t.Errorf("⇥ folded the tree: %d rows, was %d", len(a.Rows), folds)
+	}
+}

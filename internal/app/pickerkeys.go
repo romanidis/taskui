@@ -73,8 +73,15 @@ func (a *App) handlePickerKey(k Key) bool {
 			a.ToggleFold()
 		}
 
-	case k.kind == keyTab, act() == keys.FoldAll:
+	case act() == keys.FoldAll:
 		a.ToggleFoldAll()
+
+	// The next open run, as in the run view. Each grows under its own row, so going to one
+	// here is putting the cursor on that row.
+	case k.kind == keyTab:
+		a.GoToRun(1)
+	case k.kind == keyBackTab:
+		a.GoToRun(-1)
 	case act() == keys.Fold:
 		if !a.CycleOutputFold() {
 			if n := a.SelectedNode(); n != nil && n.IsGroup() {

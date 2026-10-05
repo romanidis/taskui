@@ -331,9 +331,9 @@ var examples = []example{{
 			"number of tasks inside on the right. A namespace also names the aggregates that " +
 			"run it, so `↑ build lint test` on `backend` is three tasks above it that reach in."),
 		frame(draw(18, "", nil)),
-		text("`space` opens one. `⇧O` or `⇥` opens everything at once, which on a large " +
+		text("`space` opens one. `⇧O` opens everything at once, which on a large " +
 			"Taskfile is how you go from shape to detail and back."),
-		frame(draw(14, "\t", nil)),
+		frame(draw(14, "O", nil)),
 		text("Each row says how that task went last time, in a column you can run your eye down. " +
 			"A blank there means never run, which is not the same as passed."),
 		// From the keymap, not spelled here: jump moved from `t` to `f` and then into `/`, and
@@ -359,7 +359,7 @@ var examples = []example{{
 		text("`⏎` runs the task under the cursor and leaves you in the list. The run unfolds " +
 			"under the row it came from: every task it pulled in, every command each of those " +
 			"ran, and the last few lines they printed."),
-		frame(draw(16, "\tj", func(a *app.App) {
+		frame(draw(16, "Oj", func(a *app.App) {
 			a.OpenRunForTest(sampleRun())
 			a.Follow()
 		})),

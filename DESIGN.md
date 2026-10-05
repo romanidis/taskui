@@ -458,7 +458,8 @@ rather than as *checked and clean*.
 
 `h` lists what has already run, newest first, **scoped to the current project** — the
 manifest records which directory a run came from, and one list mixing every repo you have
-ever used taskui in stops being useful immediately. `a` widens to all projects.
+ever used taskui in stops being useful immediately. `s` widens the scope, to this repository
+and then to all projects.
 
 `/` greps every stored run and keeps only the ones that matched, with hit counts:
 

@@ -281,7 +281,8 @@ failures usually shows only that the timestamps moved.
 ✓ 3h ago    task ci    170ms   12 lines   0 hits   ← last clean run
 ```
 
-`⏎` opens a matched run with the query already applied. `a` widens to all projects.
+`⏎` opens a matched run with the query already applied. `s` widens the scope, to this
+repository and then to all projects.
 
 From the shell, without opening the TUI:
 
