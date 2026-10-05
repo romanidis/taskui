@@ -169,37 +169,6 @@ func (a *App) startRunSet(set RunSet) {
 	}
 }
 
-// FailedTasks are the tasks of the run on screen that did not pass, in the order the run
-// reached them.
-func (a *App) FailedTasks() []string {
-	if a.Run == nil {
-		return nil
-	}
-	var out []string
-	for _, name := range a.Run.Order {
-		if t, ok := a.Run.Tasks[name]; ok && t.Status == run.Failed {
-			out = append(out, name)
-		}
-	}
-	// A parent is failed because its child was, and re-running the parent runs everything
-	// again — which is the thing this key exists to avoid. Only the tasks with no failed
-	// task under them are the ones that actually broke.
-	var leaves []string
-	for _, name := range out {
-		blamed := false
-		for _, child := range a.Run.Graph.Children(name) {
-			if t, ok := a.Run.Tasks[child]; ok && t.Status == run.Failed {
-				blamed = true
-				break
-			}
-		}
-		if !blamed {
-			leaves = append(leaves, name)
-		}
-	}
-	return leaves
-}
-
 // RerunFailed starts everything in this run that broke, each in its own slot.
 //
 // The tightest loop there is after a big red run: `task all` fails in three places, you fix
@@ -214,7 +183,7 @@ func (a *App) RerunFailed() {
 		a.Status = "no run to take the failures from"
 		return
 	}
-	failed := a.FailedTasks()
+	failed := a.Run.Culprits()
 	if len(failed) == 0 {
 		if a.Run.Outcome() == run.Ok {
 			a.Status = "nothing in `" + a.Run.Command() + "` failed"

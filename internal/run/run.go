@@ -149,6 +149,32 @@ func (r *Run) Outcome() Status {
 	}
 }
 
+// Culprits are the tasks that broke this run, in the order it reached them: the failed ones
+// with no failed task beneath them.
+//
+// An aggregate is failed because its child was, and it is neither the place to look nor the
+// thing to re-run — re-running it runs everything again. Only a failed task with nothing
+// failed under it is where the run actually broke.
+func (r *Run) Culprits() []string {
+	var out []string
+	for _, name := range r.Order {
+		if t, ok := r.Tasks[name]; !ok || t.Status != Failed {
+			continue
+		}
+		blamed := false
+		for _, child := range r.Graph.Children(name) {
+			if t, ok := r.Tasks[child]; ok && t.Status == Failed {
+				blamed = true
+				break
+			}
+		}
+		if !blamed {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // ExitCode is the run's exit status, or -1 while it has none.
 func (r *Run) ExitCode() int {
 	if r.HasExit {

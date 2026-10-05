@@ -415,24 +415,6 @@ func broken(t *testing.T, a *App) {
 	a.Screen = ScreenRun
 }
 
-// An aggregate is failed because its child was. Re-running the aggregate runs everything
-// again, which is precisely what this key exists to avoid.
-func TestTheFailuresAreTheTasksThatBrokeNotTheOnesBlamed(t *testing.T) {
-	a := appWith(t, []string{"all", "fmt", "lint", "test"})
-	broken(t, a)
-
-	got := a.FailedTasks()
-	want := map[string]bool{"lint": true, "test": true}
-	if len(got) != 2 {
-		t.Fatalf("got %v, want lint and test", got)
-	}
-	for _, name := range got {
-		if !want[name] {
-			t.Errorf("%q is not one of the tasks that broke", name)
-		}
-	}
-}
-
 func TestRerunFailedStartsEachInItsOwnSlot(t *testing.T) {
 	a := appWith(t, []string{"all", "fmt", "lint", "test"})
 	broken(t, a)

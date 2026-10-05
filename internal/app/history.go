@@ -215,7 +215,7 @@ func (a *App) OpenStoredRun() {
 	a.Status = ""
 	// Open the failure straight away: reopening a run is nearly always about the thing
 	// that broke.
-	if failed := a.FailedTasks(); len(failed) > 0 {
+	if failed := a.Run.Culprits(); len(failed) > 0 {
 		a.runFolds[failed[0]] = FoldFull
 		a.RebuildRunRows()
 		a.cursorToTask(failed[0])

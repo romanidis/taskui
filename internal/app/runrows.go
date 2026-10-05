@@ -72,7 +72,7 @@ func (a *App) Follow() {
 
 	// A failure wins over following, and pins the view there: the first task that actually
 	// broke, rather than an aggregate that merely contains it.
-	if failed := a.FailedTasks(); len(failed) > 0 {
+	if failed := a.Run.Culprits(); len(failed) > 0 {
 		if name := failed[0]; a.focusedFailure != name {
 			a.focusedFailure = name
 			a.Following = false

@@ -1270,3 +1270,22 @@ func TestAPrefixedTasksOutputLandsOnIt(t *testing.T) {
 		t.Errorf("c's own output is not under c: %v", r.Tasks["c"].Lines)
 	}
 }
+
+// An aggregate is failed because its child was. Re-running the aggregate runs everything
+// again, which is precisely what ⇧F exists to avoid, and opening it shows nothing that broke.
+func TestTheCulpritsAreTheTasksThatBrokeNotTheOnesBlamed(t *testing.T) {
+	r := Detached("all", GraphFrom(Edge{Parent: "all", Children: []string{"fmt", "lint", "test"}}))
+	r.Feed("fmt", "formatted")
+	r.Feed("lint", "boom")
+	r.ApplyFailed("lint")
+	r.Feed("test", "boom too")
+	r.ApplyFailed("test")
+	r.Finish(1)
+
+	if r.Tasks["all"].Status != Failed {
+		t.Fatalf("all = %v, the fixture means it to be failed", r.Tasks["all"].Status)
+	}
+	if got := r.Culprits(); !slices.Equal(got, []string{"lint", "test"}) {
+		t.Errorf("culprits = %v, want lint and test", got)
+	}
+}
