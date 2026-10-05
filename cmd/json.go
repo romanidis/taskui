@@ -175,10 +175,19 @@ func stopOnSignal(r *run.Run) func() {
 	signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
 	done := make(chan struct{})
 	go func() {
-		select {
-		case <-stopping:
-			r.Cancel()
-		case <-done:
+		for {
+			select {
+			case <-stopping:
+				// A second ask is louder, as a second `x` is. Still registered after the
+				// first, the handler swallowed every Ctrl-C after it.
+				if r.Cancelled() {
+					r.Kill()
+				} else {
+					r.Cancel()
+				}
+			case <-done:
+				return
+			}
 		}
 	}()
 	return func() {
