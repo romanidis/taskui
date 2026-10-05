@@ -1016,6 +1016,22 @@ func TestARunStillGoingHasNoOutcomeYet(t *testing.T) {
 	}
 }
 
+// The command line a run was started with is part of the question, the task it was started
+// as included: `build` inside `release` is handed release's vars.
+func TestATaskReachedFromAnotherRootIsAnotherQuestion(t *testing.T) {
+	base := t.TempDir()
+	for _, r := range []*run.Run{agedRun("build", "build", true, 300), agedRun("release", "build", false, 200)} {
+		dir, err := Save(base, "/proj", r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rewriteStored(t, base, dir, func(m *Manifest) { m.Commit = "abc1234deadbeef" })
+	}
+	if got := Flaky(base, "/proj"); len(got) != 0 {
+		t.Errorf("two different command lines made a flake: %+v", got)
+	}
+}
+
 // A detached run that finishes after fifty others were saved has lost its partial record to
 // the prune. Rewriting it in place failed, and the archive kept "still running" for good.
 func TestAFinishedRunIsKeptAfterItsPartialRecordWasPruned(t *testing.T) {

@@ -1022,8 +1022,9 @@ func pruneUnfinished(base string) int {
 // Flake is a task that has both passed and failed at the same commit, invoked the same way.
 type Flake struct {
 	Task string
-	// Args are the arguments the run carried, kept because they are part of what "the same
-	// question" means.
+	// Root and Args are the command line the runs carried, kept because they are part of
+	// what "the same question" means.
+	Root string
 	Args []string
 	// Commit is where it happened, and Passed/Failed how many times each way.
 	Commit         string
@@ -1047,8 +1048,7 @@ type Flake struct {
 // flake is the confident kind of wrong — it sends someone to look for nondeterminism in a
 // task that behaved exactly as it was told to. The archive has held `Args` all along.
 func Flaky(base, project string) []Flake {
-	type key struct{ task, args, commit string }
-	seen := map[key]*Flake{}
+	seen := map[string]*Flake{}
 
 	for _, m := range List(base) {
 		if (project != "" && !SameDir(m.Dir, project)) || m.Commit == "" || strings.HasSuffix(m.Commit, "-dirty") ||
@@ -1059,10 +1059,10 @@ func Flaky(base, project string) []Flake {
 			if e.Status != run.Ok && e.Status != run.Failed {
 				continue
 			}
-			k := key{e.Name, shellwords.Join(m.Args), m.Commit}
+			k := e.Name + "\x00" + QuestionKey(m.Commit, m.Root, m.Args)
 			f, ok := seen[k]
 			if !ok {
-				f = &Flake{Task: e.Name, Args: m.Args, Commit: m.Commit}
+				f = &Flake{Task: e.Name, Root: m.Root, Args: m.Args, Commit: m.Commit}
 				seen[k] = f
 			}
 			if e.Status == run.Ok {
@@ -1089,32 +1089,40 @@ func Flaky(base, project string) []Flake {
 		if out[i].Task != out[j].Task {
 			return out[i].Task < out[j].Task
 		}
-		return shellwords.Join(out[i].Args) < shellwords.Join(out[j].Args)
+		return out[i].Invocation() < out[j].Invocation()
 	})
 	return out
 }
 
-// QuestionKey identifies what a run was asked: one commit, one command line.
+// QuestionKey identifies what a run was asked: one commit, one command line — the task it
+// was started as included. `build` passing under `task build` and failing inside `task
+// release`, which hands it different vars, is two questions, not a flake.
 //
 // The flaky definition rests on "the same question, two answers", and this is that question
 // written down — so the report and the timeline that marks its rows cannot drift into two
 // ideas of what same means.
-func QuestionKey(commit string, args []string) string {
-	return commit + "\x00" + shellwords.Join(args)
+func QuestionKey(commit, root string, args []string) string {
+	return commit + "\x00" + root + "\x00" + shellwords.Join(args)
 }
 
 // Question is this point's key, for matching it against a flake.
-func (p Point) Question() string { return QuestionKey(p.Commit, p.Args) }
+func (p Point) Question() string { return QuestionKey(p.Commit, p.Root, p.Args) }
 
 // Question is this flake's key, for matching points against it.
-func (f Flake) Question() string { return QuestionKey(f.Commit, f.Args) }
+func (f Flake) Question() string { return QuestionKey(f.Commit, f.Root, f.Args) }
 
 // Invocation names the arguments a flake belongs to, empty when there were none.
 //
 // Deliberately not "task <name> <args>": Task is the task that went both ways, Args are
 // what the *run* carried, and a task reached from an aggregate never saw them on its own
 // command line.
+//
+// A run started as another task is named by that task, since that is what tells two such
+// flakes apart.
 func (f Flake) Invocation() string {
+	if f.Root != "" && f.Root != f.Task {
+		return strings.TrimSpace("under task " + f.Root + " " + shellwords.Join(f.Args))
+	}
 	if len(f.Args) == 0 {
 		return ""
 	}
