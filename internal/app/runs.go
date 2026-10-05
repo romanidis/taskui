@@ -106,7 +106,7 @@ func (a *App) requestRun(inv invocation) {
 		// Focus it, so `v` goes to the right one — but stay where you are. From the
 		// picker the run is already on screen, under the row the cursor is on.
 		screen := a.Screen
-		a.focusTask(name)
+		a.FocusSlot(a.taskSlot(name).Seq)
 		a.Screen = screen
 		if screen == ScreenPicker {
 			a.Status = "`" + name + "` is already running — `v` for the whole screen"

@@ -118,16 +118,6 @@ func (a *App) openSlots() []*slot {
 	return append(slices.Clip(a.Parked), a.slot)
 }
 
-// runInSlot is whichever run occupies a slot, focused or parked.
-func (a *App) runInSlot(seq uint64) *run.Run {
-	for _, s := range a.openSlots() {
-		if s.Seq == seq {
-			return s.Run
-		}
-	}
-	return nil
-}
-
 // claimSlot finds the slot this run should go in, parking whatever is on screen to make
 // room.
 //
@@ -149,9 +139,28 @@ func (a *App) claimSlot(name string) (uint64, string) {
 		a.parkFocused()
 		return s.Seq, ""
 	}
-	// A genuinely new slot.
-	if len(a.openSlots()) >= MaxSlots && !a.recycleSlot() {
-		return 0, fmt.Sprintf("all %d run slots are busy — stop one with `x` first", MaxSlots)
+	return a.newSlotSeq()
+}
+
+// newSlotSeq opens a new slot, parking whatever is on screen, and returns its sequence
+// number, or the reason there is no room.
+//
+// With every slot open, there is room only if one of them has finished, and the first that
+// has gives its place up. A finished run has already been archived, so reclaiming its slot
+// loses nothing you cannot reopen from history. A live one is somebody's compose stack; it
+// is never taken without being asked. The one on screen counts too: six finished slots with
+// the focused one among them are six finished slots.
+func (a *App) newSlotSeq() (uint64, string) {
+	if len(a.openSlots()) >= MaxSlots {
+		i := slices.IndexFunc(a.Parked, func(p *slot) bool { return p.Run.Finished() })
+		switch {
+		case i >= 0:
+			a.Parked = slices.Delete(a.Parked, i, i+1)
+		case a.Run != nil && a.Run.Finished():
+			a.slot = newSlot(nil, 0)
+		default:
+			return 0, fmt.Sprintf("all %d run slots are busy — stop one with `x` first", MaxSlots)
+		}
 	}
 	a.parkFocused()
 	a.nextSeq++
@@ -163,39 +172,8 @@ func (a *App) claimSlot(name string) (uint64, string) {
 // counting free slots up front, because the count kept disagreeing with the claim: a
 // task already in a slot reuses it, and a finished slot is given up on demand.
 func (a *App) slotAvailable(name string) bool {
-	return a.slotRun(name) != nil || len(a.openSlots()) < MaxSlots || a.recyclable() >= 0
-}
-
-// recyclable is the parked slot a new run may take when every slot is open — the first
-// that has finished — or -1 for none, or len(a.Parked) for the focused run.
-//
-// A finished run has already been archived, so reclaiming its slot loses nothing you
-// cannot reopen from history. A live one is somebody's compose stack; it is never taken
-// without being asked. The one on screen counts too: six finished slots with the focused
-// one among them are six finished slots.
-func (a *App) recyclable() int {
-	for i, p := range a.Parked {
-		if p.Run.Finished() {
-			return i
-		}
-	}
-	if a.Run != nil && a.Run.Finished() {
-		return len(a.Parked)
-	}
-	return -1
-}
-
-// recycleSlot gives up the slot recyclable names, and reports whether there was one.
-func (a *App) recycleSlot() bool {
-	switch i := a.recyclable(); {
-	case i < 0:
-		return false
-	case i == len(a.Parked):
-		a.slot = newSlot(nil, 0)
-	default:
-		a.Parked = append(a.Parked[:i], a.Parked[i+1:]...)
-	}
-	return true
+	return a.slotRun(name) != nil || len(a.openSlots()) < MaxSlots ||
+		slices.ContainsFunc(a.openSlots(), func(s *slot) bool { return s.Run.Finished() })
 }
 
 // claimStoredSlot is where a run read off disk goes.
@@ -215,12 +193,7 @@ func (a *App) claimStoredSlot() (uint64, string) {
 			return seq, ""
 		}
 	}
-	if len(a.openSlots()) >= MaxSlots && !a.recycleSlot() {
-		return 0, fmt.Sprintf("all %d run slots are busy — stop one with `x` first", MaxSlots)
-	}
-	a.parkFocused()
-	a.nextSeq++
-	return a.nextSeq, ""
+	return a.newSlotSeq()
 }
 
 // parkFocused moves the slot on screen into the parking lot, view and all.
@@ -291,13 +264,6 @@ func (a *App) FocusSlot(seq uint64) {
 	a.show(target)
 	a.Screen = ScreenRun
 	a.Status = ""
-}
-
-// focusTask focuses whichever slot holds this task, if one does.
-func (a *App) focusTask(name string) {
-	if s := a.taskSlot(name); s != nil {
-		a.FocusSlot(s.Seq)
-	}
 }
 
 // CycleSlot steps through the slot bar. delta wraps, because with two slots — the usual

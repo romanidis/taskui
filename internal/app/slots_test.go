@@ -158,8 +158,8 @@ func TestSixFinishedSlotsStillTakeANewRun(t *testing.T) {
 	if !a.slotAvailable("new") {
 		t.Error("the finished run on screen is a free slot")
 	}
-	if !a.recycleSlot() || a.Run != nil {
-		t.Error("recycling should take the finished run on screen")
+	if _, why := a.newSlotSeq(); why != "" || a.Run != nil {
+		t.Errorf("a new slot should take the finished run on screen's place: %q", why)
 	}
 }
 

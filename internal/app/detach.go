@@ -60,8 +60,12 @@ func (a *App) Detach() {
 
 // IsDetached says whether a slot has been let go of.
 func (a *App) IsDetached(seq uint64) bool {
-	r := a.runInSlot(seq)
-	return r != nil && a.detached[r]
+	for _, s := range a.openSlots() {
+		if s.Seq == seq {
+			return a.detached[s.Run]
+		}
+	}
+	return false
 }
 
 // DetachedCount is how many runs would survive quitting.
