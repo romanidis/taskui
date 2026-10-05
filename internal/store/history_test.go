@@ -257,3 +257,32 @@ func TestCompactionLeavesALedgerItCannotShrinkMuchAlone(t *testing.T) {
 		t.Error("the ledger was rewritten to drop almost nothing")
 	}
 }
+
+// A line a newer taskui wrote is one this build cannot read, which does not make it this
+// build's to throw away when it compacts.
+func TestCompactionKeepsWhatANewerBuildWrote(t *testing.T) {
+	base := t.TempDir()
+	var b strings.Builder
+	for i := range compactAt + KeepHistory/2 {
+		b.WriteString(`{"version":1,"id":"r` + itoa(int64(i)) + `","root":"r","dir":"/beta","started_unix":` +
+			itoa(int64(1000+i)) + "}\n")
+	}
+	future := `{"version":2,"id":"from-the-future","root":"r","dir":"/beta","started_unix":1}`
+	b.WriteString(future + "\n")
+	if err := os.WriteFile(historyPath(base), []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := compactHistory(base); err != nil {
+		t.Fatal(err)
+	}
+	blob, err := os.ReadFile(historyPath(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(blob), future) {
+		t.Error("compacting dropped a run a newer build recorded")
+	}
+	if n := strings.Count(string(blob), "\n"); n >= compactAt {
+		t.Errorf("did not compact: %d lines", n)
+	}
+}

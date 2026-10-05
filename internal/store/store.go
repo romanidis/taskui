@@ -249,6 +249,12 @@ func compactHistory(base string) error {
 	}
 
 	var b strings.Builder
+	// What this build cannot read is not this build's to drop. A newer taskui sharing the
+	// archive wrote it, and readHistory leaving it out meant compacting threw its runs away.
+	for _, line := range newerHistory(base) {
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
 	for _, m := range slices.Backward(keep) {
 		blob, err := json.Marshal(m)
 		if err != nil {
@@ -260,6 +266,24 @@ func compactHistory(base string) error {
 	// A temporary file of its own rather than a fixed `.tmp`, which two processes
 	// compacting at once both wrote into.
 	return writeAtomic(historyPath(base), []byte(b.String()))
+}
+
+// newerHistory is the ledger lines written by a newer format than this build reads.
+func newerHistory(base string) []string {
+	blob, err := os.ReadFile(historyPath(base))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for line := range strings.SplitSeq(string(blob), "\n") {
+		var v struct {
+			Version int `json:"version"`
+		}
+		if json.Unmarshal([]byte(line), &v) == nil && v.Version > ManifestVersion {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 // sortNewestFirst is the order every reader wants: most recent run first, ties broken by id
