@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/romanidis/taskui/internal/loc"
@@ -71,7 +72,7 @@ func writeQuickfix(out io.Writer, r *run.Run, dir, only string) int {
 	defined := task.ReadProject(dir).Files
 	written := 0
 
-	for _, name := range interesting(r, only) {
+	for _, name := range tasksToList(r, only) {
 		task := r.Tasks[name]
 		if task == nil {
 			continue
@@ -102,7 +103,7 @@ func writeQuickfix(out io.Writer, r *run.Run, dir, only string) int {
 					col = 1
 				}
 				if _, err := fmt.Fprintf(out, "%s:%d:%d: %s\n",
-					path, ref.Line, col, message(line.Plain, ref, name)); err != nil {
+					path, ref.Line, col, withoutReference(line.Plain, ref, name)); err != nil {
 					// Piping into `head` closes the pipe on us, which is not a failure.
 					return written
 				}
@@ -113,19 +114,24 @@ func writeQuickfix(out io.Writer, r *run.Run, dir, only string) int {
 	return written
 }
 
-// interesting is the tasks worth scanning: the one that was asked for, or the ones that
-// failed.
+// tasksToList is the tasks whose output the list is made from: the one that was asked for,
+// or the ones that failed.
 //
 // The fallback matters more than it looks. go-task reports the failure against a task by
 // name, but a run can end non-zero with nothing marked — a shell that died before any task
 // claimed the output, a failure printed by the root itself — and a `--quickfix` that
 // answered "nothing" on a run you just watched fail would be useless exactly when it is
 // wanted. So a failed run with no failed task offers everything it has.
-func interesting(r *run.Run, only string) []string {
+func tasksToList(r *run.Run, only string) []string {
 	if only != "" {
 		return []string{only}
 	}
-	order := spoke(r)
+	// The tasks that produced output, in the order they first produced it — which for a stored
+	// run is the order the manifest kept, and for a live one is the order things actually
+	// happened. A task that never said anything has no location to offer either way. The
+	// empty bucket is where output no task claimed goes; it is not a task, and naming it in an
+	// error list would be naming nothing.
+	order := slices.DeleteFunc(slices.Clone(r.Order), func(name string) bool { return name == "" })
 	var failed []string
 	for _, name := range order {
 		if t := r.Tasks[name]; t != nil && t.Status == run.Failed {
@@ -141,25 +147,10 @@ func interesting(r *run.Run, only string) []string {
 	return order
 }
 
-// spoke is the tasks that produced output, in the order they first produced it — which for
-// a stored run is the order the manifest kept, and for a live one is the order things
-// actually happened. A task that never said anything has no location to offer either way.
-func spoke(r *run.Run) []string {
-	out := make([]string, 0, len(r.Order))
-	for _, name := range r.Order {
-		// The empty bucket is where output no task claimed goes. It is not a task, and
-		// naming it in an error list would be naming nothing.
-		if name != "" {
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
-// message is the line with the reference cut out of it, because the path is already the
+// withoutReference is the line with the reference cut out of it, because the path is already the
 // first two columns of the entry and repeating it there costs the width the actual error
 // wanted.
-func message(text string, ref loc.Loc, task string) string {
+func withoutReference(text string, ref loc.Loc, task string) string {
 	if ref.Start < 0 || ref.End > len(text) || ref.Start > ref.End {
 		return strings.TrimSpace(text)
 	}
