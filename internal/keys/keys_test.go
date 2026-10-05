@@ -83,13 +83,47 @@ func TestEverySectionDocumentsTheHelpKeyOrIsAPrompt(t *testing.T) {
 	}
 }
 
-// Footers get one line, so keep them plausibly short.
+// Footers get one line, so keep them plausibly short — on every kind of row the picker's
+// cursor can be on, which is what it is drawn for.
 func TestFootersFitAReasonableTerminal(t *testing.T) {
+	rows := []Row{0}
 	for _, section := range Sections {
-		line := Footer(section, NewKeymap())
-		if n := utf8.RuneCountInString(line); n >= 110 {
-			t.Errorf("%s: %d chars: %q", section.Title, n, line)
+		if section == &Picker {
+			rows = []Row{OnGroup, OnTask, OnRun, OnGroup | OnTask, OnGroup | OnRun}
 		}
+		for _, row := range rows {
+			var parts []string
+			for _, b := range FooterHints(section, NewKeymap(), row) {
+				parts = append(parts, b.Keys+" "+b.Footer)
+			}
+			line := strings.Join(parts, "   ")
+			if n := utf8.RuneCountInString(line); n >= 110 {
+				t.Errorf("%s on row %b: %d chars: %q", section.Title, row, n, line)
+			}
+		}
+		rows = []Row{0}
+	}
+}
+
+// The picker offers the keys that do something on the row the cursor is on: no `⏎ run` on a
+// namespace that is not a task, and `x stop` and `v view` on a task with a run under it.
+func TestThePickersFooterFollowsTheRow(t *testing.T) {
+	km := NewKeymap()
+	labels := func(row Row) map[string]bool {
+		out := map[string]bool{}
+		for _, b := range FooterHints(&Picker, km, row) {
+			out[b.Footer] = true
+		}
+		return out
+	}
+	if group := labels(OnGroup); !group["fold"] || group["run"] || group["stop"] {
+		t.Errorf("on a group: %v", group)
+	}
+	if task := labels(OnTask); !task["run"] || !task["args"] || task["fold"] || task["stop"] {
+		t.Errorf("on a task: %v", task)
+	}
+	if running := labels(OnRun); !running["stop"] || !running["view"] || !running["output"] {
+		t.Errorf("on a run: %v", running)
 	}
 }
 

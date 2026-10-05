@@ -14,7 +14,7 @@ previous runs.
  └ migrate        Apply pending migrations                                   ⚠
  ▸ deploy                                                               ⚠    9
  ─────────────────────────────────────────────────────────────────────────────
- space fold   o output   ⏎ run   m mark   a args   / filter   d detail   ? keys
+ space fold   ⇧O all   / filter   h history                             ? keys
 ```
 
 ## What it is

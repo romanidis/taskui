@@ -567,6 +567,29 @@ type Binding struct {
 	// the full help only. Written out rather than derived from What: shortening prose
 	// mechanically produced a 170-character line and labels like "fold or unfold a".
 	Footer string
+	// On is the picker rows the footer hint is for. None means every row.
+	On Row
+}
+
+// Row is what the picker's cursor is on, for a footer that offers the keys that do something
+// there. The picker's footer used to list the same ten hints on every row: `⏎ run` on a
+// namespace that is not a task, `space fold` on a leaf, and nowhere the `x stop` and `v view`
+// that a row with a run under it wants. Every other screen has no rows to tell apart.
+type Row uint8
+
+const (
+	// OnGroup is a group: a namespace, a verb, a file.
+	OnGroup Row = 1 << iota
+	// OnTask is a task with no run open under it.
+	OnTask
+	// OnRun is a task with a run open under it, or a line of that run.
+	OnRun
+)
+
+// on is b offered in the footer only on these rows.
+func (b Binding) on(rows Row) Binding {
+	b.On = rows
+	return b
 }
 
 // placeholder matches `{action-name}` in a binding's Keys — see Spell.
@@ -667,36 +690,31 @@ var Picker = Section{
 		// No footer label: the footer already carries the pivot's own list in the header's
 		// place, and a second cycling key on the same line reads as a duplicate of it.
 		b("{sort}", "cycle the order rows are read in: name, file, recent, failed, size"),
-		f("space", "fold or unfold a group", "fold"),
+		f("space", "fold or unfold a group", "fold").on(OnGroup),
 		// No footer label: the same fold `space` already offers, on the keys a tree makes you
 		// reach for. Naming it twice on the one line everything competes for would cost a
 		// hint that is not an alias of anything.
 		b("← →", "the same fold, for hands that reach for a tree's keys"),
-		f("{fold}", "how much of the run under a task: hidden, a peek, all of it", "output"),
-		// No footer label: with `space fold` and `o output` both on the line, the footer is
-		// full — and folding the whole tree at once is a thing you go looking for, where
-		// the two single-row keys are things you press without thinking.
-		b("{fold-all}", "fold or unfold every group"),
-		// No footer label: it only means anything with a run open, and then the run under
-		// its row is what the footer is already pointing at.
-		b("⇥ ⇧⇥", "go to the next / previous open run, under its task"),
-		f("⏎", "run the task, or every marked one — the run unfolds under its row", "run"),
-		f("{mark}", "mark a task to run alongside others", "mark"),
+		f("{fold}", "how much of the run under a task: hidden, a peek, all of it", "output").on(OnRun),
+		f("{fold-all}", "fold or unfold every group", "all").on(OnGroup),
+		f("⇥ ⇧⇥", "go to the next / previous open run, under its task", "next run").on(OnRun),
+		f("⏎", "run the task, or every marked one — the run unfolds under its row", "run").on(OnTask|OnRun),
+		f("{mark}", "mark a task to run alongside others", "mark").on(OnTask),
 		b("{clear-marks}", "clear every mark"),
-		f("{args}", "run it with arguments", "args"),
+		f("{args}", "run it with arguments", "args").on(OnTask),
 		// No footer label: arming a modifier for the next run is secondary to running one, and
 		// the footer is the one place where everything competes for the same line.
 		b("{watch}", "watch: re-run the marked set, or this task, whenever the source changes"),
 		f("{search}", "filter the list down to matching tasks — ⇥ in the prompt finds instead, "+
 			"moving the cursor and leaving the list whole", "filter"),
-		f("{detail}", "what this task is, and what it will run", "detail"),
+		f("{detail}", "what this task is, and what it will run", "detail").on(OnTask),
 		// Footer label `view`, like the action: `watch` beside the key that does not watch
 		// anything put back, on the footer, the clash renaming the action took out of configs.
-		f("{view-run}", "the whole screen for whatever is running, or the last run", "view"),
+		f("{view-run}", "the whole screen for whatever is running, or the last run", "view").on(OnRun),
 		b("{timeline}", "how this one task has been going, run after run"),
 		b("{edit}", "open this task's own definition in $EDITOR"),
-		f("{history}", "past runs", "history"),
-		b("{stop}", "stop this task's run, wherever it is — again to kill it"),
+		f("{history}", "past runs", "history").on(OnGroup|OnTask),
+		f("{stop}", "stop this task's run, wherever it is — again to kill it", "stop").on(OnRun),
 		b("{stop-all}", "stop every run, staying here"),
 		b("{help}", "this screen"),
 		b("esc", "back out of a filter, a jump, a panel — it does not quit"),
@@ -849,12 +867,13 @@ var Sections = []*Section{
 	&HelpSection, &Prompts,
 }
 
-// FooterHints is the bindings a section puts in the footer, in table order, each already
-// split into the keys and the label so the renderer can style them separately.
-func FooterHints(section *Section, km *Keymap) []Binding {
+// FooterHints is the bindings a section puts in the footer for the row the cursor is on, in
+// table order, each already split into the keys and the label so the renderer can style them
+// separately. A row of zero is no row in particular, and gets every hint.
+func FooterHints(section *Section, km *Keymap, row Row) []Binding {
 	var out []Binding
 	for _, b := range Spelled(section, km) {
-		if b.Footer != "" {
+		if b.Footer != "" && (row == 0 || b.On == 0 || b.On&row != 0) {
 			out = append(out, b)
 		}
 	}
@@ -865,7 +884,7 @@ func FooterHints(section *Section, km *Keymap) []Binding {
 // order.
 func Footer(section *Section, km *Keymap) string {
 	var parts []string
-	for _, b := range FooterHints(section, km) {
+	for _, b := range FooterHints(section, km, 0) {
 		parts = append(parts, b.Keys+" "+b.Footer)
 	}
 	return strings.Join(parts, "   ")

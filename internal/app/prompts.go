@@ -98,7 +98,11 @@ func (a *App) hintBar(section *keys.Section) line {
 		tail = help.Display() + " keys"
 	}
 	tailW := cells(tail)
-	hints := keys.FooterHints(section, a.Keymap)
+	row := keys.Row(0)
+	if a.Screen == ScreenPicker {
+		row = a.pickerRow()
+	}
+	hints := keys.FooterHints(section, a.Keymap, row)
 	fits := keys.FooterFits(hints, a.Width-1, tailW+hintGap)
 
 	l := line{plain(" ")}

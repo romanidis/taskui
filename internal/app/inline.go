@@ -14,6 +14,7 @@ package app
 // own too, for the same reason: a task opened here is open there.
 
 import (
+	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/pivot"
 )
 
@@ -257,6 +258,30 @@ func (a *App) InlineFold(root string) (Fold, bool) {
 }
 
 // CursorInRun reports whether the cursor is on a row of a run rather than on a task.
+// pickerRow is what the cursor is on, for the footer to offer the keys that do something
+// there. A node can be a group and a task at once, and gets both sets.
+func (a *App) pickerRow() keys.Row {
+	if a.CursorInRun() {
+		return keys.OnRun
+	}
+	n := a.SelectedNode()
+	if n == nil {
+		return 0
+	}
+	var row keys.Row
+	if n.IsGroup() {
+		row |= keys.OnGroup
+	}
+	if n.Task >= 0 {
+		if a.slotRun(a.Tasks[n.Task].Name) != nil {
+			row |= keys.OnRun
+		} else {
+			row |= keys.OnTask
+		}
+	}
+	return row
+}
+
 func (a *App) CursorInRun() bool {
 	return a.Cursor >= 0 && a.Cursor < len(a.PickerRows) && a.PickerRows[a.Cursor].IsRun()
 }

@@ -37,8 +37,8 @@ func TestTheFramesAreRealRenderedScreens(t *testing.T) {
 		"domain·verb", // the pivot names
 		"17 tasks",    // the sample project's size
 		"backend",     // a namespace from it
-		"space fold",  // the footer, from the keymap table
-		"o output",    // and the key the runs under a row answer to
+		"⏎ run",       // the footer, from the keymap table, for the task the cursor is on
+		"/ filter",    // and the search every row offers
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the rendered frames are missing %q:\n%s", want, out)
