@@ -180,11 +180,18 @@ func (a *App) ToggleHistoryScope() {
 	a.Status = ""
 }
 
+// nextHistoryScope is the rung ToggleHistoryScope widens to.
 func (a *App) nextHistoryScope() HistoryScope {
 	switch a.HistoryScope {
 	case ScopeProject:
-		if a.otherWorktrees() {
-			return ScopeRepo
+		// The repository rung only shows something new when the archive holds runs from this
+		// repository made somewhere other than here: another worktree.
+		if repo := a.repoDir(); repo != "" {
+			for _, m := range store.List(a.stateDir) {
+				if m.Repo == repo && !store.SameDir(m.Dir, a.Root) {
+					return ScopeRepo
+				}
+			}
 		}
 		return ScopeEverywhere
 	case ScopeRepo:
@@ -192,21 +199,6 @@ func (a *App) nextHistoryScope() HistoryScope {
 	default:
 		return ScopeProject
 	}
-}
-
-// otherWorktrees is whether the archive holds runs from this repository made somewhere
-// other than here — which is the only case where the middle rung shows anything new.
-func (a *App) otherWorktrees() bool {
-	repo := a.repoDir()
-	if repo == "" {
-		return false
-	}
-	for _, m := range store.List(a.stateDir) {
-		if m.Repo == repo && !store.SameDir(m.Dir, a.Root) {
-			return true
-		}
-	}
-	return false
 }
 
 func (a *App) SetFilterContext(delta int) {
