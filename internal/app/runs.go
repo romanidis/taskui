@@ -134,47 +134,41 @@ func (a *App) StartRunWith(name string, args []string) error {
 	return a.start(a.armed(name, args))
 }
 
-// isDangerous reports whether a task is on the danger list.
+// productionReach is how starting name reaches the danger list: whether it is on it itself,
+// and the tasks on it that name calls, at any depth.
 //
 // A task the listing leaves out is still asked about: an `internal: true` task never appears
 // in `task --list-all`, so `release` calling `deploy:apply` used to start without a word
 // however plainly `.taskui-danger` said `deploy:*`.
-func (a *App) isDangerous(name string) bool {
-	for _, t := range a.Tasks {
-		if t.Name == name {
-			return t.Dangerous
-		}
-	}
-	return task.Dangerous(name, task.DangerPatterns(a.Root))
-}
-
-// dangerCalled is the tasks on the danger list that name calls, at any depth.
 //
-// As far as the coverage walk knows, which is nothing until it lands: it is the one place
-// every task's graph is resolved ahead of being run, and resolving one here, on the key
-// press, would hold the screen still for as long as a `--summary` per task it calls takes.
-func (a *App) dangerCalled(name string) []string {
-	var out []string
+// The calls are as far as the coverage walk knows, which is nothing until it lands: it is the
+// one place every task's graph is resolved ahead of being run, and resolving one here, on the
+// key press, would hold the screen still for as long as a `--summary` per task it calls takes.
+func (a *App) productionReach(name string) (bool, []string) {
+	onList := func(name string) bool {
+		for _, t := range a.Tasks {
+			if t.Name == name {
+				return t.Dangerous
+			}
+		}
+		return task.Dangerous(name, task.DangerPatterns(a.Root))
+	}
+	var calls []string
 	for _, called := range a.calls.Reachable(name) {
-		if called != name && a.isDangerous(called) {
-			out = append(out, called)
+		if called != name && onList(called) {
+			calls = append(calls, called)
 		}
 	}
-	return out
-}
-
-// touchesProduction reports whether starting name reaches the danger list at all: the task
-// itself, or anything it calls.
-func (a *App) touchesProduction(name string) bool {
-	return a.isDangerous(name) || len(a.dangerCalled(name)) > 0
+	return onList(name), calls
 }
 
 // productionQuestion is what starting inv has to ask about production, if anything.
 func (a *App) productionQuestion(inv invocation) (ConfirmRun, bool) {
-	if a.isDangerous(inv.name) {
+	itself, calls := a.productionReach(inv.name)
+	switch {
+	case itself:
 		return inv.confirm(TouchesProduction), true
-	}
-	if calls := a.dangerCalled(inv.name); len(calls) > 0 {
+	case len(calls) > 0:
 		q := inv.confirm(CallsProduction)
 		q.Calls = calls
 		return q, true

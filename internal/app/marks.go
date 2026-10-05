@@ -107,7 +107,7 @@ func (a *App) requestRunSet(set RunSet) {
 	var dangerous []string
 	toStart, canStart := 0, 0
 	for _, inv := range set.Runs {
-		if a.touchesProduction(inv.name) {
+		if itself, calls := a.productionReach(inv.name); itself || len(calls) > 0 {
 			dangerous = append(dangerous, inv.name)
 		}
 		// Only a live task is left alone: one in a finished slot reuses it.

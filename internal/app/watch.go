@@ -41,7 +41,7 @@ func (a *App) ToggleWatch() {
 	// would be a yes to every save from now on. The danger list exists so that a production
 	// task never runs without somebody deciding it should.
 	for _, name := range names {
-		if a.touchesProduction(name) {
+		if itself, calls := a.productionReach(name); itself || len(calls) > 0 {
 			a.Status = "`" + name + "` touches production — watch would run it on every save " +
 				"without asking, so it is not watched"
 			return

@@ -795,8 +795,8 @@ func TestWatchWillNotArmOnAProductionTask(t *testing.T) {
 }
 
 // `.taskui-danger` says `deploy:*`. `deploy:apply` matches it but is `internal: true`, so
-// `task --list-all` never lists it, a.Tasks never holds it, and isDangerous answers false
-// for it — so `release`, which calls it, starts without a question.
+// `task --list-all` never lists it, a.Tasks never holds it, and the danger check answered
+// false for it — so `release`, which calls it, starts without a question.
 func TestATaskCallingAnInternalProductionTaskAsks(t *testing.T) {
 	dir := t.TempDir()
 	taskfile := `version: '3'
