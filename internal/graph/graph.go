@@ -38,22 +38,53 @@ func New() Graph {
 }
 
 // Concurrent reports whether two tasks can be running at once: siblings under one parent's
-// `deps:`, which go-task starts together.
+// `deps:`, which go-task starts together — or anything beneath two such siblings. A task
+// inside `backend` and one inside `web`, both deps of `all`, interleave their lines exactly
+// as `backend` and `web` do, and reading one's output as the other having finished marked
+// half a parallel build done while it was still printing.
 func (g Graph) Concurrent(a, b string) bool {
 	if a == b {
+		return false
+	}
+	lineA, lineB := g.lineage(a), g.lineage(b)
+	// One running inside the other is nesting, not two things at once.
+	if lineA[b] || lineB[a] {
 		return false
 	}
 	for _, deps := range g.Deps {
 		var seenA, seenB bool
 		for _, d := range deps {
-			seenA = seenA || d == a
-			seenB = seenB || d == b
+			// Where the two lines part: a dep above one and not the other. A dep above both
+			// is a common ancestor, which says nothing about how they run beneath it.
+			seenA = seenA || (lineA[d] && !lineB[d])
+			seenB = seenB || (lineB[d] && !lineA[d])
 		}
 		if seenA && seenB {
 			return true
 		}
 	}
 	return false
+}
+
+// lineage is name and everything that invokes it, at any depth.
+func (g Graph) lineage(name string) map[string]bool {
+	out := map[string]bool{name: true}
+	for grew := true; grew; {
+		grew = false
+		for parent, children := range g.Edges {
+			if out[parent] {
+				continue
+			}
+			for _, c := range children {
+				if out[c] {
+					out[parent] = true
+					grew = true
+					break
+				}
+			}
+		}
+	}
+	return out
 }
 
 // Renamed is g with every task spelled the way name spells it. Two spellings of one task —

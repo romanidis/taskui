@@ -1129,3 +1129,25 @@ func TestARunsOutcomeFollowsItsExit(t *testing.T) {
 		t.Errorf("failed: %v, %d", failed.Outcome(), failed.ExitCode())
 	}
 }
+
+// Two tasks beneath two parallel deps interleave exactly as the deps do. Read as "the other
+// one finished", each line from one build marked the other ✓ while it was still printing.
+func TestCousinsUnderParallelDepsDoNotCloseEachOther(t *testing.T) {
+	g := GraphFrom(
+		Edge{Parent: "all", Children: []string{"backend", "web"}},
+		Edge{Parent: "backend", Children: []string{"backend:build"}},
+		Edge{Parent: "web", Children: []string{"web:build"}},
+		Edge{Parent: "backend:build"},
+		Edge{Parent: "web:build"},
+	)
+	g.Deps["all"] = []string{"backend", "web"}
+
+	r := Detached("all", g)
+	r.Feed("backend:build", "b1")
+	r.Feed("web:build", "w1")
+	for _, name := range []string{"backend:build", "backend"} {
+		if got := r.Tasks[name].Status; got != Running {
+			t.Errorf("%s = %v after its cousin spoke, want Running", name, got)
+		}
+	}
+}
