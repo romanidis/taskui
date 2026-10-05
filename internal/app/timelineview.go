@@ -10,6 +10,7 @@ import (
 	"github.com/romanidis/taskui/internal/diff"
 	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/loc"
+	"github.com/romanidis/taskui/internal/store"
 )
 
 // --- timeline ---------------------------------------------------------------------
@@ -26,11 +27,11 @@ func (a *App) timelineHeader() line {
 	if n := len(a.TimelineFlakes); n > 0 {
 		// Counted by commit, not by flake: with arguments in the key one commit can produce
 		// several, and "3 commits" over a single revision would be a plain lie.
-		commits := map[string]bool{}
+		commits := map[store.Commit]bool{}
 		for _, f := range a.TimelineFlakes {
 			commits[f.Commit] = true
 		}
-		where := a.TimelineFlakes[0].Short()
+		where := a.TimelineFlakes[0].Commit.Short()
 		if len(commits) > 1 {
 			where = fmt.Sprintf("%d commits", len(commits))
 		}
@@ -58,7 +59,7 @@ func (a *App) trend() string {
 	}
 	var b strings.Builder
 	for _, p := range slices.Backward(points) {
-		b.WriteString(statusGlyph(outcome(p.Ok()), a.Theme))
+		b.WriteString(statusGlyph(p.Status, a.Theme))
 	}
 	return b.String()
 }
@@ -106,15 +107,14 @@ func (a *App) drawTimeline(width, height int) []string {
 	out := make([]string, 0, height)
 	for i := a.TimelineOffset; i < len(a.Timeline) && len(out) < height; i++ {
 		p := a.Timeline[i]
-		status := outcome(p.Ok())
 		l := line{
-			statusMark(status, t),
+			statusMark(p.Status, t),
 			styled(padRight(Ago(p.WhenUnix), 10), fg(t.Colors.Dim)),
 			styled(fmt.Sprintf("%8s  ", duration(millis(p.DurationMs))), fg(t.Colors.Dim)),
 		}
 		if barWidth > 0 {
 			drawn := padRight(bar(p.DurationMs, slowest, barWidth, t.Glyphs.Bar), barWidth+2)
-			l = append(l, styled(drawn, fg(statusStyle(status, t))))
+			l = append(l, styled(drawn, fg(statusStyle(p.Status, t))))
 		}
 		l = append(l, styled(fmt.Sprintf("%6d lines  ", p.Lines), fg(t.Colors.Dim)))
 		if showCommit && p.Commit != "" {
@@ -124,7 +124,7 @@ func (a *App) drawTimeline(width, height int) []string {
 			if flaky[p.Question()] {
 				style = fg(t.Colors.Notice)
 			}
-			l = append(l, styled(padRight(shortCommit(p.Commit), 10), style))
+			l = append(l, styled(padRight(p.Commit.Short(), 10), style))
 		}
 		l = append(l, styled(p.Run.Command(), fg(t.Colors.Text)))
 		out = append(out, l.renderRow(width, i == a.TimelineCursor, t, a.Phase, 0, 1))
@@ -143,19 +143,6 @@ func bar(value, most int64, width int, glyph string) string {
 	}
 	cells := int((value*int64(width) + most - 1) / most)
 	return strings.Repeat(glyph, clamp(cells, 1, width))
-}
-
-// shortCommit abbreviates a revision, keeping the `-dirty` marker — a run of uncommitted
-// work is not a run of the commit it sits on, and the row should not claim otherwise.
-func shortCommit(commit string) string {
-	base, dirty := strings.CutSuffix(commit, "-dirty")
-	if len(base) > 7 {
-		base = base[:7]
-	}
-	if dirty {
-		return base + "*"
-	}
-	return base
 }
 
 func (a *App) timelineFooter() line {

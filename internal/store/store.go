@@ -112,7 +112,7 @@ type Manifest struct {
 	// same commit" — which is what flaky means and what alternating outcomes only hint at —
 	// is a fact rather than a guess. Empty for a directory that is not a git checkout, and
 	// for every manifest written before this existed.
-	Commit      string `json:"commit,omitempty"`
+	Commit      Commit `json:"commit,omitempty"`
 	StartedUnix int64  `json:"started_unix"`
 	DurationMs  int64  `json:"duration_ms"`
 	Exit        int    `json:"exit"`
@@ -677,21 +677,38 @@ func RepoOf(dir string) string {
 	return filepath.Clean(out)
 }
 
-// headCommit is the project's git revision, or empty.
-//
-// Best effort by design: not every project is a checkout, and a run in one that is not is
-// still a run worth keeping. A dirty tree is reported as the commit plus `-dirty`, because
-// two runs of uncommitted work are not two runs of the same code and calling them flaky
-// would be wrong.
-func headCommit(dir string) string {
+// Commit is the git revision a run was made at, empty for a project that is not a checkout.
+// A tree with changes nobody had committed is the revision plus `-dirty`, because two runs of
+// uncommitted work are not two runs of the same code, and calling them flaky would be wrong.
+type Commit string
+
+// Dirty reports a run of uncommitted work.
+func (c Commit) Dirty() bool { return strings.HasSuffix(string(c), "-dirty") }
+
+// Short is the revision abbreviated for display, keeping the dirty mark as a `*`: a run of
+// uncommitted work is not a run of the commit it sits on, and a row should not claim it is.
+func (c Commit) Short() string {
+	base, dirty := strings.CutSuffix(string(c), "-dirty")
+	if len(base) > 7 {
+		base = base[:7]
+	}
+	if dirty {
+		return base + "*"
+	}
+	return base
+}
+
+// headCommit is the project's revision. Best effort by design: not every project is a
+// checkout, and a run in one that is not is still a run worth keeping.
+func headCommit(dir string) Commit {
 	head, err := gitOutput(dir, "rev-parse", "HEAD")
 	if err != nil || head == "" {
 		return ""
 	}
 	if status, err := gitOutput(dir, "status", "--porcelain"); err == nil && status != "" {
-		return head + "-dirty"
+		return Commit(head + "-dirty")
 	}
-	return head
+	return Commit(head)
 }
 
 func gitOutput(dir string, args ...string) (string, error) {
@@ -884,8 +901,8 @@ type Point struct {
 	// series of two things.
 	Run      run.Invocation
 	WhenUnix int64
-	// Commit is the git revision the project was at, or empty.
-	Commit string
+	// Commit is the git revision the project was at.
+	Commit Commit
 	Status run.Status
 	// Stopped means somebody stopped the run it was part of, so the status says the task was
 	// cut short rather than anything about the code. See Manifest.Cancelled.
@@ -1063,7 +1080,7 @@ type Flake struct {
 	Root string
 	Args []string
 	// Commit is where it happened, and Passed/Failed how many times each way.
-	Commit         string
+	Commit         Commit
 	Passed, Failed int
 	// LastUnix is the most recent of the runs involved, for ordering the report.
 	LastUnix int64
@@ -1086,7 +1103,7 @@ type Flake struct {
 func (a Archive) Flaky(project string) []Flake {
 	seen := map[string]*Flake{}
 	for _, p := range a.points(project) {
-		if p.Stopped || p.Commit == "" || strings.HasSuffix(p.Commit, "-dirty") {
+		if p.Stopped || p.Commit == "" || p.Commit.Dirty() {
 			continue
 		}
 		k := p.Task + "\x00" + p.Question()
@@ -1130,8 +1147,8 @@ func (a Archive) Flaky(project string) []Flake {
 // The flaky definition rests on "the same question, two answers", and this is that question
 // written down — so the report and the timeline that marks its rows cannot drift into two
 // ideas of what same means.
-func QuestionKey(commit, root string, args []string) string {
-	return commit + "\x00" + root + "\x00" + shellwords.Join(args)
+func QuestionKey(commit Commit, root string, args []string) string {
+	return string(commit) + "\x00" + root + "\x00" + shellwords.Join(args)
 }
 
 // Question is this point's key, for matching it against a flake.
@@ -1156,12 +1173,4 @@ func (f Flake) Invocation() string {
 		return ""
 	}
 	return shellwords.Join(f.Args)
-}
-
-// Short is the commit, abbreviated for display.
-func (f Flake) Short() string {
-	if len(f.Commit) > 7 {
-		return f.Commit[:7]
-	}
-	return f.Commit
 }

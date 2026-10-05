@@ -242,11 +242,7 @@ func (a *App) archiveIfFinished(s *slot) {
 	a.ReloadOutcomes()
 
 	if s != a.slot {
-		mark := "✗"
-		if s.Run.Outcome() == run.Ok {
-			mark = "✓"
-		}
-		a.Status = fmt.Sprintf("%s `task %s` finished in the background", mark, s.Run.Task)
+		a.Status = fmt.Sprintf("%s `task %s` finished in the background", s.Run.Outcome().Glyph(), s.Run.Task)
 		return
 	}
 	switch masked := s.Run.RedactedSecrets; masked {

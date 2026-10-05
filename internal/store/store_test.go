@@ -644,7 +644,7 @@ func withArgs(t *testing.T, archive Archive, args []string, ok bool, ago int) {
 	rewriteStored(t, archive, dir, func(m *Manifest) { m.Commit = "abc1234" })
 }
 
-func atCommit(t *testing.T, archive Archive, project, commit string, ok bool, ago int) {
+func atCommit(t *testing.T, archive Archive, project string, commit Commit, ok bool, ago int) {
 	t.Helper()
 	dir, err := archive.Save(project, agedRun("test", "test", ok, ago))
 	if err != nil {
@@ -711,8 +711,8 @@ func TestBothOutcomesAtOneCommitIsAFlake(t *testing.T) {
 	if flakes[0].Task != "test" || flakes[0].Passed != 1 || flakes[0].Failed != 1 {
 		t.Errorf("got %+v", flakes[0])
 	}
-	if flakes[0].Short() != "abc1234" {
-		t.Errorf("short = %q", flakes[0].Short())
+	if flakes[0].Commit.Short() != "abc1234" {
+		t.Errorf("short = %q", flakes[0].Commit.Short())
 	}
 }
 
@@ -1117,5 +1117,27 @@ func TestARunSavedWhileGoingIsDatedFromItsStart(t *testing.T) {
 	}
 	if got, want := runs[0].StartedUnix, r.Started.Unix(); got != want {
 		t.Errorf("dated %d, want %d: an hour before the save", got, want)
+	}
+}
+
+// A run of uncommitted work is not a run of the commit it sits on, so the short form keeps the
+// mark rather than passing for the clean revision.
+func TestAShortCommitKeepsTheDirtyMark(t *testing.T) {
+	for _, c := range []struct {
+		commit Commit
+		want   string
+		dirty  bool
+	}{
+		{"abc1234def5678", "abc1234", false},
+		{"abc1234def5678-dirty", "abc1234*", true},
+		{"abc", "abc", false},
+		{"", "", false},
+	} {
+		if got := c.commit.Short(); got != c.want {
+			t.Errorf("%q short = %q, want %q", c.commit, got, c.want)
+		}
+		if got := c.commit.Dirty(); got != c.dirty {
+			t.Errorf("%q dirty = %v, want %v", c.commit, got, c.dirty)
+		}
 	}
 }

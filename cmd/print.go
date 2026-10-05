@@ -310,7 +310,7 @@ func printFlaky(out io.Writer, root string) error {
 			name += "\t"
 		}
 		fmt.Fprintf(out, "%s\t%s\t%d passed\t%d failed\t%s\n",
-			name, f.Short(), f.Passed, f.Failed, app.Ago(f.LastUnix))
+			name, f.Commit.Short(), f.Passed, f.Failed, app.Ago(f.LastUnix))
 	}
 	fmt.Fprintf(out, "-- %d flaky\n", len(flakes))
 	return exitBecause(ExitFound, "%d %s went both ways at one commit",
