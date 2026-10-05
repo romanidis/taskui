@@ -921,6 +921,6 @@ tasks:
 
 	if a.SendingInput && a.Run != typingAt {
 		t.Errorf("still in input mode, but the run on screen is now %q — the next key goes to it, not to %q",
-			a.Run.Root, typingAt.Root)
+			a.Run.Task, typingAt.Task)
 	}
 }

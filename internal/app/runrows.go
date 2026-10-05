@@ -189,7 +189,7 @@ func runRowsFor(r *run.Run, folds map[string]Fold, peek int, filter *rowFilter) 
 		depth int
 	}
 	// Pushed in reverse so siblings come out in invocation order.
-	stack := []frame{{r.Root, 0}}
+	stack := []frame{{r.Task, 0}}
 
 	for len(stack) > 0 {
 		top := stack[len(stack)-1]

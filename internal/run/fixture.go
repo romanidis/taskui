@@ -14,7 +14,7 @@ func Detached(root string, g graph.Graph) *Run {
 		tasks[name] = newTaskRun()
 	}
 	return &Run{
-		Root:       root,
+		Task:       root,
 		Graph:      g,
 		Tasks:      tasks,
 		Started:    time.Now(),

@@ -450,8 +450,8 @@ func TestEveryScreenRendersAtEveryAwkwardSize(t *testing.T) {
 	// twenty-column terminal is most of it.
 	a.TimelineOf = "task001"
 	a.Timeline = []store.Point{
-		{RunID: "a", Root: "task000", WhenUnix: 1, Status: run.Ok, DurationMs: 1200, Lines: 30},
-		{RunID: "b", Root: "task001", WhenUnix: 2, Status: run.Failed, DurationMs: 90, Lines: 4},
+		{RunID: "a", Run: run.Invocation{Task: "task000"}, WhenUnix: 1, Status: run.Ok, DurationMs: 1200, Lines: 30},
+		{RunID: "b", Run: run.Invocation{Task: "task001"}, WhenUnix: 2, Status: run.Failed, DurationMs: 90, Lines: 4},
 	}
 	a.showDiff(
 		"task001",
@@ -500,14 +500,14 @@ func TestEveryScreenRendersAtEveryAwkwardSize(t *testing.T) {
 
 			// Every shape of the confirmation bar, since each builds its own line.
 			for _, pending := range []Confirm{
-				ConfirmRun{Name: "deploy:backend", Args: []string{"--force"}, Reason: TouchesProduction},
-				ConfirmRun{Name: "release", Reason: CallsProduction, Calls: []string{"deploy:backend", "db:migrate"}},
+				ConfirmRun{Task: "deploy:backend", Args: []string{"--force"}, Reason: TouchesProduction},
+				ConfirmRun{Task: "release", Reason: CallsProduction, Calls: []string{"deploy:backend", "db:migrate"}},
 				ConfirmRunSet{
-					Set:       RunSet{Runs: []invocation{{name: "deploy:backend"}, {name: "lint"}}, Marked: true},
+					Set:       RunSet{Runs: []run.Invocation{{Task: "deploy:backend"}, {Task: "lint"}}, Marked: true},
 					Dangerous: []string{"deploy:backend"},
 				},
 				ConfirmRunSet{
-					Set:       RunSet{Runs: []invocation{{name: "deploy:backend"}}},
+					Set:       RunSet{Runs: []run.Invocation{{Task: "deploy:backend"}}},
 					Dangerous: []string{"deploy:backend"},
 				},
 				ConfirmQuit{Live: 3},

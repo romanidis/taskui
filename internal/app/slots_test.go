@@ -62,7 +62,7 @@ func TestAStoredRunIsNotAnnouncedToTheHost(t *testing.T) {
 	var buf bytes.Buffer
 	a.SendEventsTo(events.New(bufferSink{&buf}))
 
-	a.OpenRunForTest(run.FromStored(run.Stored{Root: "test", Graph: run.GraphFrom(run.Edge{Parent: "test"})}))
+	a.OpenRunForTest(run.FromStored(run.Stored{Task: "test", Graph: run.GraphFrom(run.Edge{Parent: "test"})}))
 	a.emit()
 
 	if got := eventTypes(&buf); len(got) != 0 {
@@ -178,7 +178,7 @@ func TestSixLiveSlotsTakeNothingNew(t *testing.T) {
 func TestDecliningABatchSaysItWasNotRun(t *testing.T) {
 	a := sample(t)
 	a.Confirm = ConfirmRunSet{
-		Set:       RunSet{Runs: []invocation{{name: "deploy"}}, Marked: true},
+		Set:       RunSet{Runs: []run.Invocation{{Task: "deploy"}}, Marked: true},
 		Dangerous: []string{"deploy"},
 	}
 	a.ConfirmNo()
@@ -252,7 +252,7 @@ func TestAnOldRunOfATaskDoesNotStandInForTheLiveOne(t *testing.T) {
 			a := sample(t)
 			live := oneTaskRun("backend:lint")
 			old := run.FromStored(run.Stored{
-				Root:  "backend:lint",
+				Task:  "backend:lint",
 				Graph: run.GraphFrom(run.Edge{Parent: "backend:lint"}),
 			})
 			opened := []*run.Run{live, old}
@@ -295,7 +295,7 @@ func TestRerunningAnOldRunRestartsTheLiveOne(t *testing.T) {
 	a := sample(t)
 	live := oneTaskRun("backend:lint")
 	a.OpenRunForTest(live)
-	old := run.FromStored(run.Stored{Root: "backend:lint", Graph: run.GraphFrom(run.Edge{Parent: "backend:lint"})})
+	old := run.FromStored(run.Stored{Task: "backend:lint", Graph: run.GraphFrom(run.Edge{Parent: "backend:lint"})})
 	a.OpenRunForTest(old)
 	a.Screen = ScreenRun
 	defer a.KillAll()

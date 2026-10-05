@@ -150,8 +150,8 @@ func TestOpeningARunFromTheTimeline(t *testing.T) {
 	if a.Run == nil || !a.Run.IsStored() {
 		t.Fatal("should have opened the stored run")
 	}
-	if a.Run.Root != "backend:lint" {
-		t.Errorf("opened %q", a.Run.Root)
+	if a.Run.Task != "backend:lint" {
+		t.Errorf("opened %q", a.Run.Task)
 	}
 }
 

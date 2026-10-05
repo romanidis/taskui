@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,7 +20,8 @@ import (
 
 // capture is the capture goroutine: it works out what the run will look like, then runs it,
 // and reports all of it as events.
-func capture(p *process, events *queue, dir, root string, argv []string, attended bool) {
+func capture(p *process, events *queue, dir string, inv Invocation, attended bool) {
+	argv := inv.argv()
 	// Read alongside the graph: the names the graph and the output are spelled in, and the
 	// Taskfile's own env, which the summaries leave out.
 	var project task.Project
@@ -34,7 +34,7 @@ func capture(p *process, events *queue, dir, root string, argv []string, attende
 	// A graph we could not resolve is not fatal — we still capture output, just without the
 	// nesting. Redaction then has only the Taskfile's own env and the arguments to go on,
 	// and the run view says how many it found rather than implying output has been checked.
-	g, summary := graph.ResolveDetailed(dir, root)
+	g, summary := graph.ResolveDetailed(dir, inv.Task)
 	wg.Wait()
 	events.push(Naming{Names: project.Names, Labels: project.Labels})
 	if len(g.Edges) > 0 {
@@ -44,12 +44,11 @@ func capture(p *process, events *queue, dir, root string, argv []string, attende
 	events.push(Redacting{N: redactor.Len()})
 
 	// go-task tags every line with its task, except under `interleaved`.
-	tagged := !slices.Contains(argv, "interleaved")
-	switch err := runOnPty(p, events, dir, argv, attended, tagged, redactor); {
+	switch err := runOnPty(p, events, dir, argv, attended, !inv.Interactive, redactor); {
 	case errors.Is(err, errStoppedBeforeStart):
 		events.push(Exited{Code: -1})
 	case err != nil:
-		events.push(LineEvent{Raw: fmt.Sprintf("taskui: could not start `task %s`: %v", root, err)})
+		events.push(LineEvent{Raw: fmt.Sprintf("taskui: could not start `task %s`: %v", inv.Task, err)})
 		events.push(Exited{Code: -1})
 	}
 }

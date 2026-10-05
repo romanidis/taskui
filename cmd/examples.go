@@ -269,15 +269,15 @@ func sampleRun() *run.Run {
 func sampleTimeline() []store.Point {
 	now := time.Now()
 	return []store.Point{
-		{RunID: "e", Root: sampleAll, WhenUnix: now.Add(-9 * time.Minute).Unix(),
+		{RunID: "e", Run: run.Invocation{Task: sampleAll}, WhenUnix: now.Add(-9 * time.Minute).Unix(),
 			Status: run.Failed, DurationMs: 1310, Lines: 44, Commit: "d1f091a7"},
-		{RunID: "d", Root: sampleAll, WhenUnix: now.Add(-2 * time.Hour).Unix(),
+		{RunID: "d", Run: run.Invocation{Task: sampleAll}, WhenUnix: now.Add(-2 * time.Hour).Unix(),
 			Status: run.Failed, DurationMs: 1280, Lines: 44, Commit: "d1f091a7"},
-		{RunID: "c", Root: sampleAll, WhenUnix: now.Add(-3 * time.Hour).Unix(),
+		{RunID: "c", Run: run.Invocation{Task: sampleAll}, WhenUnix: now.Add(-3 * time.Hour).Unix(),
 			Status: run.Ok, DurationMs: 1190, Lines: 31, Commit: "9b4c2e1f"},
-		{RunID: "b", Root: sampleTest, WhenUnix: now.Add(-5 * time.Hour).Unix(),
+		{RunID: "b", Run: run.Invocation{Task: sampleTest}, WhenUnix: now.Add(-5 * time.Hour).Unix(),
 			Status: run.Ok, DurationMs: 88, Lines: 31, Commit: "9b4c2e1f"},
-		{RunID: "a", Root: sampleAll, WhenUnix: now.Add(-26 * time.Hour).Unix(),
+		{RunID: "a", Run: run.Invocation{Task: sampleAll}, WhenUnix: now.Add(-26 * time.Hour).Unix(),
 			Status: run.Ok, DurationMs: 1210, Lines: 30, Commit: "41aa08c3"},
 	}
 }

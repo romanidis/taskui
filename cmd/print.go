@@ -237,7 +237,7 @@ func printTimeline(out io.Writer, root, taskName string) error {
 			status = "failed"
 		}
 		fmt.Fprintf(out, "%s\t%s\t%dms\t%d lines\t%s\n",
-			time.Unix(p.WhenUnix, 0).Format(time.RFC3339), status, p.DurationMs, p.Lines, p.Command())
+			time.Unix(p.WhenUnix, 0).Format(time.RFC3339), status, p.DurationMs, p.Lines, p.Run.Command())
 	}
 	fmt.Fprintf(out, "-- %d runs\n", len(points))
 	return nil

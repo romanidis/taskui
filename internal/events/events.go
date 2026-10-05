@@ -213,7 +213,7 @@ func (d *Deltas) Start(s *Sink, r *run.Run, dir string) {
 	}
 	d.opened = true
 	s.Send(RunStarted{
-		Type: "run", Root: r.Root, Dir: dir,
+		Type: "run", Root: r.Task, Dir: dir,
 		Args: r.Args, Started: r.Started.Unix(),
 	})
 }
@@ -225,7 +225,7 @@ func (d *Deltas) Flush(s *Sink, r *run.Run) {
 	}
 	if !d.graph && len(r.Graph.Edges) > 0 {
 		d.graph = true
-		s.Send(Graph{Type: "graph", Root: r.Root, Edges: r.Graph.Edges})
+		s.Send(Graph{Type: "graph", Root: r.Task, Edges: r.Graph.Edges})
 	}
 
 	for _, name := range r.TaskNames() {
@@ -239,7 +239,7 @@ func (d *Deltas) Flush(s *Sink, r *run.Run) {
 		announce := func() {
 			d.said[name] = now
 			s.Send(Task{
-				Type: "task", Root: r.Root, Name: name, Status: now.status.String(),
+				Type: "task", Root: r.Task, Name: name, Status: now.status.String(),
 				DurationMs: now.durationMs, Note: task.Note,
 			})
 		}
@@ -260,7 +260,7 @@ func (d *Deltas) Flush(s *Sink, r *run.Run) {
 			complete := r.Complete(name)
 			for i := at; i < complete; i++ {
 				s.Send(Line{
-					Type: "line", Root: r.Root, Task: name, Index: task.Dropped + i,
+					Type: "line", Root: r.Task, Task: name, Index: task.Dropped + i,
 					// A command echo goes out as the command: `command: true` and `task`
 					// already carry what the `task: [name] ` prefix was there to say, and
 					// a consumer that had to strip it is one that would forget to.
@@ -281,7 +281,7 @@ func (d *Deltas) Flush(s *Sink, r *run.Run) {
 		d.prompt = ""
 	case text != d.prompt:
 		d.prompt = text
-		s.Send(Prompt{Type: "prompt", Root: r.Root, Text: text})
+		s.Send(Prompt{Type: "prompt", Root: r.Task, Text: text})
 	}
 }
 
@@ -293,7 +293,7 @@ func (d *Deltas) Finish(s *Sink, r *run.Run, saved string) {
 	d.closed = true
 	code := r.ExitCode()
 	s.Send(Exit{
-		Type: "exit", Root: r.Root, Code: code,
+		Type: "exit", Root: r.Task, Code: code,
 		DurationMs: r.Duration.Milliseconds(),
 		Saved:      saved, Secrets: r.RedactedSecrets,
 	})

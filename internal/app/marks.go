@@ -68,7 +68,7 @@ func (a *App) ClearMarks() {
 // RunMarked starts every marked task at once, each in its own slot, with whatever `F` and
 // `I` have armed.
 func (a *App) RunMarked() {
-	var runs []invocation
+	var runs []run.Invocation
 	for _, name := range a.Marked() {
 		runs = append(runs, a.armed(name, nil))
 	}
@@ -80,7 +80,7 @@ func (a *App) RunMarked() {
 // RunSet is several tasks started at once, each in its own slot: the marked set, or the
 // tasks that failed in the run on screen. Each goes out with its own arguments and flags.
 type RunSet struct {
-	Runs []invocation
+	Runs []run.Invocation
 	// Marked says the set is the marks, which are spent once it has gone out. A run's
 	// failures leave the marks alone: they are a set you chose, and what broke in a run is
 	// not that set.
@@ -107,15 +107,15 @@ func (a *App) requestRunSet(set RunSet) {
 	var dangerous []string
 	toStart, canStart := 0, 0
 	for _, inv := range set.Runs {
-		if itself, calls := a.productionReach(inv.name); itself || len(calls) > 0 {
-			dangerous = append(dangerous, inv.name)
+		if itself, calls := a.productionReach(inv.Task); itself || len(calls) > 0 {
+			dangerous = append(dangerous, inv.Task)
 		}
 		// Only a live task is left alone: one in a finished slot reuses it.
-		if a.liveSlot(inv.name) {
+		if a.liveSlot(inv.Task) {
 			continue
 		}
 		toStart++
-		if a.slotAvailable(inv.name) {
+		if a.slotAvailable(inv.Task) {
 			canStart++
 		}
 	}
@@ -142,15 +142,15 @@ func (a *App) requestRunSet(set RunSet) {
 func (a *App) startRunSet(set RunSet) {
 	started, skipped := 0, 0
 	for _, inv := range set.Runs {
-		if a.liveSlot(inv.name) {
+		if a.liveSlot(inv.Task) {
 			continue
 		}
-		if !a.slotAvailable(inv.name) {
+		if !a.slotAvailable(inv.Task) {
 			skipped++
 			continue
 		}
 		if err := a.start(inv); err != nil {
-			a.Status = fmt.Sprintf("could not start `task %s`: %v", inv.name, err)
+			a.Status = fmt.Sprintf("could not start `task %s`: %v", inv.Task, err)
 			return
 		}
 		started++
@@ -227,13 +227,13 @@ func (a *App) RerunFailed() {
 	// Each failure goes out the way it ran in the run it failed in, and the task that run was
 	// started as gets its arguments back. Started bare and with whatever was armed instead,
 	// `deploy ENV=staging` failing came back as `task deploy`.
-	reruns := make([]invocation, 0, len(failed))
+	reruns := make([]run.Invocation, 0, len(failed))
 	for _, name := range failed {
-		var args []string
-		if name == a.Run.Root {
-			args = a.Run.Args
+		rerun := run.Invocation{Task: name, Force: a.Run.Force, Interactive: a.Run.Interactive}
+		if name == a.Run.Task {
+			rerun.Args = a.Run.Args
 		}
-		reruns = append(reruns, repeating(name, args, a.Run))
+		reruns = append(reruns, rerun)
 	}
 	// The same production question a marked set gets. A `deploy:prod` that failed inside
 	// `release` is still `deploy:prod`, and this key is one keypress from the run it failed in.

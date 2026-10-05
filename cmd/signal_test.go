@@ -22,10 +22,7 @@ func TestATerminatedHeadlessRunStopsItsTask(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r, err := run.Start(dir, "slow", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := run.Start(dir, run.Invocation{Task: "slow"})
 	stop := stopOnSignal(r)
 	defer stop()
 

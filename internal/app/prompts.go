@@ -22,10 +22,7 @@ func (a *App) confirmBar() (line, bool) {
 	var subject, why string
 	switch c := a.Confirm.(type) {
 	case ConfirmRun:
-		subject = "task " + c.Name
-		if len(c.Args) > 0 {
-			subject += " " + strings.Join(c.Args, " ")
-		}
+		subject = c.Command()
 		switch c.Reason {
 		case TouchesProduction:
 			why = "  —  this one touches production.  "

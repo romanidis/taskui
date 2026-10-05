@@ -75,7 +75,7 @@ func (a *App) watchTarget() (string, bool) {
 		a.Status = "nothing to watch — run something first"
 		return "", false
 	}
-	return a.Run.Root, true
+	return a.Run.Task, true
 }
 
 // WatchLabel names what is being watched, for the header.
@@ -122,7 +122,7 @@ func (a *App) PollWatch() bool {
 		// The way it last ran, if it has; otherwise the way `F` and `I` are armed.
 		inv := a.armed(name, nil)
 		if r := a.slotRun(name); r != nil {
-			inv = repeating(name, r.Args, r)
+			inv = r.Invocation
 		}
 
 		// Deliberately bypasses the confirmation: watch mode is opt-in, on tasks you chose,

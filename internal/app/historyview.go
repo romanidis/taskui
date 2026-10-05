@@ -56,7 +56,7 @@ func (a *App) drawHistory(width, height int) []string {
 			styled(padRight(Ago(m.StartedUnix), 10), fg(t.Colors.Dim)),
 			// Cut as well as padded: a longer command pushed that row's duration and line
 			// count out of the columns every other row keeps them in.
-			styled(padRight(clip(m.Command(), 30), 30), commandStyle),
+			styled(padRight(clip(m.Invocation().Command(), 30), 30), commandStyle),
 			styled(fmt.Sprintf("%8s  %6d lines", duration(millis(m.DurationMs)), lines), fg(t.Colors.Dim)),
 		}
 		// Only present when a cross-run search is narrowing the list.

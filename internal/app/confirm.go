@@ -1,6 +1,10 @@
 package app
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/romanidis/taskui/internal/run"
+)
 
 // ConfirmReason says why a run is waiting for a yes.
 type ConfirmReason int
@@ -32,13 +36,11 @@ type Confirm interface{ isConfirm() }
 
 // ConfirmRun is starting one task, once the reason has been answered.
 type ConfirmRun struct {
-	Name string
-	Args []string
-	// Interactive and Force are how it will be started, settled when the question was
-	// asked: a re-run carries the flags of the run it repeats, not whatever is armed.
-	Interactive bool
-	Force       bool
-	Reason      ConfirmReason
+	// Invocation is the start being asked about, settled when the question was asked: a
+	// re-run carries the flags of the run it repeats, not whatever is armed.
+	run.Invocation
+
+	Reason ConfirmReason
 	// Calls is what CallsProduction is about: the tasks on the danger list this one calls.
 	Calls []string
 }
@@ -76,21 +78,6 @@ func (ConfirmRunSet) isConfirm()  {}
 func (ConfirmQuit) isConfirm()    {}
 func (ConfirmStopAll) isConfirm() {}
 
-// confirm is the question to ask before starting inv.
-func (inv invocation) confirm(why ConfirmReason) ConfirmRun {
-	return ConfirmRun{
-		Name:        inv.name,
-		Args:        append([]string(nil), inv.args...),
-		Interactive: inv.interactive,
-		Force:       inv.force,
-		Reason:      why,
-	}
-}
-
-func (c ConfirmRun) invocation() invocation {
-	return invocation{name: c.Name, args: c.Args, interactive: c.Interactive, force: c.Force}
-}
-
 // ConfirmYes answers whatever is pending. It returns true if the answer was "quit".
 func (a *App) ConfirmYes() bool {
 	pending := a.Confirm
@@ -100,13 +87,13 @@ func (a *App) ConfirmYes() bool {
 		// "Restarting stops the one running" was the question; whether this task touches
 		// production is a second one, and answering the first is not answering it.
 		if c.Reason == WouldStopRunning {
-			if next, ok := a.productionQuestion(c.invocation()); ok {
+			if next, ok := a.productionQuestion(c.Invocation); ok {
 				a.Confirm = next
 				return false
 			}
 		}
-		if err := a.start(c.invocation()); err != nil {
-			a.Status = fmt.Sprintf("could not start `task %s`: %v", c.Name, err)
+		if err := a.start(c.Invocation); err != nil {
+			a.Status = fmt.Sprintf("could not start `task %s`: %v", c.Task, err)
 		}
 	case ConfirmRunSet:
 		a.startRunSet(c.Set)

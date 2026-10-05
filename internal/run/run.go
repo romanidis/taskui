@@ -22,20 +22,17 @@ import (
 	"time"
 
 	"github.com/romanidis/taskui/internal/graph"
-	"github.com/romanidis/taskui/internal/shellwords"
 	"github.com/romanidis/taskui/internal/task"
 )
 
 // Stored is a finished run being rebuilt from the archive.
 type Stored struct {
+	Invocation
+
 	// ID is the archive directory this came out of. Carried so a stored run can be told
 	// apart from the archive entry it *is* — diffing a run against itself is a diff of
 	// nothing, and finding that out by producing it is worse than not offering it.
 	ID              string
-	Root            string
-	Args            []string
-	Force           bool
-	Interactive     bool
 	Started         time.Time
 	Graph           graph.Graph
 	Tasks           map[string]*TaskRun
@@ -54,13 +51,10 @@ type Stored struct {
 // what the capture goroutine fills and Poll drains, which is how everything it learns
 // reaches the run without its ever being handed the run.
 type Run struct {
-	Root string
-	// Args are the extra argv passed after the task name — `NAME=backend`, `-- -p ingest`.
-	Args []string
-	// Interactive means it ran with `--output interleaved` so the task could ask questions.
-	Interactive bool
-	// Force means it ran with `--force`, ignoring go-task's up-to-date checks.
-	Force bool
+	// Invocation is what was asked of go-task. Embedded, because a run is its invocation
+	// and what came of it: r.Task, r.Args and r.Command() are the run's own.
+	Invocation
+
 	Graph graph.Graph
 	Tasks map[string]*TaskRun
 	// Order lists tasks in the order they first produced output.
@@ -102,20 +96,9 @@ type Run struct {
 	labels []task.Label
 }
 
-// Start runs `task <root>` in dir. It returns immediately; call Poll to drain.
-//
-// interactive swaps `--output prefixed` for `--output interleaved`, which is the only way
-// a prompt ever reaches us: go-task's prefixer is itself line-based, so a `Proceed? (y/n) `
-// with no newline is held inside it forever and the run just looks hung. Measured — under
-// prefixed the prompt never appears at all.
-//
-// The cost is per-line attribution. Interleaved output still carries go-task's
-// `task: [name] <cmd>` announcements, so lines are attributed to whichever task last
-// spoke, which is correct for a sequential run and wrong under parallel `deps:`.
-// Interactive runs are inherently sequential, so that trade is worth making — but only
-// when asked for.
-func Start(dir, root string, args []string, interactive, force bool) (*Run, error) {
-	return startCapture(dir, root, args, interactive, force, true), nil
+// Start runs inv in dir. It returns immediately; call Poll to drain.
+func Start(dir string, inv Invocation) *Run {
+	return startCapture(dir, inv, true)
 }
 
 // StartUnattended is Start for a run nobody can type at: `--run`, with or without `--json`.
@@ -125,47 +108,28 @@ func Start(dir, root string, args []string, interactive, force bool) (*Run, erro
 // hung until the job timed out where `task deploy` fails at once. Here go-task has nothing to
 // read from, so a prompt fails the way go-task fails it without a terminal, saying that
 // `--yes` runs it anyway.
-func StartUnattended(dir, root string, args []string, force bool) (*Run, error) {
-	return startCapture(dir, root, args, false, force, false), nil
+func StartUnattended(dir string, inv Invocation) *Run {
+	return startCapture(dir, inv, false)
 }
 
 // startCapture makes the Run and sets the goroutine that captures it going. attended says
 // whether somebody can type at it.
-func startCapture(dir, root string, args []string, interactive, force, attended bool) *Run {
+func startCapture(dir string, inv Invocation, attended bool) *Run {
+	inv.Args = append([]string(nil), inv.Args...)
 	r := &Run{
-		Root:        root,
-		Args:        append([]string(nil), args...),
-		Interactive: interactive,
-		Force:       force,
-		Graph:       graph.New(),
-		Tasks:       map[string]*TaskRun{},
-		Started:     time.Now(),
-		lastOutput:  time.Now(),
-		events:      &queue{},
+		Invocation: inv,
+		Graph:      graph.New(),
+		Tasks:      map[string]*TaskRun{},
+		Started:    time.Now(),
+		lastOutput: time.Now(),
+		events:     &queue{},
 	}
 
 	// Handed what it shares with the run and nothing more: the process it starts and reaps,
 	// and the queue it fills. Everything else on a Run belongs to whoever calls Poll, and a
 	// goroutine that is never given the run cannot reach any of it.
-	go capture(&r.proc, r.events, dir, root, r.argv(), attended)
+	go capture(&r.proc, r.events, dir, inv, attended)
 	return r
-}
-
-// argv is what go-task is invoked with: the output mode, the task, then the flags.
-func (r *Run) argv() []string {
-	mode := "prefixed"
-	if r.Interactive {
-		mode = "interleaved"
-	}
-	argv := []string{"--output", mode, r.Root}
-	// `--force` before the user's own arguments: theirs may include a `--` separator,
-	// after which everything is CLI_ARGS rather than a flag.
-	if r.Force {
-		argv = append(argv, "--force")
-	}
-	// Passed through verbatim, already split shell-style: `--` and `NAME=value` are just
-	// argv entries to go-task.
-	return append(argv, r.Args...)
 }
 
 func (r *Run) Finished() bool  { return r.HasExit }
@@ -360,25 +324,10 @@ func (r *Run) Cancel() {
 // deliberate press rather than the opening move.
 func (r *Run) Kill() { r.proc.kill() }
 
-// Command is what was actually invoked, for the header and the history list.
-func (r *Run) Command() string {
-	force := ""
-	if r.Force {
-		force = " --force"
-	}
-	if len(r.Args) == 0 {
-		return "task " + r.Root + force
-	}
-	return "task " + r.Root + force + " " + shellwords.Join(r.Args)
-}
-
 // FromStored rebuilds a finished run from the archive.
 func FromStored(s Stored) *Run {
 	return &Run{
-		Root:            s.Root,
-		Args:            s.Args,
-		Interactive:     s.Interactive,
-		Force:           s.Force,
+		Invocation:      s.Invocation,
 		Graph:           s.Graph,
 		Tasks:           s.Tasks,
 		Order:           s.Order,

@@ -457,10 +457,7 @@ func TestCancellingStopsTheChildAndItsCommands(t *testing.T) {
 	needsGoTask(t)
 	dir := taskfile(t, "version: \"3\"\ntasks:\n  sleeper:\n    cmds: ['echo started', 'sleep 30']\n")
 
-	r, err := Start(dir, "sleeper", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "sleeper"})
 
 	// Wait for the command to actually be running.
 	pollUntil(r, 15*time.Second, func() bool {
@@ -518,10 +515,7 @@ func TestACommandThatIgnoresSigtermDoesNotOutliveTheRun(t *testing.T) {
 		marker,
 	))
 
-	r, err := Start(dir, "stubborn", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "stubborn"})
 
 	pollUntil(r, 15*time.Second, func() bool {
 		task, ok := r.Tasks["stubborn"]
@@ -572,10 +566,7 @@ func TestStdinReachesTheChildEvenWhenOutputIsPrefixed(t *testing.T) {
 	)
 
 	// interactive = false, i.e. --output prefixed.
-	r, err := Start(dir, "ask", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "ask"})
 	defer r.Kill()
 
 	// No prompt will appear, so wait for the command echo instead.
@@ -619,10 +610,7 @@ func TestAnswersAnInteractivePrompt(t *testing.T) {
 	)
 
 	// Interactive: under `--output prefixed` the prompt never arrives at all.
-	r, err := Start(dir, "ask", nil, true, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "ask", Interactive: true})
 	defer r.Kill()
 
 	pollUntil(r, 20*time.Second, r.LooksLikeAPrompt)
@@ -851,10 +839,7 @@ tasks:
       - echo "$API_TOKEN $ROOT_TOKEN"
 `)
 
-	r, err := Start(dir, "all", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "all"})
 	pollUntil(r, 15*time.Second, r.Finished)
 
 	var out []string
@@ -959,7 +944,7 @@ func TestTasksTheGraphNeverReachedRunUnderTheRoot(t *testing.T) {
 func TestAStopBeforeTheChildStartsMeansItNeverStarts(t *testing.T) {
 	needsGoTask(t)
 	dir := taskfile(t, "version: \"3\"\ntasks:\n  mark:\n    cmds: ['touch ran']\n")
-	r := &Run{Root: "mark", Tasks: map[string]*TaskRun{}, events: &queue{}}
+	r := &Run{Task: "mark", Tasks: map[string]*TaskRun{}, events: &queue{}}
 	r.Cancel()
 
 	err := runOnPty(&r.proc, r.events, dir, r.argv(), true, true, redact.Empty())
@@ -974,10 +959,7 @@ func TestAStopBeforeTheChildStartsMeansItNeverStarts(t *testing.T) {
 func TestStoppingDuringResolutionEndsTheRun(t *testing.T) {
 	needsGoTask(t)
 	dir := taskfile(t, "version: \"3\"\ntasks:\n  all:\n    cmds: [{task: mark}]\n  mark:\n    cmds: ['touch ran']\n")
-	r, err := Start(dir, "all", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "all"})
 	r.Cancel()
 	pollUntil(r, 15*time.Second, r.Finished)
 
@@ -995,10 +977,7 @@ func TestStoppingDuringResolutionEndsTheRun(t *testing.T) {
 func TestStoppingFromAnotherGoroutineIsSafe(t *testing.T) {
 	needsGoTask(t)
 	dir := taskfile(t, "version: \"3\"\ntasks:\n  sleeper:\n    cmds: ['echo started', 'sleep 30']\n")
-	r, err := Start(dir, "sleeper", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "sleeper"})
 	pollUntil(r, 15*time.Second, func() bool {
 		task, ok := r.Tasks["sleeper"]
 		return ok && len(task.Lines) > 0
@@ -1019,10 +998,7 @@ func TestAVeryLongLineIsCapturedInLinearTime(t *testing.T) {
 	cmd := fmt.Sprintf(`head -c %d /dev/zero | tr '\0' a; echo`, size)
 	dir := taskfile(t, fmt.Sprintf("version: \"3\"\ntasks:\n  blob:\n    cmds: [%q]\n", cmd))
 	began := time.Now()
-	r, err := Start(dir, "blob", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "blob"})
 	pollUntil(r, 30*time.Second, r.Finished)
 	// Two bounds, because one cannot fit both builds. Without the detector this takes
 	// 0.28s and the quadratic version took ten; the detector alone takes it to 2.3s
@@ -1086,10 +1062,7 @@ tasks:
 `)
 	// Interactive, so go-task passes the unterminated half through rather than holding
 	// the line back until its newline.
-	r, err := Start(dir, "leak", nil, true, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "leak", Interactive: true})
 	sawPartial := false
 	deadline := time.Now().Add(15 * time.Second)
 	for !r.Finished() && time.Now().Before(deadline) {
@@ -1138,10 +1111,7 @@ func TestAnUnattendedRunRefusesAPromptInsteadOfHanging(t *testing.T) {
 	needsGoTask(t)
 	dir := taskfile(t, "version: \"3\"\ntasks:\n  deploy:\n    prompt: Ship it?\n    cmds: ['touch shipped']\n")
 
-	r, err := StartUnattended(dir, "deploy", nil, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := StartUnattended(dir, Invocation{Task: "deploy"})
 	defer r.Kill()
 	pollUntil(r, 20*time.Second, r.Finished)
 
@@ -1273,10 +1243,7 @@ func TestALabelledTaskIsOneTask(t *testing.T) {
 	needsGoTask(t)
 	dir := taskfile(t, "version: \"3\"\ntasks:\n  greet:\n    label: 'greet-{{.WHO}}'\n    cmds:\n"+
 		"      - echo hi {{.WHO}}\n      - exit 3\n  hello:\n    cmds:\n      - task: greet\n        vars: {WHO: bob}\n")
-	r, err := Start(dir, "hello", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "hello"})
 	pollUntil(r, 20*time.Second, r.Finished)
 	if got := r.Tasks["greet"].Status; got != Failed {
 		t.Errorf("greet exited 3 but is %v", got)
@@ -1290,10 +1257,7 @@ func TestALabelledTaskIsOneTask(t *testing.T) {
 func TestAPrefixedTasksOutputLandsOnIt(t *testing.T) {
 	needsGoTask(t)
 	dir := taskfile(t, "version: \"3\"\ntasks:\n  c:\n    prefix: custom\n    cmds:\n      - echo c out\n")
-	r, err := Start(dir, "c", nil, false, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := Start(dir, Invocation{Task: "c"})
 	pollUntil(r, 20*time.Second, r.Finished)
 	if _, ok := r.Tasks["custom"]; ok {
 		t.Error("the prefix became a task of its own")

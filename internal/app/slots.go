@@ -232,7 +232,7 @@ func (a *App) Slots() []SlotInfo {
 		if r.HasDuration {
 			elapsed = r.Duration
 		}
-		return SlotInfo{Seq: seq, Root: r.Root, Status: status, Elapsed: elapsed, Focused: focused}
+		return SlotInfo{Seq: seq, Root: r.Task, Status: status, Elapsed: elapsed, Focused: focused}
 	}
 	open := a.openSlots()
 	out := make([]SlotInfo, 0, len(open))
@@ -338,7 +338,7 @@ func (a *App) CloseSlot() {
 func (a *App) taskSlot(name string) *slot {
 	var stored *slot
 	for _, s := range a.openSlots() {
-		if s.Run.Root != name {
+		if s.Run.Task != name {
 			continue
 		}
 		if !s.Run.IsStored() {

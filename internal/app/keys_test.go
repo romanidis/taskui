@@ -61,7 +61,7 @@ func rootOf(a *App) string {
 	if a.Run == nil {
 		return ""
 	}
-	return a.Run.Root
+	return a.Run.Task
 }
 
 // `backend:migrate` is a group and a task. Space must fold it without running, so the two
@@ -195,7 +195,7 @@ func TestStartingAnotherTaskMidRunParksTheFirst(t *testing.T) {
 	}
 	var parked []string
 	for _, p := range a.Parked {
-		parked = append(parked, p.Run.Root)
+		parked = append(parked, p.Run.Task)
 	}
 	if !reflect.DeepEqual(parked, []string{"backend:lint"}) {
 		t.Errorf("the first should still be open, not killed: %v", parked)
@@ -322,7 +322,7 @@ func TestQuittingStopsBackgroundRunsToo(t *testing.T) {
 
 	for _, p := range a.Parked {
 		if !p.Run.Cancelled() {
-			t.Errorf("%s was orphaned rather than cancelled", p.Run.Root)
+			t.Errorf("%s was orphaned rather than cancelled", p.Run.Task)
 		}
 	}
 	if a.Run == nil || !a.Run.Cancelled() {
@@ -490,7 +490,7 @@ func TestStopAllAsksThenStopsEverySlot(t *testing.T) {
 	}
 	for _, p := range a.Parked {
 		if !p.Run.Cancelled() {
-			t.Errorf("%s was not cancelled", p.Run.Root)
+			t.Errorf("%s was not cancelled", p.Run.Task)
 		}
 	}
 	if a.Screen != ScreenPicker {
@@ -511,7 +511,7 @@ func TestThePickerStopsARunItIsNotShowing(t *testing.T) {
 
 	found := false
 	for _, p := range a.Parked {
-		if p.Run.Root == "backend:lint" {
+		if p.Run.Task == "backend:lint" {
 			found = p.Run.Cancelled()
 		}
 	}
@@ -1255,7 +1255,7 @@ func TestTheWheelMovesTheCursor(t *testing.T) {
 // question that vanished because the mouse moved would be a question you never answered.
 func TestTheWheelDoesNotAnswerAConfirmation(t *testing.T) {
 	a := sample(t)
-	a.Confirm = ConfirmRun{Name: "deploy", Reason: TouchesProduction}
+	a.Confirm = ConfirmRun{Task: "deploy", Reason: TouchesProduction}
 
 	a.handleWheel(tea.MouseWheelDown)
 

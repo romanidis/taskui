@@ -85,8 +85,8 @@ func TestADiffSkipsRunsWhoseOutputIsGone(t *testing.T) {
 	if !HasOutput(base, green.RunID) {
 		t.Errorf("%s was picked to diff against and has no output", green.RunID)
 	}
-	if green.Root != "mid" {
-		t.Errorf("want the newest green run that still has text, got %q", green.Root)
+	if green.Run.Task != "mid" {
+		t.Errorf("want the newest green run that still has text, got %q", green.Run.Task)
 	}
 }
 

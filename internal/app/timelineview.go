@@ -126,7 +126,7 @@ func (a *App) drawTimeline(width, height int) []string {
 			}
 			l = append(l, styled(padRight(shortCommit(p.Commit), 10), style))
 		}
-		l = append(l, styled(p.Command(), fg(t.Colors.Text)))
+		l = append(l, styled(p.Run.Command(), fg(t.Colors.Text)))
 		out = append(out, l.renderRow(width, i == a.TimelineCursor, t, a.Phase, 0, 1))
 	}
 	return out

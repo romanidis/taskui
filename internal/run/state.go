@@ -20,7 +20,7 @@ func (r *Run) apply(event Event) {
 
 	case GraphReady:
 		g := e.Graph.Renamed(r.canonical)
-		for _, name := range g.Reachable(r.Root) {
+		for _, name := range g.Reachable(r.Task) {
 			if _, ok := r.Tasks[name]; !ok {
 				r.Tasks[name] = newTaskRun()
 			}
@@ -31,7 +31,7 @@ func (r *Run) apply(event Event) {
 		r.lastOutput = time.Now()
 		name := r.canonical(e.Task)
 		if name == "" {
-			name = r.Root
+			name = r.Task
 			if r.hasActive {
 				name = r.active
 			}
@@ -62,7 +62,7 @@ func (r *Run) apply(event Event) {
 			if r.hasActive {
 				name = r.active
 			} else {
-				name = r.Root
+				name = r.Task
 			}
 		}
 		r.touch(name)
@@ -129,8 +129,8 @@ func (r *Run) canonical(name string) string {
 		}
 	}
 	c := r.names.Canonical(name)
-	if c == r.names.Canonical(r.Root) {
-		return r.Root
+	if c == r.names.Canonical(r.Task) {
+		return r.Task
 	}
 	return c
 }
@@ -218,11 +218,11 @@ func (r *Run) pathTo(name string, ancestors map[string]bool) []string {
 		delete(onPath, node)
 		return false
 	}
-	if walk(r.Root) {
+	if walk(r.Task) {
 		return path
 	}
 	var all []string
-	for _, t := range r.Graph.Reachable(r.Root) {
+	for _, t := range r.Graph.Reachable(r.Task) {
 		if ancestors[t] {
 			all = append(all, t)
 		}
@@ -246,20 +246,20 @@ func (r *Run) pathTo(name string, ancestors map[string]bool) []string {
 // Only once a graph has arrived. Before that, or with none, every task would be a stray,
 // and the run is in the flat mode that has no nesting to graft onto.
 func (r *Run) adoptStray(name string) {
-	if len(r.Graph.Edges) == 0 || name == r.Root {
+	if len(r.Graph.Edges) == 0 || name == r.Task {
 		return
 	}
 	if _, known := r.Tasks[name]; known {
 		return
 	}
-	if slices.Contains(r.Graph.Reachable(r.Root), name) {
+	if slices.Contains(r.Graph.Reachable(r.Task), name) {
 		return
 	}
 	if r.Graph.Deps == nil {
 		r.Graph.Deps = map[string][]string{}
 	}
-	r.Graph.Edges[r.Root] = append(r.Graph.Edges[r.Root], name)
-	r.Graph.Deps[r.Root] = append(r.Graph.Deps[r.Root], name)
+	r.Graph.Edges[r.Task] = append(r.Graph.Edges[r.Task], name)
+	r.Graph.Deps[r.Task] = append(r.Graph.Deps[r.Task], name)
 	if _, ok := r.Graph.Edges[name]; !ok {
 		r.Graph.Edges[name] = nil
 	}

@@ -116,7 +116,7 @@ func printTimelineJSON(out io.Writer, root, taskName string) error {
 	page := make([]pointJSON, 0, len(points))
 	for _, p := range points {
 		page = append(page, pointJSON{
-			RunID: p.RunID, Root: p.Root, When: p.WhenUnix,
+			RunID: p.RunID, Root: p.Run.Task, When: p.WhenUnix,
 			Status: p.Status.String(), DurationMs: p.DurationMs, Lines: p.Lines, Commit: p.Commit,
 		})
 	}
@@ -132,10 +132,7 @@ func printTimelineJSON(out io.Writer, root, taskName string) error {
 // The shapes and the diffing live in internal/events, which the TUI's `--events` uses too:
 // one protocol with two ways out, rather than two protocols that drift.
 func streamRun(out io.Writer, dir, target string, argv []string) error {
-	r, err := run.StartUnattended(dir, target, argv, false)
-	if err != nil {
-		return err
-	}
+	r := run.StartUnattended(dir, run.Invocation{Task: target, Args: argv})
 	sink := events.New(nopCloser{out})
 	// The consumer of this form is drawing the run, so it wants the output too. A TUI with
 	// a host attached does not: the terminal in front of you is already showing it.

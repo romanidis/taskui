@@ -24,11 +24,11 @@ func (a *App) Detach() {
 		return
 	}
 	if a.Run.Finished() {
-		a.Status = "`" + a.Run.Root + "` has already finished — nothing to let go of"
+		a.Status = "`" + a.Run.Task + "` has already finished — nothing to let go of"
 		return
 	}
 	if a.IsDetached(a.slot.Seq) {
-		a.Status = "`" + a.Run.Root + "` is already detached — `x` still stops it"
+		a.Status = "`" + a.Run.Task + "` is already detached — `x` still stops it"
 		return
 	}
 
@@ -55,7 +55,7 @@ func (a *App) Detach() {
 		}
 	}
 
-	a.Status = fmt.Sprintf("`%s` will keep running when you quit%s", a.Run.Root, kept)
+	a.Status = fmt.Sprintf("`%s` will keep running when you quit%s", a.Run.Task, kept)
 }
 
 // IsDetached says whether a slot has been let go of.

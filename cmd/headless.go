@@ -19,10 +19,7 @@ import (
 // runHeadless runs a task to completion and prints what the capture layer reconstructed:
 // the execution tree, each task's status and duration, and its output indented beneath it.
 func runHeadless(dir, target string, argv []string, quickfix bool) error {
-	r, err := run.StartUnattended(dir, target, argv, false)
-	if err != nil {
-		return err
-	}
+	r := run.StartUnattended(dir, run.Invocation{Task: target, Args: argv})
 	stop := stopOnSignal(r)
 	r.Wait(nil)
 	stop()

@@ -129,15 +129,10 @@ type Manifest struct {
 
 func (m Manifest) Failed() bool { return m.Exit != 0 }
 
-func (m Manifest) Command() string {
-	force := ""
-	if m.Force {
-		force = " --force"
-	}
-	if len(m.Args) == 0 {
-		return "task " + m.Root + force
-	}
-	return "task " + m.Root + force + " " + shellwords.Join(m.Args)
+// Invocation is how the run was started. The manifest spells it in the archive's own
+// fields, which stay as they were written.
+func (m Manifest) Invocation() run.Invocation {
+	return run.Invocation{Task: m.Root, Args: m.Args, Force: m.Force, Interactive: m.Interactive}
 }
 
 // StateDir is `$XDG_STATE_HOME/taskui` if set, else `~/.local/state/taskui`.
@@ -373,7 +368,7 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 	if err := os.MkdirAll(runsDir(base), 0o700); err != nil {
 		return "", fmt.Errorf("creating %s: %w", runsDir(base), err)
 	}
-	id, err := claimID(base, fmt.Sprintf("%d-%s", started, safeName(r.Root)))
+	id, err := claimID(base, fmt.Sprintf("%d-%s", started, safeName(r.Task)))
 	if err != nil {
 		return "", err
 	}
@@ -478,7 +473,7 @@ func writeRun(base, projectDir string, r *run.Run, id string, started int64) (st
 	manifest := Manifest{
 		Version:         ManifestVersion,
 		ID:              id,
-		Root:            r.Root,
+		Root:            r.Task,
 		Args:            redact.MaskArgs(r.Args),
 		Force:           r.Force,
 		Interactive:     r.Interactive,
@@ -806,10 +801,7 @@ func Load(base string, manifest Manifest) (*run.Run, error) {
 
 	return run.FromStored(run.Stored{
 		ID:              manifest.ID,
-		Root:            manifest.Root,
-		Args:            manifest.Args,
-		Force:           manifest.Force,
-		Interactive:     manifest.Interactive,
+		Invocation:      manifest.Invocation(),
 		Started:         time.Unix(manifest.StartedUnix, 0),
 		Graph:           graph.Graph{Edges: edges},
 		Tasks:           tasks,
@@ -874,14 +866,13 @@ func LastOutcomes(base, project string) map[string]Outcome {
 // Point is one appearance of a task in the archive: how it went that time, and when.
 type Point struct {
 	RunID string
-	// Root is the run it was part of. `test:one` reached from a `task all` and from a `task
-	// test:one` are the same task and different circumstances, and the difference explains
-	// most of the surprising durations.
-	Root string
-	// Args are what that run was invoked with, for the same reason Root is kept: a task run
-	// with `-p ingest` and the same task run with `-p api` are one name over two different
-	// pieces of work, and a series that does not say which is a series of two things.
-	Args     []string
+	// Run is how the run it was part of was started. `test:one` reached from a `task all`
+	// and from a `task test:one` are the same task and different circumstances, and the
+	// difference explains most of the surprising durations. The arguments are kept for the
+	// same reason: a task run with `-p ingest` and the same task run with `-p api` are one
+	// name over two different pieces of work, and a series that does not say which is a
+	// series of two things.
+	Run      run.Invocation
 	WhenUnix int64
 	// Commit is the git revision the project was at, or empty.
 	Commit     string
@@ -893,14 +884,6 @@ type Point struct {
 }
 
 func (p Point) Ok() bool { return p.Status == run.Ok }
-
-// Command is how the run this task was part of was invoked, for naming it on screen.
-func (p Point) Command() string {
-	if len(p.Args) == 0 {
-		return "task " + p.Root
-	}
-	return "task " + p.Root + " " + shellwords.Join(p.Args)
-}
 
 // Timeline is every stored appearance of one task, newest first.
 //
@@ -921,7 +904,7 @@ func Timeline(base, project, task string) []Point {
 				continue
 			}
 			out = append(out, Point{
-				RunID: m.ID, Root: m.Root, Args: m.Args, WhenUnix: m.StartedUnix, Commit: m.Commit,
+				RunID: m.ID, Run: m.Invocation(), WhenUnix: m.StartedUnix, Commit: m.Commit,
 				Status: e.Status, DurationMs: e.DurationMs, Lines: e.Lines, File: e.File,
 			})
 		}
@@ -1107,7 +1090,7 @@ func QuestionKey(commit, root string, args []string) string {
 }
 
 // Question is this point's key, for matching it against a flake.
-func (p Point) Question() string { return QuestionKey(p.Commit, p.Root, p.Args) }
+func (p Point) Question() string { return QuestionKey(p.Commit, p.Run.Task, p.Run.Args) }
 
 // Question is this flake's key, for matching points against it.
 func (f Flake) Question() string { return QuestionKey(f.Commit, f.Root, f.Args) }

@@ -21,14 +21,14 @@ func stopRun(r *run.Run) string {
 		return "that run has already finished"
 	}
 	if r.Killed() {
-		return fmt.Sprintf("`%s` has had SIGKILL — nothing louder to send, waiting on the OS", r.Root)
+		return fmt.Sprintf("`%s` has had SIGKILL — nothing louder to send, waiting on the OS", r.Task)
 	}
 	if r.Cancelled() {
 		r.Kill()
-		return fmt.Sprintf("killed `%s` — SIGKILL to the process group", r.Root)
+		return fmt.Sprintf("killed `%s` — SIGKILL to the process group", r.Task)
 	}
 	r.Cancel()
-	return fmt.Sprintf("stopping `%s` — again to kill it outright", r.Root)
+	return fmt.Sprintf("stopping `%s` — again to kill it outright", r.Task)
 }
 
 // StartRun kicks off `task <name> <args>` with whatever `F` and `I` have armed, past every
@@ -77,32 +77,13 @@ func (a *App) RequestRun(name string, args []string) {
 	a.requestRun(a.armed(name, args))
 }
 
-// invocation is one run to start: the task, its arguments, and the flags it goes out with.
-//
-// A value rather than the app's sticky toggles, because not every start is the next run
-// you armed: `r` repeats a run the way it ran, and so does watch mode. Both used to do it
-// by writing that run's flags into ForceNext and InteractiveNext on the way, so a plain `r`
-// switched off a force you had set with `F`, and a watched task inherited the flags of the
-// one watched before it.
-type invocation struct {
-	name        string
-	args        []string
-	interactive bool
-	force       bool
-}
-
 // armed is a start with whatever `F` and `I` have armed.
-func (a *App) armed(name string, args []string) invocation {
-	return invocation{name: name, args: args, interactive: a.InteractiveNext, force: a.ForceNext}
+func (a *App) armed(name string, args []string) run.Invocation {
+	return run.Invocation{Task: name, Args: args, Interactive: a.InteractiveNext, Force: a.ForceNext}
 }
 
-// repeating is a start of name the way r ran.
-func repeating(name string, args []string, r *run.Run) invocation {
-	return invocation{name: name, args: args, interactive: r.Interactive, force: r.Force}
-}
-
-func (a *App) requestRun(inv invocation) {
-	name := inv.name
+func (a *App) requestRun(inv run.Invocation) {
+	name := inv.Task
 	if a.liveSlot(name) {
 		// Focus it, so `v` goes to the right one — but stay where you are. From the
 		// picker the run is already on screen, under the row the cursor is on.
@@ -159,29 +140,24 @@ func (a *App) productionReach(name string) (bool, []string) {
 }
 
 // productionQuestion is what starting inv has to ask about production, if anything.
-func (a *App) productionQuestion(inv invocation) (ConfirmRun, bool) {
-	itself, calls := a.productionReach(inv.name)
+func (a *App) productionQuestion(inv run.Invocation) (ConfirmRun, bool) {
+	itself, calls := a.productionReach(inv.Task)
 	switch {
 	case itself:
-		return inv.confirm(TouchesProduction), true
+		return ConfirmRun{Invocation: inv, Reason: TouchesProduction}, true
 	case len(calls) > 0:
-		q := inv.confirm(CallsProduction)
-		q.Calls = calls
-		return q, true
+		return ConfirmRun{Invocation: inv, Reason: CallsProduction, Calls: calls}, true
 	}
 	return ConfirmRun{}, false
 }
 
-func (a *App) start(inv invocation) error {
-	name, args := inv.name, inv.args
+func (a *App) start(inv run.Invocation) error {
+	name := inv.Task
 	seq, why := a.claimSlot(name)
 	if why != "" {
 		return errors.New(why)
 	}
-	r, err := run.Start(a.Root, name, args, inv.interactive, inv.force)
-	if err != nil {
-		return err
-	}
+	r := run.Start(a.Root, inv)
 	// Whatever was in this slot is being replaced. Rust relied on Drop to take its process
 	// group with it; here it has to be said out loud, or a restart silently orphans the
 	// run it was restarting.
@@ -267,7 +243,7 @@ func (a *App) archiveIfFinished(s *slot) {
 		path, err = store.Save(a.stateDir, a.Root, s.Run)
 	}
 	if err != nil {
-		a.Status = fmt.Sprintf("could not save `task %s`: %v", s.Run.Root, err)
+		a.Status = fmt.Sprintf("could not save `task %s`: %v", s.Run.Task, err)
 		return
 	}
 	s.SavedTo = path
@@ -279,7 +255,7 @@ func (a *App) archiveIfFinished(s *slot) {
 		if s.Run.Outcome() == run.Ok {
 			mark = "✓"
 		}
-		a.Status = fmt.Sprintf("%s `task %s` finished in the background", mark, s.Run.Root)
+		a.Status = fmt.Sprintf("%s `task %s` finished in the background", mark, s.Run.Task)
 		return
 	}
 	switch masked := s.Run.RedactedSecrets; masked {
@@ -427,15 +403,14 @@ func (a *App) rerunSelectedWith(force bool) {
 	}
 	var args []string
 	// Only the root was invoked with these args; a child was not.
-	if a.Run != nil && a.Run.Root == name {
+	if a.Run != nil && a.Run.Task == name {
 		args = a.Run.Args
 	}
 	// Re-run it the way it was run: non-interactively it would hang again, and without
 	// `--force` a cached task would simply decline.
 	inv := a.armed(name, args)
 	if a.Run != nil {
-		inv = repeating(name, args, a.Run)
-		inv.force = inv.force || force
+		inv = run.Invocation{Task: name, Args: args, Force: a.Run.Force || force, Interactive: a.Run.Interactive}
 	}
 	a.restart(inv)
 }
@@ -447,9 +422,9 @@ func (a *App) rerunSelectedWith(force bool) {
 // way to bounce one without stopping it by hand first. Going through requestRun instead
 // only focused the live run, which is why `⇧I` on a task stuck at a hidden prompt — exactly
 // what it is for — did nothing.
-func (a *App) restart(inv invocation) {
-	if a.liveSlot(inv.name) {
-		a.Confirm = inv.confirm(WouldStopRunning)
+func (a *App) restart(inv run.Invocation) {
+	if a.liveSlot(inv.Task) {
+		a.Confirm = ConfirmRun{Invocation: inv, Reason: WouldStopRunning}
 		return
 	}
 	a.requestRun(inv)
@@ -461,8 +436,8 @@ func (a *App) InteractiveRerun() {
 	if a.Run == nil {
 		return
 	}
-	inv := repeating(a.Run.Root, a.Run.Args, a.Run)
-	inv.interactive = true
+	inv := a.Run.Invocation
+	inv.Interactive = true
 	// Armed as well, as `⇧R` arms force: a task that needed its prompt seen once will
 	// need it again.
 	a.InteractiveNext = true

@@ -273,7 +273,7 @@ func TestForceIsRecordedInTheManifest(t *testing.T) {
 	if List(base)[0].Force {
 		t.Error("force should be false")
 	}
-	if got := List(base)[0].Command(); got != "task check" {
+	if got := List(base)[0].Invocation().Command(); got != "task check" {
 		t.Errorf("command = %q", got)
 	}
 }
@@ -428,7 +428,7 @@ func TestATimelineIsOneTasksHistoryNewestFirst(t *testing.T) {
 		}
 	}
 	// Newest first: the standalone `task test`, then the failure, then the first pass.
-	if points[0].Root != "test" || !points[0].Ok() {
+	if points[0].Run.Task != "test" || !points[0].Ok() {
 		t.Errorf("newest is %+v", points[0])
 	}
 	if points[1].Ok() {
@@ -444,7 +444,7 @@ func TestATimelinePointRemembersTheRunItWasPartOf(t *testing.T) {
 		t.Fatal(err)
 	}
 	points := Timeline(base, "/proj", "lint")
-	if len(points) != 1 || points[0].Root != "all" {
+	if len(points) != 1 || points[0].Run.Task != "all" {
 		t.Fatalf("got %+v", points)
 	}
 }
@@ -749,7 +749,7 @@ func TestATimelinePointCarriesTheArgumentsItRanWith(t *testing.T) {
 	if len(points) != 1 {
 		t.Fatalf("got %d points", len(points))
 	}
-	if got := points[0].Command(); got != `task test -- "My Post Title"` {
+	if got := points[0].Run.Command(); got != `task test -- "My Post Title"` {
 		t.Errorf("command = %q, want one that would run again as written", got)
 	}
 }
