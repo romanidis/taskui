@@ -39,9 +39,9 @@ func (a *App) Detach() {
 
 	// Archived now, not on quit: at quit taskui is on its way out, and a detached run has no
 	// end to wait for — this is the last moment its output can be written down at all.
-	// Unfinished, so `saveIfFinished` will not do it; store.Save is happy either way, and a
-	// partial record beats none. Marked partial, so that if taskui is still open when the
-	// run ends, the record is rewritten whole rather than stopping at this moment.
+	// Unfinished, so the save when it ends has not happened yet; store.Save is happy either
+	// way, and a partial record beats none. Marked partial, so that if taskui is still open
+	// when the run ends, the record is rewritten whole rather than stopping at this moment.
 	kept := ""
 	if a.SavedTo == "" {
 		if dir, err := store.Save(a.stateDir, a.Root, a.Run); err == nil {
@@ -50,7 +50,7 @@ func (a *App) Detach() {
 				a.partial = map[*run.Run]bool{}
 			}
 			a.partial[a.Run] = true
-			a.Outcomes = store.LastOutcomes(a.stateDir, a.Root)
+			a.ReloadOutcomes()
 			kept = " — output so far is in the archive"
 		}
 	}

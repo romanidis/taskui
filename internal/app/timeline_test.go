@@ -803,7 +803,7 @@ func TestAFinishedLiveRunIsNotDiffedAgainstItself(t *testing.T) {
 	a.Screen = ScreenRun
 	r.Feed("backend:lint", "new output")
 	r.Finish(0)
-	a.saveIfFinished()
+	a.archiveIfFinished(a.slot)
 	if a.SavedTo == "" {
 		t.Fatal("not saved")
 	}
@@ -828,7 +828,7 @@ func TestAFinishedLiveRunThatNeverPassedIsNotDiffedAgainstItself(t *testing.T) {
 	r.Feed("backend:lint", "boom two")
 	r.ApplyFailed("backend:lint")
 	r.Finish(1)
-	a.saveIfFinished()
+	a.archiveIfFinished(a.slot)
 	press(a, Char('D'))
 	if a.Screen != ScreenDiff {
 		t.Fatalf("screen = %v status %q", a.Screen, a.Status)

@@ -223,9 +223,7 @@ func (a *App) PollRun() bool {
 	for _, p := range a.Parked {
 		if p.Run.Poll() {
 			moved = true
-			if p.Run.Finished() && a.needsSaving(p) {
-				a.saveParked(p)
-			}
+			a.archiveIfFinished(p)
 		}
 	}
 
@@ -248,64 +246,47 @@ func (a *App) PollRun() bool {
 	a.refreshSearch()
 	a.RebuildRunRows()
 	a.RebuildPickerRows()
-	a.saveIfFinished()
+	a.archiveIfFinished(a.slot)
 	a.emit()
 	return true
 }
 
-// saveParked archives a background run the moment it ends, and says so — otherwise the
-// only way to find out your build finished is to go and look at it.
-func (a *App) saveParked(p *slot) {
-	name := p.Run.Root
-	ok := p.Run.Outcome() == run.Ok
-	if err := a.archive(p); err != nil {
-		a.Status = fmt.Sprintf("could not save `task %s`: %v", name, err)
+// archiveIfFinished saves a slot's run the moment it ends, once, and says so. On screen,
+// that is how many secrets were masked; in the background it is how the run went, since
+// otherwise the only way to find out your build finished is to go and look at it.
+//
+// A run a detach saved partway is rewritten whole, rather than given a second record beside
+// the first.
+func (a *App) archiveIfFinished(s *slot) {
+	partial := a.partial[s.Run]
+	if !s.Run.Finished() || (s.SavedTo != "" && !partial) {
 		return
 	}
-	mark := "✗"
-	if ok {
-		mark = "✓"
-	}
-	a.Status = fmt.Sprintf("%s `task %s` finished in the background", mark, name)
-}
-
-// needsSaving reports whether a slot's finished run still has to be archived: never saved,
-// or saved only as far as it had got when it was detached.
-func (a *App) needsSaving(s *slot) bool {
-	return s.SavedTo == "" || a.partial[s.Run]
-}
-
-// archive saves a slot's finished run, rewriting the partial record a detach left rather
-// than adding a second one beside it.
-func (a *App) archive(s *slot) error {
 	var path string
 	var err error
-	if s.SavedTo == "" || !a.partial[s.Run] {
-		path, err = store.Save(a.stateDir, a.Root, s.Run)
-	} else {
+	if partial {
 		delete(a.partial, s.Run)
 		path, err = store.Resave(a.stateDir, s.SavedTo, a.Root, s.Run)
+	} else {
+		path, err = store.Save(a.stateDir, a.Root, s.Run)
 	}
 	if err != nil {
-		return err
+		a.Status = fmt.Sprintf("could not save `task %s`: %v", s.Run.Root, err)
+		return
 	}
 	s.SavedTo = path
 	// The picker's ✓/✗ column is only useful if it is current.
-	a.Outcomes = store.LastOutcomes(a.stateDir, a.Root)
-	return nil
-}
+	a.ReloadOutcomes()
 
-// saveIfFinished persists the run once, the moment it ends.
-func (a *App) saveIfFinished() {
-	if a.Run == nil || !a.Run.Finished() || !a.needsSaving(a.slot) {
+	if s != a.slot {
+		mark := "✗"
+		if s.Run.Outcome() == run.Ok {
+			mark = "✓"
+		}
+		a.Status = fmt.Sprintf("%s `task %s` finished in the background", mark, s.Run.Root)
 		return
 	}
-	if err := a.archive(a.slot); err != nil {
-		a.Status = fmt.Sprintf("could not save this run: %v", err)
-		return
-	}
-	masked := a.Run.RedactedSecrets
-	switch masked {
+	switch masked := s.Run.RedactedSecrets; masked {
 	case 0:
 		a.Status = "saved — no dotenv values found to mask"
 	case 1:

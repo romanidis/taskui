@@ -116,7 +116,7 @@ func TestADetachedRunIsArchivedWholeWhenItFinishes(t *testing.T) {
 	r.Feed("build", "the rest")
 	r.ApplyFailed("build")
 	r.Finish(1)
-	a.saveIfFinished()
+	a.archiveIfFinished(a.slot)
 
 	runs := store.List(a.StateDir())
 	if len(runs) != 1 {
