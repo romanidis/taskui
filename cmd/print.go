@@ -110,7 +110,7 @@ func searchStored(pattern string, scope search.Scope) error {
 	if err != nil {
 		return err
 	}
-	results, dropped := search.InStoreScoped(base, query, 50, scope)
+	results, dropped := search.InStore(base, query, 50, scope)
 
 	if len(results) == 0 {
 		where := ""
@@ -276,7 +276,7 @@ func printDiff(out io.Writer, root, taskName string) error {
 	fmt.Fprintf(out, "+++ %s  (%s)\n", taskName, app.Ago(newest.WhenUnix))
 	for _, e := range diff.Hunks(edits, 3) {
 		switch {
-		case diff.IsGap(e):
+		case e.IsGap():
 			fmt.Fprintln(out, "...")
 		case e.Op == diff.Ins:
 			fmt.Fprintln(out, "+"+e.Text)

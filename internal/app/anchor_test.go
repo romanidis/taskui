@@ -17,7 +17,7 @@ func TestCursorStaysWhileAnExpandedTaskPrints(t *testing.T) {
 	for i := range 20 {
 		a.Run.Feed("test", "line "+string(rune('a'+i)))
 	}
-	a.RunExpand("test")
+	a.RunSetFold("test", FoldFull)
 	a.RebuildRunRows()
 
 	// Park in the middle of the output.

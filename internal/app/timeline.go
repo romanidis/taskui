@@ -231,7 +231,7 @@ func (a *App) rebuildDiffRows() {
 	a.DiffRows = make([]DiffRow, 0, len(kept))
 	for _, e := range kept {
 		a.DiffRows = append(a.DiffRows, DiffRow{
-			Op: e.Op, Text: e.Text, Old: e.OldLine, New: e.NewLine, Gap: diff.IsGap(e),
+			Op: e.Op, Text: e.Text, Old: e.OldLine, New: e.NewLine, Gap: e.IsGap(),
 		})
 	}
 	a.DiffCursor = clamp(a.DiffCursor, 0, max(0, len(a.DiffRows)-1))

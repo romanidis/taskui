@@ -394,7 +394,7 @@ func (a *App) OpenRunForTest(r *run.Run) {
 	a.RebuildPickerRows()
 }
 
-// RunSetFold forces a task's fold state, for tests.
+// RunSetFold sets how much of a task's output the run view shows.
 func (a *App) RunSetFold(name string, fold Fold) {
 	a.runFolds[name] = fold
 	a.RebuildRunRows()
@@ -402,9 +402,6 @@ func (a *App) RunSetFold(name string, fold Fold) {
 
 // RunIsExpanded reports whether a task is showing all of its output.
 func (a *App) RunIsExpanded(name string) bool { return a.FoldOf(name) == FoldFull }
-
-// RunExpand opens a task all the way.
-func (a *App) RunExpand(name string) { a.RunSetFold(name, FoldFull) }
 
 // RunToggleFoldAll is `⇧O` in the run view: move every task to the same state at once.
 //

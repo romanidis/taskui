@@ -357,7 +357,7 @@ func TestPressingEOnALocationAsksForAnEditor(t *testing.T) {
 	t.Setenv("EDITOR", "vim")
 	a := editable(t, "internal/app/view.go:212:5: undefined: foo")
 
-	a.RunExpand("lint")
+	a.RunSetFold("lint", FoldFull)
 	a.RebuildRunRows()
 	// Land on the line that carries the location.
 	for i, row := range a.RunRows {
@@ -391,7 +391,7 @@ func TestTheEditorIsOnlyLaunchedOnce(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "vim")
 	a := editable(t, "internal/app/view.go:9:1: oops")
-	a.RunExpand("lint")
+	a.RunSetFold("lint", FoldFull)
 	a.RebuildRunRows()
 	for i, row := range a.RunRows {
 		if !row.IsTask && row.Index == 1 {
@@ -413,7 +413,7 @@ func TestEOnALineWithNoLocationFallsBackToTheTask(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "vim")
 	a := editable(t, "internal/app/view.go:212:5: undefined: foo")
-	a.RunExpand("lint")
+	a.RunSetFold("lint", FoldFull)
 	a.RebuildRunRows()
 	// Line 0 is "starting", which carries nothing.
 	for i, row := range a.RunRows {
@@ -439,7 +439,7 @@ func TestEOnATaskThatNamedNoFileSaysSo(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "vim")
 	a := editable(t, "everything is fine")
-	a.RunExpand("lint")
+	a.RunSetFold("lint", FoldFull)
 	a.RebuildRunRows()
 	press(a, Char('e'))
 
@@ -457,7 +457,7 @@ func TestAMissingFileDoesNotOpenAnything(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "vim")
 	a := editable(t, "nowhere/at/all.go:4:1: oops")
-	a.RunExpand("lint")
+	a.RunSetFold("lint", FoldFull)
 	a.RebuildRunRows()
 	for i, row := range a.RunRows {
 		if !row.IsTask && row.Index == 1 {
@@ -478,7 +478,7 @@ func TestNoEditorConfiguredSaysWhatToSet(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
 	a := editable(t, "internal/app/view.go:212:5: undefined: foo")
-	a.RunExpand("lint")
+	a.RunSetFold("lint", FoldFull)
 	a.RebuildRunRows()
 	for i, row := range a.RunRows {
 		if !row.IsTask && row.Index == 1 {
@@ -704,7 +704,7 @@ func TestPressingEReadsThePathFromWhereTheTaskRan(t *testing.T) {
 	r.Finish(1)
 	a.OpenRunForTest(r)
 	a.Screen = ScreenRun
-	a.RunExpand("site:build")
+	a.RunSetFold("site:build", FoldFull)
 	a.RebuildRunRows()
 	for i, row := range a.RunRows {
 		if !row.IsTask {

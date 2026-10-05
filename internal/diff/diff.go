@@ -359,13 +359,12 @@ func Hunks(edits []Edit, context int) []Edit {
 		}
 	}
 	// A gap marker at the very end is a promise of more that is not there.
-	if len(out) > 0 && out[len(out)-1].isGap() {
+	if len(out) > 0 && out[len(out)-1].IsGap() {
 		out = out[:len(out)-1]
 	}
 	return out
 }
 
 // IsGap reports the elision marker Hunks leaves where it dropped shared lines.
-func IsGap(e Edit) bool { return e.isGap() }
 
-func (e Edit) isGap() bool { return e.Op == Same && e.Text == "" && e.OldLine == 0 && e.NewLine == 0 }
+func (e Edit) IsGap() bool { return e.Op == Same && e.Text == "" && e.OldLine == 0 && e.NewLine == 0 }

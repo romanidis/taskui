@@ -102,7 +102,7 @@ func drive(a *app.App, feed string) {
 
 	for {
 		a.PollRun()
-		a.RefreshLive()
+		a.RefreshProfile()
 		if time.Now().After(deadline) {
 			break
 		}
@@ -118,7 +118,7 @@ func drive(a *app.App, feed string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	a.PollRun()
-	a.RefreshLive()
+	a.RefreshProfile()
 }
 
 // detailGrace is how long a one-frame render waits for the JSON listing. Generous, because
@@ -135,7 +135,7 @@ const coverGrace = 20 * time.Second
 // is over, and the run's status to exit with.
 func screenshotRun(out io.Writer, a *app.App) error {
 	a.StartEnrichment()
-	if err := a.StartRun(opts.runTask); err != nil {
+	if err := a.StartRun(opts.runTask, nil); err != nil {
 		return err
 	}
 	// Starting a run no longer takes the screen — the picker keeps it and shows the run

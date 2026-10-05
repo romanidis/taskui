@@ -31,9 +31,10 @@ func stopRun(r *run.Run) string {
 	return fmt.Sprintf("stopping `%s` — again to kill it outright", r.Root)
 }
 
-// StartRun kicks off `task <name>` and switches to the run view.
-func (a *App) StartRun(name string) error {
-	return a.StartRunWith(name, nil)
+// StartRun kicks off `task <name> <args>` with whatever `F` and `I` have armed, past every
+// question, and switches to the run view.
+func (a *App) StartRun(name string, args []string) error {
+	return a.start(a.armed(name, args))
 }
 
 // ResumeRun returns to a run already in progress.
@@ -127,11 +128,6 @@ func (a *App) requestRun(inv invocation) {
 	if err := a.start(inv); err != nil {
 		a.Status = fmt.Sprintf("could not start `task %s`: %v", name, err)
 	}
-}
-
-// StartRunWith starts a task with whatever `F` and `I` have armed, past every question.
-func (a *App) StartRunWith(name string, args []string) error {
-	return a.start(a.armed(name, args))
 }
 
 // productionReach is how starting name reaches the danger list: whether it is on it itself,

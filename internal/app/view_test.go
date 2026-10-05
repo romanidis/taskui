@@ -1439,7 +1439,7 @@ func TestCommandRowsCarryTheirStatus(t *testing.T) {
 	a.Run.Feed("test", "ok")
 	a.Run.Apply(run.LineEvent{Task: "test", Raw: "go test ./...", IsCommand: true})
 	a.Run.Feed("test", "--- FAIL: TestOrderTotal")
-	a.RunExpand("test")
+	a.RunSetFold("test", FoldFull)
 	a.Run.ApplyFailed("test")
 	a.Run.Finish(1)
 	a.RebuildRunRows()
@@ -1468,7 +1468,7 @@ func TestOutputHangsOffItsCommand(t *testing.T) {
 	a.Run.Feed("test", "--- FAIL: TestOrderTotal")
 	a.Run.Apply(run.LineEvent{Task: "test", Raw: "go vet ./...", IsCommand: true})
 	a.Run.Feed("test", "clean")
-	a.RunExpand("test")
+	a.RunSetFold("test", FoldFull)
 	a.RebuildRunRows()
 
 	frame := strings.Join(a.RenderHeadless(80, 14), "\n")

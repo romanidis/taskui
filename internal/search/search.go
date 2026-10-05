@@ -120,16 +120,7 @@ type RunHits struct {
 	Hits     []StoredHit
 }
 
-// InStore searches every stored run, newest first.
-//
-// maxPerRun caps how much of a single noisy run can crowd out the others; the count of
-// what was dropped is reported so a truncated result never reads as a complete one.
-func InStore(base string, q *Query, maxPerRun int) ([]RunHits, int) {
-	return InStoreScoped(base, q, maxPerRun, Scope{})
-}
-
-// Scope narrows what InStore looks at. The zero value looks at everything, which is what
-// InStore has always done.
+// Scope narrows what InStore looks at. The zero value looks at everything.
 type Scope struct {
 	// Task keeps only this task's output. `backend:test` rather than every task of every run
 	// that happened to contain it.
@@ -150,12 +141,15 @@ func (s Scope) keeps(m store.Manifest) bool {
 	return true
 }
 
-// InStoreScoped is InStore with the search narrowed.
+// InStore searches the stored runs that scope keeps, newest first.
+//
+// maxPerRun caps how much of a single noisy run can crowd out the others; the count of
+// what was dropped is reported so a truncated result never reads as a complete one.
 //
 // Grepping every stored run is the right default and the wrong thing to do twice. Once you
 // know it is `backend:test` that has been failing, every hit from every other task is
 // something to scroll past — and the manifests already hold the task name and the time.
-func InStoreScoped(base string, q *Query, maxPerRun int, scope Scope) ([]RunHits, int) {
+func InStore(base string, q *Query, maxPerRun int, scope Scope) ([]RunHits, int) {
 	var out []RunHits
 	dropped := 0
 

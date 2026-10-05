@@ -19,7 +19,7 @@ func render(edits []Edit) string {
 		case Ins:
 			b.WriteString("+" + e.Text + "\n")
 		case Same:
-			if IsGap(e) {
+			if e.IsGap() {
 				b.WriteString("...\n")
 			} else {
 				b.WriteString(" " + e.Text + "\n")
@@ -185,7 +185,7 @@ func TestHunksDoNotEndInAGap(t *testing.T) {
 	older := append([]string{"CHANGED"}, manyLines(50)...)
 	newer := append([]string{"OTHER"}, manyLines(50)...)
 	hunks := Hunks(Lines(older, newer), 1)
-	if len(hunks) > 0 && IsGap(hunks[len(hunks)-1]) {
+	if len(hunks) > 0 && hunks[len(hunks)-1].IsGap() {
 		t.Errorf("trailing gap:\n%s", render(hunks))
 	}
 }

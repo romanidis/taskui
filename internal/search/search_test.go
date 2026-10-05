@@ -120,7 +120,7 @@ func TestTheSameQueryWorksOnStoredRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, dropped := InStore(base, mustQuery(t, "error"), 100)
+	results, dropped := InStore(base, mustQuery(t, "error"), 100, Scope{})
 	if dropped != 0 {
 		t.Errorf("dropped = %d", dropped)
 	}
@@ -148,7 +148,7 @@ func TestRunsWithoutHitsAreOmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, _ := InStore(base, mustQuery(t, "error"), 100)
+	results, _ := InStore(base, mustQuery(t, "error"), 100, Scope{})
 	if len(results) != 0 {
 		t.Errorf("results = %v", results)
 	}
@@ -166,7 +166,7 @@ func TestPerRunTruncationIsCounted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, dropped := InStore(base, mustQuery(t, "error"), 4)
+	results, dropped := InStore(base, mustQuery(t, "error"), 4, Scope{})
 	if len(results[0].Hits) != 4 {
 		t.Errorf("hits = %d", len(results[0].Hits))
 	}
@@ -197,7 +197,7 @@ func TestAVeryLongLineDoesNotTruncateTheSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, _ := InStore(base, mustQuery(t, "after the blob"), 100)
+	results, _ := InStore(base, mustQuery(t, "after the blob"), 100, Scope{})
 	if len(results) != 1 || len(results[0].Hits) != 1 {
 		t.Fatalf("the line past the blob went missing: %v", results)
 	}
@@ -218,12 +218,12 @@ func TestScopingTheSearchToOneTask(t *testing.T) {
 		{"b", "FAIL: broken link"},
 	})
 
-	all, _ := InStore(base, mustQuery(t, "FAIL"), 50)
+	all, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{})
 	if hits := countHits(all); hits != 2 {
 		t.Fatalf("unscoped found %d hits, want 2", hits)
 	}
 
-	scoped, _ := InStoreScoped(base, mustQuery(t, "FAIL"), 50, Scope{Task: "a"})
+	scoped, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{Task: "a"})
 	if hits := countHits(scoped); hits != 1 {
 		t.Errorf("scoped found %d hits, want just the one task's", hits)
 	}
@@ -241,7 +241,7 @@ func TestScopingTheSearchByAge(t *testing.T) {
 	archive(t, base, "/proj", 3*24*time.Hour, [][2]string{{"a", "FAIL old"}})
 	archive(t, base, "/proj", time.Hour, [][2]string{{"a", "FAIL new"}})
 
-	recent, _ := InStoreScoped(base, mustQuery(t, "FAIL"), 50, Scope{Since: time.Now().Add(-24 * time.Hour)})
+	recent, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{Since: time.Now().Add(-24 * time.Hour)})
 	if hits := countHits(recent); hits != 1 {
 		t.Fatalf("found %d hits, want only the recent one", hits)
 	}
@@ -255,7 +255,7 @@ func TestScopingTheSearchToOneProject(t *testing.T) {
 	archive(t, base, "/proj", 0, [][2]string{{"a", "FAIL here"}})
 	archive(t, base, "/elsewhere", 0, [][2]string{{"a", "FAIL there"}})
 
-	mine, _ := InStoreScoped(base, mustQuery(t, "FAIL"), 50, Scope{Project: "/proj"})
+	mine, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{Project: "/proj"})
 	if hits := countHits(mine); hits != 1 {
 		t.Errorf("found %d hits, want only this project's", hits)
 	}
@@ -266,8 +266,8 @@ func TestAnEmptyScopeLooksAtEverything(t *testing.T) {
 	base := t.TempDir()
 	archive(t, base, "/proj", 0, [][2]string{{"a", "FAIL one"}, {"b", "FAIL two"}})
 
-	scoped, _ := InStoreScoped(base, mustQuery(t, "FAIL"), 50, Scope{})
-	unscoped, _ := InStore(base, mustQuery(t, "FAIL"), 50)
+	scoped, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{})
+	unscoped, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{})
 	if countHits(scoped) != countHits(unscoped) {
 		t.Errorf("scoped %d, unscoped %d", countHits(scoped), countHits(unscoped))
 	}

@@ -78,22 +78,6 @@ func NamespaceOf(name string) string {
 	return ns
 }
 
-// Coverage is the check itself, over a list of tasks and a way to ask what a root reaches.
-//
-// reach is injected rather than called, because resolving a graph spawns a `task --summary`
-// per node and a test should not need go-task installed to state what this does with a
-// given shape.
-//
-// The rule is per namespace and not per task, which is a deliberate loosening. xerum's root
-// `build` calls `app:dist` and not `app:build` — on purpose, because dist stages both apps
-// where a deploy consumes them — and a per-task rule reports that, and `app:build` is not
-// missing from anything. Measured across both repositories the per-task rule found eleven
-// things where this one finds four, and the seven were all correct as written. A namespace
-// the aggregate reaches at all has been given its chance to run.
-func Coverage(tasks []task.Task, reach func(string) []string, exempt []string) []Finding {
-	return BuildGrid(tasks, reach, exempt).Findings()
-}
-
 // State is what one aggregate does about one namespace.
 type State int
 
@@ -128,6 +112,18 @@ type Grid struct {
 	Elsewhere map[string]map[string][]string
 }
 
+// BuildGrid is the check itself, over a list of tasks and a way to ask what a root reaches.
+//
+// reach is injected rather than called, because resolving a graph spawns a `task --summary`
+// per node and a test should not need go-task installed to state what this does with a
+// given shape.
+//
+// The rule is per namespace and not per task, which is a deliberate loosening. xerum's root
+// `build` calls `app:dist` and not `app:build` — on purpose, because dist stages both apps
+// where a deploy consumes them — and a per-task rule reports that, and `app:build` is not
+// missing from anything. Measured across both repositories the per-task rule found eleven
+// things where this one finds four, and the seven were all correct as written. A namespace
+// the aggregate reaches at all has been given its chance to run.
 func BuildGrid(tasks []task.Task, reach func(string) []string, exemptions []string) Grid {
 	// The verb every namespaced task answers, so an aggregate can ask who claims its name.
 	byVerb := map[string][]task.Task{}

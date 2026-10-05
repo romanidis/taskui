@@ -133,7 +133,7 @@ func (a *App) applyHistorySearch() {
 		// Half-typed regex: leave the list alone rather than emptying it.
 		return
 	}
-	results, _ := search.InStore(a.stateDir, query, 200)
+	results, _ := search.InStore(a.stateDir, query, 200, search.Scope{})
 	for _, r := range results {
 		a.HistoryHits[r.Manifest.ID] = len(r.Hits)
 	}

@@ -106,7 +106,8 @@ func (a *App) OpenProfile() {
 	}
 }
 
-// refreshProfile keeps a profile of a live run current.
+// RefreshProfile keeps a profile of a live run current. The Bubble Tea loop calls it on
+// every tick; the headless driver has its own loop and calls it too.
 //
 // A profile that froze at the moment you pressed `z` would be showing a run that no longer
 // exists — during a slow build, which is exactly when you would open it. It stops updating
@@ -115,7 +116,7 @@ func (a *App) OpenProfile() {
 // The cursor follows its task rather than its index: the list is sorted by time, so rows
 // overtake each other as the numbers move, and an index-holding cursor would drift onto
 // whatever happened to slide underneath it.
-func (a *App) refreshProfile() {
+func (a *App) RefreshProfile() {
 	if a.Screen != ScreenProfile || a.Run == nil {
 		return
 	}
@@ -173,15 +174,11 @@ func (a *App) GotoProfiledTask() {
 	}
 	a.Screen = ScreenRun
 	a.Following = false
-	a.RunExpand(cost.Name)
+	a.RunSetFold(cost.Name, FoldFull)
 	a.RebuildRunRows()
 	a.cursorToTask(cost.Name)
 	a.Status = ""
 }
-
-// RefreshLive brings whatever is on screen up to date with the run behind it. The Bubble
-// Tea loop does this on every tick; the headless driver has its own loop and needs the same.
-func (a *App) RefreshLive() { a.refreshProfile() }
 
 func (a *App) handleProfileKey(k Key) bool {
 	act := func() keys.Action { return a.action(k, ScreenProfile) }

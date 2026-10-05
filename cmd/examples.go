@@ -429,7 +429,7 @@ var examples = []example{{
 		frame(draw(13, "jjjjjjjjjj", func(a *app.App) {
 			a.OpenRunForTest(sampleRun())
 			a.Screen = app.ScreenRun
-			a.RunExpand(sampleTest)
+			a.RunSetFold(sampleTest, app.FoldFull)
 		})),
 		text("`go test` prints a bare basename relative to its package directory, which is neither " +
 			"where the run started nor named anywhere in the line. taskui indexes the project the " +

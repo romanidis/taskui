@@ -281,7 +281,7 @@ func TestRestartingALiveSlotAsksFirst(t *testing.T) {
 // Switching slots must not lose where you were reading in the one you left.
 func TestAParkedSlotKeepsItsViewState(t *testing.T) {
 	a := appWithLiveRun(t, "backend:lint")
-	a.RunExpand("backend:lint")
+	a.RunSetFold("backend:lint", FoldFull)
 	a.RebuildRunRows()
 	a.Following = false
 

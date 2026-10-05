@@ -24,7 +24,7 @@ func TestOutputWithWideCharactersAndTabsFitsItsRow(t *testing.T) {
 	r.Finish(0)
 	a.OpenRunForTest(r)
 	a.Screen = ScreenRun
-	a.RunExpand("test")
+	a.RunSetFold("test", FoldFull)
 	a.RebuildRunRows()
 
 	for _, width := range []int{40, 60, 100} {
@@ -87,7 +87,7 @@ func TestACommandEchoIsMeasuredAsItIsDrawn(t *testing.T) {
 		IsCommand: true,
 	})
 	a.OpenRunForTest(r)
-	a.RunExpand("build")
+	a.RunSetFold("build", FoldFull)
 	a.RebuildRunRows()
 
 	for i, row := range a.RunRows {
@@ -166,7 +166,7 @@ func TestEchoesAndOutputTakeTheirOwnColours(t *testing.T) {
 	r.Feed("build", "compiled fine")
 	a.OpenRunForTest(r)
 	a.Screen = ScreenRun
-	a.RunExpand("build")
+	a.RunSetFold("build", FoldFull)
 	a.RebuildRunRows()
 
 	echo, ok := find(strings.Split(a.RenderFrame(80, 12), "\n"), "go build")

@@ -104,7 +104,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.collectDetails()
 		a.collectCoverage()
 		a.collectReload()
-		a.refreshProfile()
+		a.RefreshProfile()
 		a.noteFinished()
 		return a, tea.Batch(a.tick(), a.ringBell())
 
@@ -121,7 +121,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.PollRun()
 		a.PollWatch()
-		a.refreshProfile()
+		a.RefreshProfile()
 		a.noteFinished()
 		return a, tea.Batch(a.launchEditor(), a.ringBell())
 	}

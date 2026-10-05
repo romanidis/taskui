@@ -56,7 +56,7 @@ func gapNames(found []Finding) []string {
 // automated tests", and the graph never gets there.
 func TestCoverageFindsTheDeclaredButUnreached(t *testing.T) {
 	tasks, reach := codocShape()
-	got := gapNames(Coverage(tasks, reach, nil))
+	got := gapNames(BuildGrid(tasks, reach, nil).Findings())
 
 	want := []string{"web:test", "site:build", "deploy:backend:build"}
 	for _, w := range want {
@@ -74,7 +74,7 @@ func TestCoverageFindsTheDeclaredButUnreached(t *testing.T) {
 // that reported those would be reporting the ordinary shape of a Taskfile.
 func TestCoverageIsQuietWhenThereIsNothingToSay(t *testing.T) {
 	tasks, reach := codocShape()
-	for _, f := range Coverage(tasks, reach, nil) {
+	for _, f := range BuildGrid(tasks, reach, nil).Findings() {
 		if f.Aggregate == "lint" || f.Aggregate == "precommit" {
 			t.Errorf("%s has nothing wrong with it, reported anyway: %+v", f.Aggregate, f)
 		}
@@ -96,7 +96,7 @@ func TestCoverageFollowsTheGraphRatherThanTheName(t *testing.T) {
 		}
 		return []string{name}
 	}
-	if found := Coverage(tasks, reach, nil); len(found) != 0 {
+	if found := BuildGrid(tasks, reach, nil).Findings(); len(found) != 0 {
 		t.Errorf("api is reached through api:check; reported anyway: %+v", found)
 	}
 }
@@ -116,7 +116,7 @@ func TestCoverageAsksAboutNamespacesNotTasks(t *testing.T) {
 		}
 		return []string{name}
 	}
-	if found := Coverage(tasks, reach, nil); len(found) != 0 {
+	if found := BuildGrid(tasks, reach, nil).Findings(); len(found) != 0 {
 		t.Errorf("app was reached through app:dist; reported anyway: %+v", found)
 	}
 }
@@ -141,7 +141,7 @@ func TestCoverageDowngradesWhatAnotherAggregateReaches(t *testing.T) {
 		return []string{name}
 	}
 
-	found := Coverage(tasks, reach, nil)
+	found := BuildGrid(tasks, reach, nil).Findings()
 	if len(found) != 1 {
 		t.Fatalf("want one finding, got %+v", found)
 	}
@@ -157,7 +157,7 @@ func TestCoverageDowngradesWhatAnotherAggregateReaches(t *testing.T) {
 // run — a deploy that must not fire from a local gate, a docs build.
 func TestCoverageHonoursTheExemptions(t *testing.T) {
 	tasks, reach := codocShape()
-	got := gapNames(Coverage(tasks, reach, []string{"deploy:*", "site:build"}))
+	got := gapNames(BuildGrid(tasks, reach, []string{"deploy:*", "site:build"}).Findings())
 
 	if !slices.Equal(got, []string{"web:test"}) {
 		t.Errorf("deploy:* and site:build are exempt, so only web:test is left; got %v", got)

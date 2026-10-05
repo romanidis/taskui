@@ -215,7 +215,7 @@ func TestALiveProfileKeepsUp(t *testing.T) {
 
 	before := len(a.ProfileRows)
 	r.Feed("other", "appeared")
-	a.RefreshLive()
+	a.RefreshProfile()
 	if len(a.ProfileRows) <= before {
 		t.Errorf("rows went %d → %d; a live profile should have picked the new task up",
 			before, len(a.ProfileRows))
@@ -228,7 +228,7 @@ func TestAFinishedProfileHoldsStill(t *testing.T) {
 	press(a, Char('T'))
 	rows := len(a.ProfileRows)
 	a.Run.Feed("sneaky", "after the fact")
-	a.RefreshLive()
+	a.RefreshProfile()
 	if len(a.ProfileRows) != rows {
 		t.Error("a finished profile moved under the cursor")
 	}
@@ -890,7 +890,7 @@ tasks:
 	defer a.KillAll()
 
 	a.Screen = ScreenRun
-	if err := a.StartRunWith("prompt", nil); err != nil {
+	if err := a.StartRun("prompt", nil); err != nil {
 		t.Fatal(err)
 	}
 	typingAt := a.Run

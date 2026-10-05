@@ -359,7 +359,7 @@ func TestAProfileOpenAcrossTheEndOfARunShowsHowItEnded(t *testing.T) {
 	a.OpenProfile()
 
 	r.Finish(0)
-	a.refreshProfile()
+	a.RefreshProfile()
 	for _, c := range a.ProfileRows {
 		if c.Name == "build" && c.Status == run.Running {
 			t.Error("the profile still shows the run as going")
