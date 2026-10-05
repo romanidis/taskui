@@ -268,6 +268,12 @@ func looksDangerous(name, desc string) bool {
 	return strings.HasSuffix(name, ":prod") || strings.HasPrefix(name, "deploy:") || name == "deploy"
 }
 
+// Dangerous is the same decision for a task known only by name: one go-task does not list,
+// because it is `internal: true`, but which a listed task can still call.
+func Dangerous(name string, declared []string) bool {
+	return dangerous(Task{Name: name}, name, declared)
+}
+
 // dangerous decides by both of a task's names: the one go-task lists it by and the one
 // taskui shows. They differ for a namespace default, and a `.taskui-danger` line or a
 // `:prod` suffix written against either one means the same task — `deploy:*` is meant to

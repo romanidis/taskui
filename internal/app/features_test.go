@@ -775,6 +775,48 @@ func TestWatchingOneTaskFromThePicker(t *testing.T) {
 	}
 }
 
+// `.taskui-danger` says `deploy:*`. `deploy:apply` matches it but is `internal: true`, so
+// `task --list-all` never lists it, a.Tasks never holds it, and isDangerous answers false
+// for it — so `release`, which calls it, starts without a question.
+func TestATaskCallingAnInternalProductionTaskAsks(t *testing.T) {
+	dir := t.TempDir()
+	taskfile := `version: '3'
+tasks:
+  release:
+    desc: Cut a release
+    cmds:
+      - task: deploy:apply
+  deploy:apply:
+    internal: true
+    cmds:
+      - echo applying to production
+`
+	if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".taskui-danger"), []byte("deploy:*\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := task.Discover(dir)
+	if err != nil {
+		t.Skip(err)
+	}
+	a := New(tasks, dir)
+	a.SetStateDir(t.TempDir())
+	a.StartCoverage()
+	a.AwaitCoverage(30 * time.Second)
+	t.Logf("release reaches %v", a.calls.Reachable("release"))
+
+	a.RequestRun("release", nil)
+	defer a.KillAll()
+	if a.Confirm == nil {
+		t.Errorf(
+			"`release` calls deploy:apply (matches deploy:* in .taskui-danger) but started without asking; running = %q",
+			rootOf(a),
+		)
+	}
+}
+
 // You are typing at `prompt` (input mode, `i`). Watch mode re-runs `test` on a save; start()
 // claims a slot by parking the focused one and putting the new run on screen. SendingInput
 // is an app-wide flag, not the slot's, so it stays on — and the next keystroke (a `y⏎`, a

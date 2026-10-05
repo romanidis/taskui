@@ -6,6 +6,7 @@ import (
 
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/store"
+	"github.com/romanidis/taskui/internal/task"
 )
 
 // stopRun stops a run, escalating on a second ask, and says what happened.
@@ -134,13 +135,17 @@ func (a *App) StartRunWith(name string, args []string) error {
 }
 
 // isDangerous reports whether a task is on the danger list.
+//
+// A task the listing leaves out is still asked about: an `internal: true` task never appears
+// in `task --list-all`, so `release` calling `deploy:apply` used to start without a word
+// however plainly `.taskui-danger` said `deploy:*`.
 func (a *App) isDangerous(name string) bool {
 	for _, t := range a.Tasks {
 		if t.Name == name {
 			return t.Dangerous
 		}
 	}
-	return false
+	return task.Dangerous(name, task.DangerPatterns(a.Root))
 }
 
 // dangerCalled is the tasks on the danger list that name calls, at any depth.
