@@ -17,7 +17,7 @@ local M = {}
 ---@field open_quickfix boolean Open the quickfix window when it is filled from a failure.
 ---@field notify boolean Say how a run went — for when the terminal is not the window you are in.
 ---@field keys table<string, string|false> The two keys the host owns inside the terminal; the rest belong to taskui.
----@field jump_key string taskui's own jump key, which `run()` types to reach a task. Set it if your config moves it.
+---@field search_key string taskui's own search key, which `run()` types to reach a task. Set it if your config moves it.
 M.defaults = {
   binary = "taskui",
   project = nil,
@@ -34,13 +34,14 @@ M.defaults = {
   quickfix = "on_failure",
   open_quickfix = false,
   notify = true,
-  -- taskui's default jump key. This is the one taskui binding the plugin has to
-  -- know, because `run()` reaches a task by typing it into the terminal rather
-  -- than through a socket, and a keystroke is only as stable as the keymap it
-  -- goes to. It is here so that a `keys: jump:` line in a taskui config has
-  -- somewhere to be answered — without it, rebinding jump silently stops
-  -- `:TaskUI run` working, with the keystroke landing on whatever took the key.
-  jump_key = "f",
+  -- taskui's default search key. This is the one taskui binding the plugin has
+  -- to know, because `run()` reaches a task by typing it into the terminal
+  -- rather than through a socket, and a keystroke is only as stable as the
+  -- keymap it goes to. It is here so that a `keys: search:` line in a taskui
+  -- config has somewhere to be answered — without it, rebinding search silently
+  -- stops `:TaskUI run` working, with the keystroke landing on whatever took the
+  -- key.
+  search_key = "/",
   keys = {
     -- The two keys the host owns, bound *inside* the terminal buffer only, so
     -- they cost nothing anywhere else. Everything else in there is taskui's:
@@ -60,7 +61,19 @@ M.options = vim.deepcopy(M.defaults)
 --- Merges user options over the defaults.
 ---@param opts Taskui.Config|nil
 function M.setup(opts)
-  M.options = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts or {})
+  opts = opts or {}
+  -- taskui folded its jump key into the search prompt, where ⇥ finds rather
+  -- than filters, so the old option has nothing left to name. Said rather than
+  -- ignored: a setting that silently stopped mattering looks like one that works.
+  if opts.jump_key ~= nil then
+    vim.notify(
+      "taskui: jump_key is now search_key — taskui's `/` prompt finds a task with ⇥",
+      vim.log.levels.WARN
+    )
+    opts = vim.deepcopy(opts)
+    opts.jump_key = nil
+  end
+  M.options = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts)
 end
 
 --- The project directory a command should run in: what was configured, or

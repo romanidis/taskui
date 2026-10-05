@@ -14,7 +14,7 @@ previous runs.
  └ migrate        Apply pending migrations                                   ⚠
  ▸ deploy                                                               ⚠    9
  ─────────────────────────────────────────────────────────────────────────────
- space fold   o output   ⏎ run   m mark   a args   / filter   f jump   ? keys
+ space fold   o output   ⏎ run   m mark   a args   / filter   d detail   ? keys
 ```
 
 ## What it is
@@ -218,7 +218,7 @@ stale. `taskui examples <topic>` prints just one.
 `man taskui` covers the options, the commands, the keys and the files — its reference
 sections are generated from the same flag set and keymap table the program uses, and a test
 fails if they drift. `?` from any screen lists every
-binding, grouped by context, and `f` there searches that list rather than scrolling it —
+binding, grouped by context, and `/` there searches that list rather than scrolling it —
 eight sections is a page and a half to get to "which key copies a line". The footer shows a
 subset of the same table — one source of truth, so the two cannot disagree.
 
@@ -277,8 +277,7 @@ In the picker:
 | `⇧M` | clear every mark |
 | `a` | run it with arguments |
 | `⇧W` | watch: re-run the marked set, or this task, whenever the source changes |
-| `/` | filter the list down to matching tasks |
-| `f` | jump to a task, leaving the list intact |
+| `/` | filter the list down to matching tasks — ⇥ in the prompt finds instead, moving the cursor and leaving the list whole |
 | `d` | what this task is, and what it will run |
 | `v` | the whole screen for whatever is running, or the last run |
 | `⇧H` | how this one task has been going, run after run |
@@ -305,10 +304,9 @@ In a run:
 | `space` `o` | how much output: hidden, a peek at the last few lines, all of it |
 | `←` `→` | the same three states, for hands that reach for a tree's keys |
 | `⇧O` | move every task through the same three states |
-| `/` | search the output |
+| `/` | search the output — ⇥ in the prompt filters instead, to the matching lines only |
 | `n` `⇧N` | next / previous match |
-| `f` | filter to matching lines only |
-| `[` `]` | less / more context around each hit |
+| `[` `]` | less / more context around each hit, while filtering |
 | `r` | re-run this task, same arguments |
 | `⇧R` | the same, with --force — ignore go-task's up-to-date checks |
 | `⇧F` | re-run everything in this run that failed, each in its own slot |
@@ -1173,7 +1171,7 @@ a path.
 theme: synthwave
 
 keys:
-  filter-matches: z
+  follow: z
   edit: E
 
 peek-lines: 8
@@ -1464,13 +1462,12 @@ round-trip test read from the same source as the renderer.
 ### Keys
 
 Every action can be pointed at a different key. The action keeps its meaning on every
-screen that offers it, so rebinding `filter-matches` moves it in the run view and nowhere
-else has to care:
+screen that offers it, so rebinding `search` moves the `/` prompt on every screen at once:
 
 ```yaml
 keys:
   pivot: P
-  filter-matches: z
+  search: z
   stop-all: Q
   fold-all: shift+space
   rerun: ctrl+r
@@ -1592,7 +1589,7 @@ require("taskui").setup({
   quickfix = "on_failure", -- on_failure | always | never
   open_quickfix = false,   -- open the quickfix window when a run fills it
   notify = true,           -- say how a run went
-  jump_key = "f",          -- taskui's jump key, which :TaskUI run types; match your config
+  search_key = "/",        -- taskui's search key, which :TaskUI run types; match your config
   keys = {                 -- bound inside the terminal only
     toggle = "<A-t>",      -- the same key you bound `:TaskUI` to
     close = "<C-q>",

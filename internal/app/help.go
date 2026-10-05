@@ -76,10 +76,10 @@ func (a *App) handleHelpKey(k Key) bool {
 	case k.kind == keyEsc:
 		a.ToggleHelp()
 
-	// Find a binding in the keymap itself. The same key that finds a task in the picker,
+	// Find a binding in the keymap itself. The same key that searches every other screen,
 	// because "show me the one I mean" should not change name with the screen — and
-	// rebinding `jump` moves both, because Rebind reaches every screen that offers it.
-	case act() == keys.Jump:
+	// rebinding `search` moves all of them, because Rebind reaches every screen that offers it.
+	case act() == keys.Search:
 		a.BeginHelpFind()
 	}
 	return false

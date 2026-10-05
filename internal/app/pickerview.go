@@ -503,12 +503,13 @@ func (a *App) pickerFooter() line {
 	if l, ok := a.confirmBar(); ok {
 		return l
 	}
+	// The search prompt says which of its two jobs it is doing, and how to switch.
 	if a.Jumping {
 		l := line{
 			plain(" "),
-			styled("jump: ", fg(t.Colors.Accent)),
+			styled("find /", fg(t.Colors.Search)),
 			plain(a.JumpQuery),
-			styled(t.Glyphs.Cursor, fg(t.Colors.Accent)),
+			styled(t.Glyphs.Cursor, fg(t.Colors.Search)),
 		}
 		if a.JumpQuery != "" {
 			text := "   no match"
@@ -517,7 +518,7 @@ func (a *App) pickerFooter() line {
 			}
 			l = append(l, styled(text, fg(t.Colors.Dim)))
 		}
-		return append(l, styled("   ⇥ next   ⏎ stay   esc go back", fg(t.Colors.Dim)))
+		return append(l, styled("   ↑ ↓ next   ⇥ filter   ⏎ stay   esc go back", fg(t.Colors.Dim)))
 	}
 	if l, ok := a.argsPrompt(); ok {
 		return l
@@ -525,10 +526,10 @@ func (a *App) pickerFooter() line {
 	if a.Filtering {
 		return line{
 			plain(" "),
-			styled("/", fg(t.Colors.Search)),
+			styled("filter /", fg(t.Colors.Search)),
 			plain(a.Query),
 			styled(t.Glyphs.Cursor, fg(t.Colors.Search)),
-			styled("   ⏎ accept   esc clear", fg(t.Colors.Dim)),
+			styled("   ⇥ find   ⏎ accept   esc clear", fg(t.Colors.Dim)),
 		}
 	}
 	// After the prompts, before the status: a prompt owns the footer while it is open — the

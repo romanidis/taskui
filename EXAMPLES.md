@@ -58,11 +58,11 @@ want to see *all* the linting tasks:
  └ lint           Rust lints (clippy warnings are errors) + format check
 ```
 
-**`f` jumps** — moves the cursor to the match and leaves the tree intact. Use it when you
-know what you want and the surroundings still matter:
+**`⇥` in the same prompt finds instead** — moves the cursor to the match and leaves the
+tree intact. Use it when you know what you want and the surroundings still matter:
 
 ```
- jump: blint█   1/1   ⇥ next   ⏎ stay   esc go back
+ find /blint█   1/1   ↑ ↓ next   ⇥ filter   ⏎ stay   esc go back
 ```
 
 Both match fuzzily over the whole colon path, so `blint` finds `backend:lint`.
@@ -205,8 +205,8 @@ that catch SIGTERM and ignore it. `⇧K` stops every open run at once.
 
 `/` searches, `n` and `N` step through matches in execution order.
 
-`f` filters the run down to just the matching lines, kept under the tasks that produced
-them, with the tasks that have no hits dropped entirely:
+`⇥` in the prompt filters the run down to just the matching lines, kept under the tasks that
+produced them, with the tasks that have no hits dropped entirely:
 
 ```
  taskui ▸ task ci      /pending  1/2  filtered ±2    FAILED    0.2s   exit 201
@@ -503,7 +503,7 @@ colors:
 
 keys:
   pivot: z
-  filter-matches: m
+  follow: m
 ```
 
 Colours take an ANSI name, a `#rrggbb`, or a 0–255 palette index. Keys take a single

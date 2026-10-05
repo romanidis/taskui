@@ -114,7 +114,7 @@ func (a *App) helpFooter() line {
 			// Not the section's own footer: that one offers `esc … close`, and in this state
 			// `esc` clears the query instead. Advertising both on one line makes the key look
 			// like it does whichever the reader guesses.
-			find, _ := a.Keymap.KeyOf(keys.Jump)
+			find, _ := a.Keymap.KeyOf(keys.Search)
 			hints = "   j k ↑ ↓ scroll   " + find.Display() + " find   esc clear"
 		}
 		return append(l, styled(hints, fg(t.Colors.Dim)))

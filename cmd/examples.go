@@ -336,15 +336,15 @@ var examples = []example{{
 		frame(draw(14, "\t", nil)),
 		text("Each row says how that task went last time, in a column you can run your eye down. " +
 			"A blank there means never run, which is not the same as passed."),
-		text("Three ways in, and they answer different questions. `/` filters — it hides " +
-			"everything that does not match, which is what you want when you are looking for all " +
-			"the linting tasks:"),
+		// From the keymap, not spelled here: jump moved from `t` to `f` and then into `/`, and
+		// a sentence spelling the key went on sending people to the old one.
+		text("Two ways in through one prompt, and they answer different questions. `" +
+			defaultKey(keys.Search) + "` filters — it hides everything that does not match, which " +
+			"is what you want when you are looking for all the linting tasks:"),
 		frame(draw(11, "/lint", nil)),
-		// From the keymap, not spelled here: jump moved from `t` to `f`, and this sentence
-		// went on sending people to the old key.
-		text("`" + defaultKey(keys.Jump) + "` jumps instead: the tree stays whole and only the " +
-			"cursor moves, which is what you want when the surroundings still matter. Both match " +
-			"fuzzily over the whole colon path, so `blint` finds `backend:lint`."),
+		text("`⇥` in the prompt finds instead: the tree stays whole and only the cursor moves, " +
+			"which is what you want when the surroundings still matter. Both match fuzzily over " +
+			"the whole colon path, so `blint` finds `backend:lint`."),
 		text("And `p` regroups. `domain` splits the name on `:`; `verb` collects the last segment, " +
 			"gathering the cross-cutting concerns the domain tree scatters:"),
 		frame(draw(12, "p", nil)),
@@ -388,9 +388,9 @@ var examples = []example{{
 	title: "Finding the error in two thousand lines",
 	parts: []part{
 		text("`/` searches the output; `n` and `N` step through the matches in execution order. " +
-			"`f` collapses the run to just the matching lines, kept under the tasks that produced " +
-			"them, with the tasks that had no hits dropped entirely:"),
-		frame(draw(12, "/FAIL\nf", func(a *app.App) {
+			"`⇥` in the prompt collapses the run to just the matching lines, kept under the tasks " +
+			"that produced them, with the tasks that had no hits dropped entirely:"),
+		frame(draw(12, "/FAIL\t\n", func(a *app.App) {
 			a.OpenRunForTest(sampleRun())
 			a.Screen = app.ScreenRun
 		})),

@@ -82,13 +82,12 @@ func (a *App) handlePickerKey(k Key) bool {
 			}
 		}
 
-	case act() == keys.Filter:
+	// One prompt for finding and filtering, opened filtering: here the usual question is
+	// "which of these are the linting tasks". ⇥ in it finds instead, which leaves the list
+	// whole and moves only the cursor — see handleFilterKey and handleJumpKey.
+	case act() == keys.Search:
 		a.Filtering = true
 		a.Status = ""
-
-	// Jump rather than filter: the list stays whole and only the cursor moves.
-	case act() == keys.Jump:
-		a.BeginJump()
 
 	// What is this task, and what will it actually run?
 	case act() == keys.Detail:

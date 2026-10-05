@@ -131,7 +131,7 @@ func TestTheSelectionDefaultsToReverseVideo(t *testing.T) {
 }
 
 func TestKeysCanBeRebound(t *testing.T) {
-	c := loadStr(t, "keys:\n  pivot: P\n  filter-matches: z\n")
+	c := loadStr(t, "keys:\n  pivot: P\n  follow: z\n")
 	if len(c.Problems) != 0 {
 		t.Fatalf("problems = %v", c.Problems)
 	}
@@ -141,8 +141,8 @@ func TestKeysCanBeRebound(t *testing.T) {
 	if c.Keymap.Picker(keys.Plain('p')) != keys.None {
 		t.Error("the old key should be free")
 	}
-	if c.Keymap.Run(keys.Plain('z')) != keys.FilterMatches {
-		t.Error("filter-matches did not move")
+	if c.Keymap.Run(keys.Plain('z')) != keys.Follow {
+		t.Error("follow did not move")
 	}
 }
 

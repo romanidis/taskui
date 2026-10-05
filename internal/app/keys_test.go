@@ -463,7 +463,7 @@ func TestGIsTypedIntoAPromptRatherThanJumping(t *testing.T) {
 	// The keymap's own find prompt reads its keys the same way.
 	b := appAt(t, "backend:lint")
 	press(b, Char('?'))
-	press(b, Char('f'))
+	press(b, Char('/'))
 	press(b, Char('g'))
 	if b.HelpQuery != "g" {
 		t.Errorf("help query = %q", b.HelpQuery)
@@ -776,12 +776,12 @@ func TestBracesStepOverAnUnfoldedRun(t *testing.T) {
 	}
 }
 
-// `t` on the `?` screen searches the keymap itself: 140 bindings over eight screens is a
+// `/` on the `?` screen searches the keymap itself: 140 bindings over eight screens is a
 // page and a half of scrolling to answer "which key copies a line".
-func TestTFindsABindingInTheHelp(t *testing.T) {
+func TestSlashFindsABindingInTheHelp(t *testing.T) {
 	a := appAt(t, "backend:lint")
 	press(a, Char('?'))
-	press(a, Char('f'))
+	press(a, Char('/'))
 	if !a.HelpFinding {
 		t.Fatal("the find prompt should be open")
 	}
@@ -829,7 +829,7 @@ func TestEveryBindingTheFindLeavesSaysWhatYouTyped(t *testing.T) {
 func TestTheHelpFindPromptSwallowsItsOwnBindings(t *testing.T) {
 	a := appAt(t, "backend:lint")
 	press(a, Char('?'))
-	press(a, Char('f'))
+	press(a, Char('/'))
 
 	for _, c := range "quit" {
 		if press(a, Char(c)); a.Screen != ScreenHelp {
@@ -850,7 +850,7 @@ func TestTheHelpFindPromptSwallowsItsOwnBindings(t *testing.T) {
 func TestEnterKeepsTheFindAndEscDropsItFirst(t *testing.T) {
 	a := appAt(t, "backend:lint")
 	press(a, Char('?'))
-	press(a, Char('f'))
+	press(a, Char('/'))
 	press(a, Char('y'))
 
 	press(a, Enter())
@@ -879,7 +879,7 @@ func TestEnterKeepsTheFindAndEscDropsItFirst(t *testing.T) {
 func TestClosingTheHelpForgetsTheQuery(t *testing.T) {
 	a := appAt(t, "backend:lint")
 	press(a, Char('?'))
-	press(a, Char('f'))
+	press(a, Char('/'))
 	press(a, Char('y'))
 	press(a, Enter())
 
@@ -1349,5 +1349,83 @@ func TestArgsOnARunningTaskAskToRestartIt(t *testing.T) {
 
 	if a.Confirm == nil && a.Status == "" && a.Run == live {
 		t.Errorf("⏎ in the args prompt did nothing: no restart question, no status, args %q lost", "-- -run TestX")
+	}
+}
+
+// --- one search prompt ------------------------------------------------------------------
+
+// `/` is one prompt on every screen. In the picker it opens filtering, and ⇥ hands the same
+// query to finding — the whole tree back, the cursor on the match — and back again.
+func TestTabSwitchesThePickersSearchBetweenFilterAndFind(t *testing.T) {
+	a := appWith(t, []string{"app:build", "build", "lint"})
+	press(a, Char('/'))
+	for _, c := range "lint" {
+		press(a, Char(c))
+	}
+	if !a.Filtering || a.Query != "lint" {
+		t.Fatalf("filtering = %v query = %q", a.Filtering, a.Query)
+	}
+
+	press(a, Tab())
+	if a.Filtering || a.Query != "" {
+		t.Errorf("still filtering after ⇥: %v %q", a.Filtering, a.Query)
+	}
+	if !a.Jumping || a.JumpQuery != "lint" {
+		t.Fatalf("jumping = %v query = %q", a.Jumping, a.JumpQuery)
+	}
+	if ti := a.SelectedTask(); ti < 0 || a.Tasks[ti].Name != "lint" {
+		t.Errorf("the cursor is not on lint")
+	}
+
+	press(a, Tab())
+	if a.Jumping || !a.Filtering || a.Query != "lint" {
+		t.Errorf("⇥ back: jumping = %v filtering = %v query = %q", a.Jumping, a.Filtering, a.Query)
+	}
+}
+
+// What the Neovim plugin types for `:TaskUI run build`: the search key, ⇥ to find, the name,
+// ⏎ to stay and ⏎ to run. `build` beside `app:build`, which sorts first, is the case that ran
+// the wrong task once.
+func TestThePluginsKeystrokesRunTheTaskNamed(t *testing.T) {
+	a := appWith(t, []string{"app:build", "build"})
+	a.Keymap = keys.NewKeymap()
+	for _, k := range []Key{Char('/'), Tab(), Char('b'), Char('u'), Char('i'), Char('l'), Char('d'), Enter()} {
+		press(a, k)
+	}
+	if ti := a.SelectedTask(); ti < 0 || a.Tasks[ti].Name != "build" {
+		t.Errorf("the cursor is not on build")
+	}
+	if a.Jumping || a.Filtering {
+		t.Errorf("the prompt is still open: jumping %v filtering %v", a.Jumping, a.Filtering)
+	}
+}
+
+// In the run view `/` opens finding, and ⇥ in the same prompt shows only the matching lines.
+// `f` used to be that filter, and meant "jump" in the picker.
+func TestTabInTheRunsSearchShowsOnlyTheMatches(t *testing.T) {
+	a := appWithRun(t, "lint", run.Edge{Parent: "lint"})
+	a.Run.Feed("lint", "ok one")
+	a.Run.Feed("lint", "FAIL two")
+	a.RebuildRunRows()
+
+	press(a, Char('/'))
+	for _, c := range "FAIL" {
+		press(a, Char(c))
+	}
+	if a.FilterMatches {
+		t.Fatal("the run's search opened filtering")
+	}
+	press(a, Tab())
+	if !a.FilterMatches {
+		t.Error("⇥ did not switch to showing only the matches")
+	}
+	press(a, Enter())
+	press(a, Char('/'))
+	if a.SearchInput != "FAIL" || !a.FilterMatches {
+		t.Errorf("reopened prompt: input %q, filtering %v", a.SearchInput, a.FilterMatches)
+	}
+	press(a, Tab())
+	if a.FilterMatches {
+		t.Error("⇥ again did not go back to finding")
 	}
 }

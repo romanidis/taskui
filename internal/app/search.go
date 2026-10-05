@@ -95,27 +95,12 @@ func (a *App) jumpToHit() {
 	}
 }
 
-// ToggleFilterMatches turns the filtered view on and off.
-//
-// `f` with a query already running toggles it; `f` with nothing running opens the prompt
-// already filtering, so typing narrows the run live instead of making you search first and
-// convert afterwards.
+// ToggleFilterMatches is ⇥ in the search prompt: from finding the matches to showing only
+// them, kept under the tasks that printed them, and back. Before anything is typed it only
+// sets the mode the query will be applied in.
 func (a *App) ToggleFilterMatches() {
-	if a.Search == nil {
-		a.BeginFilter()
-		return
-	}
 	a.FilterMatches = !a.FilterMatches
 	a.Following = false
 	a.RebuildRunRows()
 	a.jumpToHit()
-}
-
-// BeginFilter opens the prompt in filter mode.
-func (a *App) BeginFilter() {
-	a.Searching = true
-	a.FilterMatches = true
-	a.SearchInput = ""
-	a.SearchError = ""
-	a.Status = ""
 }

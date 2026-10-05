@@ -26,8 +26,6 @@ const (
 	Pivot
 	Args
 	Detail
-	Jump
-	Filter
 	History
 	ResumeRun
 	Help
@@ -35,7 +33,6 @@ const (
 	Search
 	NextMatch
 	PrevMatch
-	FilterMatches
 	ContextMore
 	ContextLess
 	Rerun
@@ -194,8 +191,6 @@ var defaults = []binding{
 	{Pivot, 'p', "pivot"},
 	{Args, 'a', "args"},
 	{Detail, 'd', "detail"},
-	{Jump, 'f', "jump"},
-	{Filter, '/', "filter"},
 	{History, 'h', "history"},
 	{ResumeRun, 'v', "view-run"},
 	{Help, '?', "help"},
@@ -203,7 +198,6 @@ var defaults = []binding{
 	{Search, '/', "search"},
 	{NextMatch, 'n', "next-match"},
 	{PrevMatch, 'N', "prev-match"},
-	{FilterMatches, 'f', "filter-matches"},
 	{ContextMore, ']', "context-more"},
 	{ContextLess, '[', "context-less"},
 	{Rerun, 'r', "rerun"},
@@ -236,8 +230,7 @@ var pickerActions = []Action{
 	Order,
 	Args,
 	Detail,
-	Jump,
-	Filter,
+	Search,
 	History,
 	Timeline,
 	Edit,
@@ -262,7 +255,6 @@ var runActions = []Action{
 	Search,
 	NextMatch,
 	PrevMatch,
-	FilterMatches,
 	ContextMore,
 	ContextLess,
 	Rerun,
@@ -304,8 +296,8 @@ var diffActions = []Action{Edit, ContextMore, ContextLess, Help, Quit}
 var detailActions = []Action{Args, Edit, Detail, Help, Quit}
 
 // The `?` screen has three keys of its own, and they are the same three actions they are
-// everywhere else — jump finds a binding here exactly as it finds a task in the picker.
-var helpActions = []Action{Jump, Help, Quit}
+// everywhere else — search finds a binding here exactly as it finds a task in the picker.
+var helpActions = []Action{Search, Help, Quit}
 
 func defaultKey(action Action) rune {
 	for _, d := range defaults {
@@ -330,6 +322,12 @@ func ActionName(action Action) string {
 // still naming one is told that rather than that it was never an action, which reads like a
 // typo in a file that has not changed.
 var Retired = map[string]string{
+	"filter": "`/` opens one prompt on every screen now, and ⇥ in it switches between finding " +
+		"and filtering: rebind `search` to move it",
+	"jump": "`/` opens one prompt on every screen now, and ⇥ in it switches between finding " +
+		"and filtering: rebind `search` to move it",
+	"filter-matches": "`/` opens one prompt on every screen now, and ⇥ in it switches between " +
+		"finding and filtering: rebind `search` to move it",
 	"force": "`--force` is a toggle in the args prompt now, for that one start: `a`, then ^f",
 	"interactive": "interactive is a toggle in the args prompt now, for that one start: " +
 		"`a`, then ^t",
@@ -574,9 +572,9 @@ var placeholder = regexp.MustCompile(`\{([a-z-]+)\}`)
 
 // Spell fills a binding's placeholders from the keymap in force.
 //
-// The table used to carry the keys as literal text, which meant `keys: jump: z` moved the
-// key and left the `?` screen and every footer still saying `t`. A binding written as
-// `{jump}` cannot: it names the action, and the spelling comes from the same map dispatch
+// The table used to carry the keys as literal text, which meant `keys: search: z` moved the
+// key and left the `?` screen and every footer still saying `/`. A binding written as
+// `{search}` cannot: it names the action, and the spelling comes from the same map dispatch
 // reads. Keys with no action behind them — the motions, `⏎`, `esc`, `1…9` — stay literal,
 // because there is nothing to rebind them to.
 //
@@ -684,8 +682,8 @@ var Picker = Section{
 		// No footer label: arming a modifier for the next run is secondary to running one, and
 		// the footer is the one place where everything competes for the same line.
 		b("{watch}", "watch: re-run the marked set, or this task, whenever the source changes"),
-		f("{filter}", "filter the list down to matching tasks", "filter"),
-		f("{jump}", "jump to a task, leaving the list intact", "jump"),
+		f("{search}", "filter the list down to matching tasks — ⇥ in the prompt finds instead, "+
+			"moving the cursor and leaving the list whole", "filter"),
 		f("{detail}", "what this task is, and what it will run", "detail"),
 		// Footer label `view`, like the action: `watch` beside the key that does not watch
 		// anything put back, on the footer, the clash renaming the action took out of configs.
@@ -709,14 +707,14 @@ var Run = Section{
 		// No footer label, as in the picker: an alias for a key already on the line.
 		b("← →", "the same three states, for hands that reach for a tree's keys"),
 		f("{fold-all}", "move every task through the same three states", "all"),
-		f("{search}", "search the output", "search"),
+		f("{search}", "search the output — ⇥ in the prompt filters instead, to the matching lines "+
+			"only", "search"),
 		// No footer label: like `[ ]`, it only means anything once a search is running, and
 		// the footer has to make room for the slot switcher.
 		b("{next-match} {prev-match}", "next / previous match"),
-		f("{filter-matches}", "filter to matching lines only", "filter"),
 		// No footer label: it only means anything once you are already filtering, and the
 		// footer has to make room for the slot switcher.
-		b("{context-less} {context-more}", "less / more context around each hit"),
+		b("{context-less} {context-more}", "less / more context around each hit, while filtering"),
 		f("{rerun}", "re-run this task, same arguments", "rerun"),
 		b("{force-rerun}", "the same, with --force — ignore go-task's up-to-date checks"),
 		f("{rerun-failed}", "re-run everything in this run that failed, each in its own slot", "failed"),
@@ -818,7 +816,7 @@ var HelpSection = Section{
 	Title: "Keys",
 	Note:  "this screen",
 	Bindings: scrolls(
-		f("{jump}", "find a binding — ⏎ keeps what is left, esc clears the query", "find"),
+		f("{search}", "find a binding — ⏎ keeps what is left, esc clears the query", "find"),
 		f("esc {help}", "close, and go back to where you were", "close"),
 		// The one screen where quit earns the space: it is what a first-time reader opened
 		// this to find out, and there is no `? keys` here to point them anywhere else.
@@ -832,9 +830,10 @@ var Prompts = Section{
 	Bindings: []Binding{
 		b("arguments", "⇥ ⇧⇥ complete · ← → Home End Delete edit · ⏎ run · esc cancel"),
 		b("…and how it runs", "^f --force, ignoring go-task's up-to-date checks · ^t interactive, so it can ask"),
-		b("search / filter", "⏎ keep the query · esc clear · ↑ ↓ step through matches"),
+		b("search", "⇥ switches between finding and filtering · ⏎ keep the query · esc clear · "+
+			"↑ ↓ step through what it found"),
 		b("…while one is open", "the letters are the query; ^d ^u ^f ^b still page what is behind it"),
-		b("find (on this screen)", "opened with {jump} · ⏎ keeps what is left · esc clears, then esc closes"),
+		b("find (on this screen)", "opened with {search} · ⏎ keeps what is left · esc clears, then esc closes"),
 		b("input", "every key goes to the task · esc stop typing"),
 		b("confirmation", "y goes ahead · anything else cancels"),
 	},

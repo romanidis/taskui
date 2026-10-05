@@ -201,10 +201,7 @@ Run it with arguments.
 Watch: re\-run the marked set, or this task, whenever the source changes.
 .TP
 .B /
-Filter the list down to matching tasks.
-.TP
-.B f
-Jump to a task, leaving the list intact.
+Filter the list down to matching tasks — ⇥ in the prompt finds instead, moving the cursor and leaving the list whole.
 .TP
 .B d
 What this task is, and what it will run.
@@ -261,16 +258,13 @@ The same three states, for hands that reach for a tree's keys.
 Move every task through the same three states.
 .TP
 .B /
-Search the output.
+Search the output — ⇥ in the prompt filters instead, to the matching lines only.
 .TP
 .B n ⇧N
 Next / previous match.
 .TP
-.B f
-Filter to matching lines only.
-.TP
 .B [ ]
-Less / more context around each hit.
+Less / more context around each hit, while filtering.
 .TP
 .B r
 Re\-run this task, same arguments.
@@ -515,7 +509,7 @@ A whole screen — PgDn and PgUp do the same.
 .B gg G
 First / last row — so do Home and End.
 .TP
-.B f
+.B /
 Find a binding — ⏎ keeps what is left, esc clears the query.
 .TP
 .B esc ?
@@ -533,14 +527,14 @@ While a prompt is open, these take over.
 .B …and how it runs
 ^f \-\-force, ignoring go\-task's up\-to\-date checks · ^t interactive, so it can ask.
 .TP
-.B search / filter
-⏎ keep the query · esc clear · ↑ ↓ step through matches.
+.B search
+⇥ switches between finding and filtering · ⏎ keep the query · esc clear · ↑ ↓ step through what it found.
 .TP
 .B …while one is open
 The letters are the query; ^d ^u ^f ^b still page what is behind it.
 .TP
 .B find (on this screen)
-Opened with f · ⏎ keeps what is left · esc clears, then esc closes.
+Opened with / · ⏎ keeps what is left · esc clears, then esc closes.
 .TP
 .B input
 Every key goes to the task · esc stop typing.

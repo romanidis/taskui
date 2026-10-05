@@ -283,6 +283,15 @@ func (a *App) handleFilterKey(k Key) bool {
 	case k.kind == keyEsc:
 		a.ClearQuery()
 		return true
+	// The same query, finding rather than filtering: the whole tree back, and the cursor on
+	// the task the query names.
+	case k.kind == keyTab:
+		query := a.Query
+		a.ClearQuery()
+		a.BeginJump()
+		a.JumpQuery = query
+		a.applyJump()
+		return true
 	case k.kind == keyEnter:
 		// Keep the filter applied, leave the input — you filter to narrow the tree, then
 		// navigate what is left.

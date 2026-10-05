@@ -57,12 +57,13 @@ function M.run(name)
   local started = term.job ~= nil
   term.open()
   vim.defer_fn(function()
-    -- Jump rather than `/` filtering: a jump lands the cursor *on* the task,
-    -- opening whatever folds hid it, where a filter narrows the list and leaves
-    -- the cursor whereever it was — which on a namespace row means the next
-    -- enter says "that groups tasks but is not one".
+    -- Find rather than filter: the search prompt opens filtering in the picker,
+    -- and ⇥ switches it to finding, which lands the cursor *on* the task the
+    -- name says, opening whatever folds hid it — where a filter narrows the list
+    -- and leaves the cursor on its first match, which for `build` beside
+    -- `app:build` is the wrong one.
     --
-    -- The key comes from config so a taskui `keys: jump:` has somewhere to be
+    -- The key comes from config so a taskui `keys: search:` has somewhere to be
     -- answered; it is the one taskui binding this plugin has to know, because
     -- reaching a task means typing at the terminal.
     --
@@ -70,7 +71,7 @@ function M.run(name)
     -- esc goes on its own, and the rest only after the terminal has given up
     -- waiting for what might follow it. A terminal encodes Alt+x as esc then x,
     -- so an esc written in the same breath as the next key arrives as that
-    -- chord rather than as two presses — the jump key is swallowed and the task
+    -- chord rather than as two presses — the search key is swallowed and the task
     -- name is typed at the picker instead, where `e` opens an editor. Measured
     -- against the real binary through a pty: 50ms still merges, 80ms does not,
     -- so this leaves a wide margin over a threshold that is not ours to pin.
@@ -80,7 +81,7 @@ function M.run(name)
     -- own way into the prompt.
     term.send("\27")
     vim.defer_fn(function()
-      term.send(config.options.jump_key .. name .. "\r\r")
+      term.send(config.options.search_key .. "\t" .. name .. "\r\r")
     end, escGap)
   end, started and 80 or 500)
 end

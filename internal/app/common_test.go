@@ -71,7 +71,7 @@ func TestCtrlCLeavesFromAnyPrompt(t *testing.T) {
 	}{
 		{"filter", func(a *App) { press(a, Char('/')) }},
 		{"args", func(a *App) { press(a, Char('a')) }},
-		{"jump", func(a *App) { press(a, Char('f')) }},
+		{"find", func(a *App) { press(a, Char('/')); press(a, Tab()) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := appAt(t, "backend:lint")
@@ -145,7 +145,7 @@ func TestTheKeymapScreenSaysHowToQuit(t *testing.T) {
 func TestTheKeptQueryFooterDoesNotOfferEscTwice(t *testing.T) {
 	a := appAt(t, "backend:lint")
 	press(a, Char('?'))
-	press(a, Char('f'))
+	press(a, Char('/'))
 	for _, c := range "quit" {
 		press(a, Char(c))
 	}

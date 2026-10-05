@@ -546,11 +546,11 @@ func (a *App) runFooter() line {
 	}
 
 	if a.Searching {
-		// The prompt says which of the two jobs it is doing: jump to matches, or hide
-		// everything that is not one.
-		label := "/"
+		// The prompt says which of the two jobs it is doing — jump to matches, or hide
+		// everything that is not one — and how to switch.
+		label, other := "find /", "filter"
 		if a.FilterMatches {
-			label = "filter: "
+			label, other = "filter /", "find"
 		}
 		l := line{
 			plain(" "),
@@ -571,7 +571,7 @@ func (a *App) runFooter() line {
 				n, plural(n, "match", "matches"),
 				len(tasks), plural(len(tasks), "task", "tasks")), fg(t.Colors.Dim)))
 		}
-		return append(l, styled("   ⏎ keep   esc clear", fg(t.Colors.Dim)))
+		return append(l, styled("   ⇥ "+other+"   ⏎ keep   esc clear", fg(t.Colors.Dim)))
 	}
 
 	if a.Run != nil && a.Run.PossiblyStuck() {

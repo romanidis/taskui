@@ -52,6 +52,10 @@ func (a *App) handleRunKey(k Key) bool {
 		case k.kind == keyEnter:
 			a.Searching = false
 			return false
+		// Finding the matches, or showing only them: the same query either way.
+		case k.kind == keyTab:
+			a.ToggleFilterMatches()
+			return false
 		case k.kind == keyBackspace:
 			a.SearchInput = withoutLastRune(a.SearchInput)
 			a.ApplySearch()
@@ -147,8 +151,10 @@ func (a *App) handleRunKey(k Key) bool {
 	case act() == keys.Detach:
 		a.Detach()
 
-	// Search the output. `/` in the picker filters task names; here it searches what those
-	// tasks printed. Different corpora, deliberately different jobs.
+	// Search the output. The same prompt as the picker's, opened finding rather than
+	// filtering: in two thousand lines the usual question is "where is the FAIL", and the
+	// lines around it are the answer. ⇥ in it shows only the matches. An earlier query
+	// comes back with it, so switching a kept search to a filter is `/` and ⇥.
 	case act() == keys.Search:
 		a.Searching = true
 		a.Status = ""
@@ -156,10 +162,6 @@ func (a *App) handleRunKey(k Key) bool {
 		a.SearchStep(1)
 	case act() == keys.PrevMatch:
 		a.SearchStep(-1)
-
-	// Collapse the run to just the matching lines, kept under their tasks.
-	case act() == keys.FilterMatches:
-		a.ToggleFilterMatches()
 
 	// More or less context around each hit.
 	case act() == keys.ContextMore:

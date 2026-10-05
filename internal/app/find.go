@@ -159,12 +159,20 @@ func (a *App) handleJumpKey(k Key) {
 		a.CancelJump()
 	case k.kind == keyEnter:
 		a.AcceptJump()
+	// The same query, filtering rather than finding. The cursor stays on the match it had
+	// found, which the filter keeps.
+	case k.kind == keyTab:
+		query := a.JumpQuery
+		a.AcceptJump()
+		a.Filtering = true
+		a.Query = query
+		a.Rebuild(a.SelectedTask())
 	case k.kind == keyBackspace:
 		a.JumpQuery = withoutLastRune(a.JumpQuery)
 		a.applyJump()
-	case k.kind == keyDown, k.kind == keyTab:
+	case k.kind == keyDown:
 		a.JumpStep(1)
-	case k.kind == keyUp, k.kind == keyBackTab:
+	case k.kind == keyUp:
 		a.JumpStep(-1)
 	case k.typed():
 		a.JumpQuery += string(k.ch)

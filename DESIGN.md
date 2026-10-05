@@ -357,21 +357,20 @@ input device is not a TTY".
 
 ## Searching output
 
-`/` searches what the tasks printed. Note this is a *different* search from `/` in the
-picker, which fuzzy-matches 122 short task names; this one runs a regex over potentially
-megabytes of output, so the two get separate affordances despite the shared key.
+`/` searches what the tasks printed. The picker's `/` fuzzy-matches 122 short task names and
+this one runs a regex over potentially megabytes of output, but they are one prompt with the
+same two jobs, because "take me to the next one" and "hide everything that is not one" are
+different things on every screen.
 
-There are two jobs and two keys, because "take me to the next one" and "hide everything
-that is not one" are different things.
+Here the prompt opens finding: `n` and `N` step through hits in execution order — the order
+the run happened, not alphabetical — opening whatever fold is hiding each one. In the picker
+it opens filtering, because there the usual question is "which of these are the linting
+tasks". Each opens on the job its screen is asked most, and the prompt line says which.
 
-`/` is jump-to-match. `n` and `N` step through hits in execution order — the order the run
-happened, not alphabetical — opening whatever fold is hiding each one.
-
-`f` is the filter. Pressed with nothing running it opens its own prompt and narrows the
-run live as you type; pressed while a query is active it toggles the filtered view on and
-off, so you can search first and convert afterwards if that is how you got there. Either
-way the run collapses to just the matching lines, kept under the tasks that produced them,
-with tasks that have no hits dropped entirely:
+`⇥` in the prompt switches to the other job with the same query. Reopening `/` brings a kept
+query back, so a search you have been stepping through becomes a filter with `/` and `⇥`.
+Filtering collapses the run to just the matching lines, kept under the tasks that produced
+them, with tasks that have no hits dropped entirely:
 
 ```
  taskui ▸ task ci      /pending  1/2  filtered ±2    FAILED    0.2s   exit 201
@@ -379,11 +378,15 @@ with tasks that have no hits dropped entirely:
    ▾ ✗ test                                                            0.03s
       8   3 migrations pending, refusing to start
  ─────────────────────────────────────────────────────────────────────────────
- filter: pending█   2 matches in 1 task   ⏎ keep   esc clear
+ filter /pending█   2 matches in 1 task   ⇥ find   ⏎ keep   esc clear
 ```
 
 Backspacing to an empty pattern shows the whole run again without leaving filter mode, so
 you can widen and re-narrow without starting over.
+
+These used to be two keys that swapped meanings between screens: `/` filtered in the picker
+and found in the run, `f` found in the picker and filtered in the run. The README said
+"seven screens, one keymap", and the keys most used were the two that broke it.
 
 Matching is smart-case, as in ripgrep: `fail` finds `FAIL`, `FAIL` does not drag in
 `fail`. Patterns are full regexes, and a half-typed one reports quietly rather than

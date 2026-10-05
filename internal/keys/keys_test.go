@@ -241,11 +241,11 @@ func TestEveryPlaceholderNamesAnAction(t *testing.T) {
 // surface still naming the old one.
 func TestTheHelpTableFollowsARebinding(t *testing.T) {
 	km := NewKeymap()
-	km.Rebind(Jump, Plain('z'))
+	km.Rebind(Search, Plain('z'))
 
 	var found bool
 	for _, b := range Spelled(&Picker, km) {
-		if b.Footer == "jump" {
+		if b.Footer == "filter" {
 			found = true
 			if b.Keys != "z" {
 				t.Errorf("the `?` screen still says %q", b.Keys)
@@ -253,9 +253,9 @@ func TestTheHelpTableFollowsARebinding(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("no jump binding in the picker")
+		t.Fatal("no search binding in the picker")
 	}
-	if footer := Footer(&Picker, km); !strings.Contains(footer, "z jump") {
+	if footer := Footer(&Picker, km); !strings.Contains(footer, "z filter") {
 		t.Errorf("the footer still says %q", footer)
 	}
 	// And the screen that documents the keymap itself, which was written out by hand.
