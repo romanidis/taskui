@@ -432,6 +432,12 @@ the Taskfiles themselves. Values produced by `sh:` or templates are the exceptio
 dump nor file holds them, so they are not masked. Run directories are `0700` and files
 `0600` regardless.
 
+Two more sources, both found by a secret getting through. Arguments: `API_TOKEN=sk-…` typed
+at the args prompt is a variable to go-task like any other, and it is masked in the output
+and in the command line the manifest and the history ledger keep. And a value with newlines
+in it — a private key in `env:` — is masked line by line, since masking works a line at a
+time and the whole key never appears on one.
+
 A secret can also be hidden by colour. `grep` highlighting the `sk-` it was asked for puts
 an escape inside the value, and stripping escapes for the searchable text rebuilds it — so
 each line is masked in both forms, and one whose plain form still held a secret keeps the

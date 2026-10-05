@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/romanidis/taskui/internal/graph"
+	"github.com/romanidis/taskui/internal/redact"
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/shellwords"
 	"github.com/romanidis/taskui/internal/task"
@@ -478,7 +479,7 @@ func writeRun(base, projectDir string, r *run.Run, id string, started int64) (st
 		Version:         ManifestVersion,
 		ID:              id,
 		Root:            r.Root,
-		Args:            r.Args,
+		Args:            redact.MaskArgs(r.Args),
 		Force:           r.Force,
 		Interactive:     r.Interactive,
 		Dir:             projectDir,

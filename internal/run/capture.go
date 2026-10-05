@@ -19,25 +19,25 @@ import (
 // capture is the capture goroutine: it works out what the run will look like, then runs it,
 // and reports all of it as events.
 func capture(p *process, events *queue, dir, root string, argv []string) {
-	// Resolve first: the tree should be on screen, greyed out, before any output arrives to
-	// fill it in. The same call yields the environment dump the redactor is built from, so
-	// masking is in place before the first line.
-	redactor := redact.Empty()
-	// Read alongside: the names the graph and the output are spelled in, and the Taskfile's
-	// own env, which the summaries leave out.
+	// Read alongside the graph: the names the graph and the output are spelled in, and the
+	// Taskfile's own env, which the summaries leave out.
 	var project task.Project
 	var wg sync.WaitGroup
 	wg.Go(func() { project = task.ReadProject(dir) })
+	// Resolve first: the tree should be on screen, greyed out, before any output arrives to
+	// fill it in. The same call yields the environment dump the redactor is built from, so
+	// masking is in place before the first line.
+	//
 	// A graph we could not resolve is not fatal — we still capture output, just without the
-	// nesting. Redaction is then empty, which is why the run view says so rather than
-	// implying output has been checked.
+	// nesting. Redaction then has only the Taskfile's own env and the arguments to go on,
+	// and the run view says how many it found rather than implying output has been checked.
 	g, summary := graph.ResolveDetailed(dir, root)
 	wg.Wait()
 	events.push(Naming{Names: project.Names, Labels: project.Labels})
 	if len(g.Edges) > 0 {
-		redactor = redact.Harvest(summary, project.Env)
 		events.push(GraphReady{Graph: g})
 	}
+	redactor := redact.Harvest(summary, project.Env, argv)
 	events.push(Redacting{N: redactor.Len()})
 
 	switch err := drive(p, events, dir, argv, redactor); {

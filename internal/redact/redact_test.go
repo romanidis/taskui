@@ -80,7 +80,7 @@ func TestAnEmptyRedactorIsAPassthrough(t *testing.T) {
 }
 
 func TestHarvestsEnvTheSummaryLeavesOut(t *testing.T) {
-	r := Harvest(summary, map[string]string{"ROOT_TOKEN": "rootsecret123", "GREETING": "hello world"})
+	r := Harvest(summary, map[string]string{"ROOT_TOKEN": "rootsecret123", "GREETING": "hello world"}, nil)
 	if got := r.Redact("rootsecret123 hello world"); got != Marker+" hello world" {
 		t.Errorf("redact = %q", got)
 	}
@@ -116,5 +116,39 @@ func TestUnfinishedIsTheTailASecretStartsWith(t *testing.T) {
 		if got := r.Unfinished(text); got != want {
 			t.Errorf("Unfinished(%q) = %d, want %d", text, got, want)
 		}
+	}
+}
+
+// Masking goes a line at a time, so a key with newlines in it has to be masked as the lines
+// it is printed on. Harvested whole — or, from the summary, only as far as its first line —
+// every line of the key body reached the screen and the archive.
+func TestAMultiLineSecretIsMaskedLineByLine(t *testing.T) {
+	body := "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW"
+	key := "-----BEGIN OPENSSH PRIVATE KEY-----\n" + body + "\n-----END OPENSSH PRIVATE KEY-----\n"
+	dump := "task: echo\n\nenv:\n  DEPLOY_KEY: \"" + key + "\"\n  OTHER: \"plain\"\n\ncommands:\n - echo \"$DEPLOY_KEY\"\n"
+	for name, r := range map[string]*Redactor{
+		"summary": FromSummary(dump),
+		"env":     Harvest("", map[string]string{"DEPLOY_KEY": key}, nil),
+	} {
+		if got := r.Redact("    " + body); strings.Contains(got, body) {
+			t.Errorf("%s: the key body went through: %q", name, got)
+		}
+		if got := r.Redact("plain"); got != "plain" {
+			t.Errorf("%s: masked a value that is not a secret: %q", name, got)
+		}
+	}
+}
+
+// A credential typed as an argument is a variable to go-task, printed like any other. It is
+// masked in the output and in what the archive keeps of the command line.
+func TestASecretPassedAsAnArgumentIsMasked(t *testing.T) {
+	args := []string{"ENV=staging", "API_TOKEN=sk-live-abcdef1234567890", "--", "-v"}
+	r := Harvest("", nil, args)
+	if got := r.Redact("using sk-live-abcdef1234567890"); got != "using [redacted]" {
+		t.Errorf("output = %q", got)
+	}
+	want := []string{"ENV=staging", "API_TOKEN=[redacted]", "--", "-v"}
+	if got := MaskArgs(args); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("kept args = %q, want %q", got, want)
 	}
 }

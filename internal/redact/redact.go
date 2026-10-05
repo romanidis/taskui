@@ -101,23 +101,78 @@ func isSecret(key, value string) bool {
 func Empty() *Redactor { return &Redactor{} }
 
 // FromSummary harvests from the `KEY: "value"` block that `task --summary` prints.
-func FromSummary(text string) *Redactor { return Harvest(text, nil) }
+func FromSummary(text string) *Redactor { return Harvest(text, nil, nil) }
 
 // Harvest is FromSummary plus env the summary never prints — go-task leaves a Taskfile's
-// top-level `env:` out of it — passed as the variables themselves.
-func Harvest(summary string, env map[string]string) *Redactor {
+// top-level `env:` out of it — passed as the variables themselves, plus the arguments the
+// run was started with: `API_TOKEN=sk-…` typed at the args prompt is a variable to go-task
+// and printed like any other, and was kept unmasked because no Taskfile had declared it.
+func Harvest(summary string, env map[string]string, args []string) *Redactor {
 	secrets := summarySecrets(summary)
 	for key, value := range env {
 		if isSecret(key, value) {
+			secrets = append(secrets, printedLines(value)...)
+		}
+	}
+	for _, arg := range args {
+		if value, ok := secretArg(arg); ok {
 			secrets = append(secrets, value)
 		}
 	}
 	return New(secrets)
 }
 
+// MaskArgs is args with the value of every secret in them masked, for keeping. The archive
+// is the one place they outlive the run, and the history ledger outlives even that.
+func MaskArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	out := make([]string, len(args))
+	for i, arg := range args {
+		out[i] = arg
+		if value, ok := secretArg(arg); ok {
+			out[i] = strings.Replace(arg, value, Marker, 1)
+		}
+	}
+	return out
+}
+
+// secretArg is the secret in one argument: the value of a `KEY=value` whose key or value
+// says it is a credential, or a bare argument that starts like one.
+func secretArg(arg string) (string, bool) {
+	if key, value, ok := strings.Cut(arg, "="); ok && isSecret(key, value) {
+		return value, true
+	}
+	for _, p := range secretValues {
+		if strings.HasPrefix(arg, p) && worthMasking(arg) {
+			return arg, true
+		}
+	}
+	return "", false
+}
+
+// printedLines is a secret as the lines it will be printed on. Masking goes a line at a time, so a
+// value with newlines in it — a private key, a certificate — matched none of them whole, and
+// everything after its first line reached the screen and the archive as it was.
+func printedLines(value string) []string {
+	if !strings.Contains(value, "\n") {
+		return []string{value}
+	}
+	var out []string
+	for l := range strings.SplitSeq(value, "\n") {
+		if l = strings.TrimSpace(l); worthMasking(l) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 func summarySecrets(text string) []string {
 	var secrets []string
-	for line := range strings.SplitSeq(text, "\n") {
+	all := strings.Split(text, "\n")
+	for i := 0; i < len(all); i++ {
+		line := all[i]
 		// Env entries are indented `  KEY: "value"`; the ` - x` items and the section
 		// headers are not.
 		trimmed := strings.TrimSpace(line)
@@ -129,9 +184,23 @@ func summarySecrets(text string) []string {
 		if !ok {
 			continue
 		}
-		value = strings.Trim(strings.TrimSpace(value), `"`)
+		value = strings.TrimSpace(value)
+		// A value with newlines in it is printed as they fall: an opening quote, then its
+		// lines unindented, then the closing quote on a line of its own.
+		if strings.HasPrefix(value, `"`) && (len(value) == 1 || !strings.HasSuffix(value, `"`)) {
+			parts := []string{value}
+			for i+1 < len(all) {
+				i++
+				parts = append(parts, all[i])
+				if strings.HasSuffix(all[i], `"`) {
+					break
+				}
+			}
+			value = strings.Join(parts, "\n")
+		}
+		value = strings.Trim(value, `"`)
 		if isSecret(strings.TrimSpace(key), value) {
-			secrets = append(secrets, value)
+			secrets = append(secrets, printedLines(value)...)
 		}
 	}
 	return secrets
