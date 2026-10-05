@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"unicode/utf8"
@@ -41,7 +43,9 @@ func capture(p *process, events *queue, dir, root string, argv []string, attende
 	redactor := redact.Harvest(summary, project.Env, argv)
 	events.push(Redacting{N: redactor.Len()})
 
-	switch err := drive(p, events, dir, argv, attended, redactor); {
+	// go-task tags every line with its task, except under `interleaved`.
+	tagged := !slices.Contains(argv, "interleaved")
+	switch err := drive(p, events, dir, argv, attended, tagged, redactor); {
 	case errors.Is(err, errStoppedBeforeStart):
 		events.push(Exited{Code: -1})
 	case err != nil:
@@ -55,7 +59,14 @@ func capture(p *process, events *queue, dir, root string, argv []string, attende
 // Unattended, its input is /dev/null rather than the terminal, which is how go-task knows
 // there is nobody to answer a prompt. The pty stays its controlling terminal, reached through
 // stdout instead, so stopping the run still reaches the whole group.
-func drive(p *process, events *queue, dir string, argv []string, attended bool, redactor *redact.Redactor) error {
+func drive(
+	p *process,
+	events *queue,
+	dir string,
+	argv []string,
+	attended, tagged bool,
+	redactor *redact.Redactor,
+) error {
 	cmd := exec.Command("task", argv...)
 	if !attended {
 		null, err := os.Open(os.DevNull)
@@ -80,7 +91,7 @@ func drive(p *process, events *queue, dir string, argv []string, attended bool, 
 	if err != nil {
 		return err
 	}
-	relay(master, events, redactor)
+	relay(master, events, redactor, tagged)
 
 	// The pty is at EOF, which means nothing is holding the slave open any more: go-task
 	// has gone, and so has anything it left behind that was attached to the terminal. A
@@ -97,9 +108,17 @@ func drive(p *process, events *queue, dir string, argv []string, attended bool, 
 // The read that ends it fails, and that is not worth reporting: some systems say the other
 // end of a pty has gone with an error rather than an EOF, and the exit status is the answer
 // either way.
-func relay(master io.Reader, events *queue, redactor *redact.Redactor) {
+//
+// tagged is whether go-task is prefixing every line with its task. Under `interleaved` it is
+// not, and a `[INFO] booting` the task printed is output rather than a task called INFO.
+func relay(master io.Reader, events *queue, redactor *redact.Redactor, tagged bool) {
 	buf := make([]byte, 8192)
 	var pending []byte
+	push := func(line string) {
+		for _, event := range lineEvents(redactor, line, tagged) {
+			events.push(event)
+		}
+	}
 	for {
 		n, err := master.Read(buf)
 		if n > 0 {
@@ -115,12 +134,7 @@ func relay(master io.Reader, events *queue, redactor *redact.Redactor) {
 				if len(line) > 0 && line[len(line)-1] == '\r' {
 					line = line[:len(line)-1]
 				}
-				// Mask here, at the boundary: nothing unredacted is ever put on the
-				// channel, so no later code path can leak what it never received.
-				text := mask(redactor, applyOverwrites(string(line)))
-				for _, event := range parseLine(text) {
-					events.push(event)
-				}
+				push(string(line))
 			}
 
 			// A line with no end in sight — minified JS, a base64 blob, `\r`-only
@@ -131,9 +145,7 @@ func relay(master io.Reader, events *queue, redactor *redact.Redactor) {
 				if !ok {
 					break
 				}
-				for _, event := range parseLine(mask(redactor, applyOverwrites(string(pending[:cut])))) {
-					events.push(event)
-				}
+				push(string(pending[:cut]))
 				pending = pending[cut:]
 			}
 
@@ -143,16 +155,55 @@ func relay(master io.Reader, events *queue, redactor *redact.Redactor) {
 			// secret, so until it is all here its first half is just text, and it was
 			// shown as such until the rest of the line caught up.
 			if len(pending) > 0 {
-				text := mask(redactor, applyOverwrites(string(pending)))
-				if text = text[:len(text)-redactor.Unfinished(text)]; text != "" {
-					events.push(partialOf(text))
+				part := partialOf(string(pending), tagged)
+				text := mask(redactor, applyOverwrites(part.Text))
+				if text = text[:len(text)-redactor.Unfinished(text)]; visible(text) {
+					part.Text = text
+					events.push(part)
 				}
 			}
 		}
 		if err != nil {
+			// Nothing more is coming, so a tail held back as the possible start of a secret
+			// is all there is of it. Left unsaid, a last line without a newline lost its end.
+			if len(pending) > 0 {
+				push(string(pending))
+			}
 			return
 		}
 	}
+}
+
+// lineEvents is one line as events, masked.
+//
+// The tag is read before anything else. go-task tags a line once, at its start, so
+// `[b] 10%\r50%` is b's however it redraws — and with the redraw applied first the tag went
+// with the frames it overwrote, and b's progress landed under whoever spoke last.
+//
+// Masked here, at the boundary: nothing unredacted is ever put on the channel, so no later
+// code path can leak what it never received.
+func lineEvents(redactor *redact.Redactor, line string, tagged bool) []Event {
+	events := parseLine(line, tagged)
+	out := events[:0]
+	for _, event := range events {
+		if l, ok := event.(LineEvent); ok {
+			l.Raw = mask(redactor, applyOverwrites(l.Raw))
+			// go-task resets its colour after its own messages, and when nothing follows
+			// the reset arrives as a line of its own: drawn as a blank line of output from
+			// whatever task spoke last.
+			if l.Task == "" && !visible(l.Raw) && l.Raw != "" {
+				continue
+			}
+			event = l
+		}
+		out = append(out, event)
+	}
+	return out
+}
+
+// visible reports whether text has anything in it besides escape sequences and space.
+func visible(text string) bool {
+	return strings.TrimSpace(ansi.Strip(text)) != ""
 }
 
 // mask redacts a line so that no secret survives in either of the forms a Line keeps.

@@ -19,7 +19,7 @@ import (
 
 func one(t *testing.T, text string) LineEvent {
 	t.Helper()
-	events := parseLine(text)
+	events := parseLine(text, true)
 	line, ok := events[0].(LineEvent)
 	if !ok {
 		t.Fatalf("expected a line, got %#v", events[0])
@@ -126,7 +126,7 @@ func TestBracketedOutputThatIsNotATaskTagIsLeftAlone(t *testing.T) {
 // go-task nests the message; the innermost name is the task that actually failed, not the
 // aggregate that contained it.
 func TestFailureReportsTheInnermostTask(t *testing.T) {
-	events := parseLine(`task: Failed to run task "all": task: Failed to run task "backend:lint": exit status 1`)
+	events := parseLine(`task: Failed to run task "all": task: Failed to run task "backend:lint": exit status 1`, true)
 	failed, ok := events[0].(FailedEvent)
 	if !ok {
 		t.Fatalf("expected a failure, got %#v", events[0])
@@ -962,7 +962,7 @@ func TestAStopBeforeTheChildStartsMeansItNeverStarts(t *testing.T) {
 	r := &Run{Root: "mark", Tasks: map[string]*TaskRun{}, events: &queue{}}
 	r.Cancel()
 
-	err := drive(&r.proc, r.events, dir, r.argv(), true, redact.Empty())
+	err := drive(&r.proc, r.events, dir, r.argv(), true, true, redact.Empty())
 	if !errors.Is(err, errStoppedBeforeStart) {
 		t.Fatalf("drive = %v", err)
 	}
@@ -1059,14 +1059,14 @@ func TestABreakLeavesRoomForASecretStillArriving(t *testing.T) {
 
 // A fragment carries go-task's tag like a whole line does, and belongs to the task it names.
 func TestAFragmentGoesToTheTaskItsTagNames(t *testing.T) {
-	if got := partialOf("[b] half of a li"); got.Task != "b" || got.Text != "half of a li" {
+	if got := partialOf("[b] half of a li", true); got.Task != "b" || got.Text != "half of a li" {
 		t.Errorf("partialOf = %+v", got)
 	}
 	g := GraphFrom(Edge{Parent: "all", Children: []string{"a", "b"}}, Edge{Parent: "a"}, Edge{Parent: "b"})
 	g.Deps["all"] = []string{"a", "b"}
 	r := Detached("all", g)
 	r.Feed("a", "a is talking")
-	r.apply(partialOf("[b] half of a li"))
+	r.apply(partialOf("[b] half of a li", true))
 	if lines := r.Tasks["b"].Lines; len(lines) != 1 || lines[0].Plain != "half of a li" {
 		t.Errorf("b = %v; a = %v", r.Tasks["b"].Lines, r.Tasks["a"].Lines)
 	}
@@ -1201,6 +1201,68 @@ func TestCousinsUnderParallelDepsDoNotCloseEachOther(t *testing.T) {
 		if got := r.Tasks[name].Status; got != Running {
 			t.Errorf("%s = %v after its cousin spoke, want Running", name, got)
 		}
+	}
+}
+
+// go-task tags a line once, at its start, so a redrawn progress line is still the task's
+// that tagged it. With the redraw applied first the tag went with the frames it overwrote.
+func TestAProgressLineKeepsItsTag(t *testing.T) {
+	g := GraphFrom(Edge{Parent: "all", Children: []string{"a", "b"}}, Edge{Parent: "a"}, Edge{Parent: "b"})
+	g.Deps["all"] = []string{"a", "b"}
+	r := Detached("all", g)
+	q := &queue{}
+	relay(strings.NewReader("[a] a says hi\r\n[b] 10%\r50%\r100%\r\n"), q, redact.Empty(), true)
+	for _, e := range q.drain() {
+		r.apply(e)
+	}
+	got := []string{}
+	for _, l := range r.Tasks["b"].Lines {
+		got = append(got, l.Plain)
+	}
+	if !slices.Equal(got, []string{"100%"}) {
+		t.Errorf("b's lines = %q, want its progress line", got)
+	}
+}
+
+// Under `interleaved` nothing is tagged, so a line that starts with `[INFO] ` is output.
+func TestInterleavedOutputDoesNotInventTasks(t *testing.T) {
+	q := &queue{}
+	relay(strings.NewReader("[INFO] booting\r\n"), q, redact.Empty(), false)
+	for _, e := range q.drain() {
+		if l, ok := e.(LineEvent); ok && (l.Task != "" || l.Raw != "[INFO] booting") {
+			t.Errorf("line = %+v, want the whole text, untagged", l)
+		}
+	}
+}
+
+// go-task's colour reset after its last message is not a line of output, and a tail held
+// back as the possible start of a secret is all there is of it once the pty closes.
+func TestTheEndOfTheOutputIsNeitherInventedNorLost(t *testing.T) {
+	q := &queue{}
+	relay(strings.NewReader("\x1b[32mtask: [build] true\r\n\x1b[0m"), q, redact.Empty(), true)
+	for _, e := range q.drain() {
+		if l, ok := e.(LineEvent); ok && !l.IsCommand {
+			t.Errorf("a colour reset became a line: %q", l.Raw)
+		}
+		if p, ok := e.(Partial); ok {
+			t.Errorf("a colour reset became a partial line: %q", p.Text)
+		}
+	}
+
+	redactor := redact.Harvest("", map[string]string{"API_TOKEN": "sk-live-abcdef1234567890"}, nil)
+	q = &queue{}
+	relay(strings.NewReader("result OK s"), q, redactor, false)
+	last := ""
+	for _, e := range q.drain() {
+		switch e := e.(type) {
+		case LineEvent:
+			last = e.Raw
+		case Partial:
+			last = e.Text
+		}
+	}
+	if last != "result OK s" {
+		t.Errorf("the last thing said = %q, want the whole unterminated line", last)
 	}
 }
 

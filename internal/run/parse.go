@@ -55,7 +55,9 @@ func applyOverwrites(text string) string {
 //	`task: [name] cmd`  go-task echoing the command it is about to run
 //	`[name] output`     an output line, tagged by `--output prefixed`
 //	`task: Failed to run task "name": …`
-func parseLine(text string) []Event {
+//
+// Untagged, a `[name] ` at the start is only output — `interleaved` prefixes nothing.
+func parseLine(text string, tagged bool) []Event {
 	stripped := ansi.Strip(text)
 
 	if rest, ok := strings.CutPrefix(stripped, "task: ["); ok {
@@ -87,7 +89,7 @@ func parseLine(text string) []Event {
 		return append(events, LineEvent{Raw: text})
 	}
 
-	if rest, ok := strings.CutPrefix(stripped, "["); ok {
+	if rest, ok := strings.CutPrefix(stripped, "["); ok && tagged {
 		if name, _, ok := strings.Cut(rest, "] "); ok {
 			// Trust the tag only if it looks like a task name — output that happens to
 			// start with `[` should not invent a task.
@@ -116,8 +118,8 @@ func isTaskName(name string) bool {
 // partialOf is a fragment as a Partial, with go-task's tag read off it the way parseLine
 // reads one off a whole line. Without it a fragment of `[b] …` kept the tag as text and was
 // put under whichever task spoke last, which under parallel deps is often another one.
-func partialOf(text string) Partial {
-	for _, event := range parseLine(text) {
+func partialOf(text string, tagged bool) Partial {
+	for _, event := range parseLine(text, tagged) {
 		if line, ok := event.(LineEvent); ok {
 			return Partial{Task: line.Task, Text: line.Raw}
 		}
