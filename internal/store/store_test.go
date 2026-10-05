@@ -972,6 +972,50 @@ func TestStatusesAreStoredByName(t *testing.T) {
 	}
 }
 
+// A run somebody stopped did not answer anything about the code. Read as a failure, a task
+// that passed once and was stopped once was reported as flaky, and the picker showed ✗ for
+// a server that had only been shut down.
+func TestAStoppedRunIsNotAnAnswer(t *testing.T) {
+	base := t.TempDir()
+	atCommit(t, base, "/proj", "abc1234deadbeef", true, 300)
+	stopped := run.Detached("test", run.GraphFrom(run.Edge{Parent: "test"}))
+	stopped.Feed("test", "halfway")
+	stopped.Cancel()
+	stopped.Finish(201)
+	dir, err := Save(base, "/proj", stopped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewriteStored(t, base, dir, func(m *Manifest) { m.Commit = "abc1234deadbeef" })
+
+	if got := Flaky(base, "/proj"); len(got) != 0 {
+		t.Errorf("a stopped run made a flake: %+v", got)
+	}
+	if o := LastOutcomes(base, "/proj")["test"]; !o.Ok {
+		t.Errorf("the last outcome is the stopped run's: %+v", o)
+	}
+}
+
+// A record saved before its run ended — a detach — has no verdict yet. Counted as one, it
+// read as the task's latest result, and as a failure.
+func TestARunStillGoingHasNoOutcomeYet(t *testing.T) {
+	base := t.TempDir()
+	if _, err := Save(base, "/proj", agedRun("test", "test", true, 300)); err != nil {
+		t.Fatal(err)
+	}
+	going := run.Detached("test", run.GraphFrom(run.Edge{Parent: "test"}))
+	going.Feed("test", "still at it")
+	if _, err := Save(base, "/proj", going); err != nil {
+		t.Fatal(err)
+	}
+	if o := LastOutcomes(base, "/proj")["test"]; !o.Ok {
+		t.Errorf("a run that has not ended is the last outcome: %+v", o)
+	}
+	if got := Timeline(base, "/proj", "test"); len(got) != 1 {
+		t.Errorf("timeline has %d points, want only the finished run", len(got))
+	}
+}
+
 // A detached run that finishes after fifty others were saved has lost its partial record to
 // the prune. Rewriting it in place failed, and the archive kept "still running" for good.
 func TestAFinishedRunIsKeptAfterItsPartialRecordWasPruned(t *testing.T) {

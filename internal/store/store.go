@@ -115,6 +115,11 @@ type Manifest struct {
 	StartedUnix int64  `json:"started_unix"`
 	DurationMs  int64  `json:"duration_ms"`
 	Exit        int    `json:"exit"`
+	// Cancelled means somebody stopped it. Its tasks read as failed, because they did not
+	// finish, but that is not an answer about the code: a stopped run is left out of the
+	// picker's last outcome and out of `--flaky`, where it read as a failure and a passing
+	// task stopped once was reported as flaky.
+	Cancelled bool `json:"cancelled,omitempty"`
 	// RedactedSecrets is how many distinct secrets were masked out of this run.
 	RedactedSecrets int                 `json:"redacted_secrets"`
 	Tasks           []TaskEntry         `json:"tasks"`
@@ -482,6 +487,7 @@ func writeRun(base, projectDir string, r *run.Run, id string, started int64) (st
 		StartedUnix:     started,
 		DurationMs:      r.Duration.Milliseconds(),
 		Exit:            r.ExitCode(),
+		Cancelled:       r.Cancelled(),
 		RedactedSecrets: r.RedactedSecrets,
 		Tasks:           entries,
 		Edges:           r.Graph.Edges,
@@ -846,11 +852,13 @@ func LastOutcomes(base, project string) map[string]Outcome {
 	out := map[string]Outcome{}
 	// List is newest first, so the first sighting of a task is its latest.
 	for _, manifest := range List(base) {
-		if !SameDir(manifest.Dir, project) {
+		if !SameDir(manifest.Dir, project) || manifest.Cancelled {
 			continue
 		}
 		for _, entry := range manifest.Tasks {
-			if entry.Status == run.Pending || entry.Status == run.Skipped {
+			// Running is a record saved before the run ended — a detach — which says nothing
+			// yet about how it went.
+			if entry.Status == run.Pending || entry.Status == run.Skipped || entry.Status == run.Running {
 				continue
 			}
 			if _, seen := out[entry.Name]; seen {
@@ -908,7 +916,7 @@ func Timeline(base, project, task string) []Point {
 			continue
 		}
 		for _, e := range m.Tasks {
-			if e.Name != task || e.Status == run.Pending || e.Status == run.Skipped {
+			if e.Name != task || e.Status == run.Pending || e.Status == run.Skipped || e.Status == run.Running {
 				continue
 			}
 			out = append(out, Point{
@@ -1043,7 +1051,8 @@ func Flaky(base, project string) []Flake {
 	seen := map[key]*Flake{}
 
 	for _, m := range List(base) {
-		if (project != "" && !SameDir(m.Dir, project)) || m.Commit == "" || strings.HasSuffix(m.Commit, "-dirty") {
+		if (project != "" && !SameDir(m.Dir, project)) || m.Commit == "" || strings.HasSuffix(m.Commit, "-dirty") ||
+			m.Cancelled {
 			continue
 		}
 		for _, e := range m.Tasks {
