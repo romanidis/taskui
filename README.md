@@ -55,9 +55,9 @@ how a run went long after its output has been dropped — so a timeline goes bac
 runs per project while the text stays capped at the last fifty.
 
 **A timeline** is one task's own history: `⇧H` on any task lists every stored run of it,
-newest first, with a duration bar and a `✓✓✓✗✗` trend across the top. `h` answers "what has
-this project been doing"; `⇧H` answers "how has *this* been going", and those turn out to be
-different questions.
+newest first, with a duration bar and a `✓✓✓✗✗ ← latest` trend across the top. `h` answers
+"what has this project been doing"; `⇧H` answers "how has *this* been going", and those turn
+out to be different questions.
 
 **A diff** is what changed. `⇧D` on a failing task compares its output against the last run
 in which it passed, elides the hundreds of lines both runs share, and leaves you with the
@@ -442,7 +442,7 @@ milliseconds looks like a crash.
 ### `⇧H` — how this task has been going
 
 ```
- taskui ▸ test                                    ✓✓✓✗✗   5 runs   2 failed
+ taskui ▸ test                           ✓✓✓✗✗ ← latest   5 runs   2 failed
  ──────────────────────────────────────────────────────────────────────────
 ▌✗ 12m ago      1.31s  ██████████████      44 lines  task test
  ✗ 2h ago       1.28s  █████████████       44 lines  task all

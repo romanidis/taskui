@@ -548,10 +548,13 @@ archive existed; nothing asked them for it.
 
 A timeline is one task's stored appearances, newest first. Two details earn their space:
 
-The **trend** across the header (`✓✓✓✗✗`) reads left to right, which is forwards in time and
-therefore the opposite order to the list underneath it. That inconsistency is deliberate —
-it is the direction every other sparkline in the world runs, and the shape of *where it
-turned* is more use than a count of failures.
+The **trend** across the header (`✓✓✓✗✗ ← latest`) reads left to right, which is forwards in
+time and therefore the opposite order to the list underneath it. That inconsistency is
+deliberate — it is the direction every other sparkline in the world runs, and the shape of
+*where it turned* is more use than a count of failures. It says which end is the latest,
+though, because a trend running against the rows below it reads the wrong way round as
+easily as the right one: `✓✓✓✗✗` is a task that broke, and read from the list's end, one that
+recovered.
 
 The **bar** is scaled to the slowest run in the list rather than to any fixed duration,
 because the question is "which of these was slow" and that is a comparison within the list.

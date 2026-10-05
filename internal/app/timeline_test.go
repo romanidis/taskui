@@ -59,6 +59,11 @@ func TestTheTimelineChartsTheTaskUnderTheCursor(t *testing.T) {
 	if a.Timeline[0].Ok() {
 		t.Error("the newest run failed")
 	}
+	// The trend runs forwards in time, against the list, so it says which end is the latest.
+	g := a.Theme.Glyphs
+	if trend := g.StatusOk + g.StatusFailed + " ← latest"; !strings.Contains(a.RenderHeadless(100, 10)[0], trend) {
+		t.Errorf("header = %q, want the trend %q", a.RenderHeadless(100, 10)[0], trend)
+	}
 }
 
 // `h` is every run in the project; `⇧H` is this one task. They are different questions and

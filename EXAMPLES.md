@@ -228,7 +228,7 @@ the assertion underneath it, which is the half that says what broke.
 task, newest first:
 
 ```
- taskui ▸ backend:test                            ✓✓✓✗✗   5 runs   2 failed
+ taskui ▸ backend:test                   ✓✓✓✗✗ ← latest   5 runs   2 failed
  ──────────────────────────────────────────────────────────────────────────
 ▌✗ 9m ago       1.31s  ██████████████      44 lines  task ci
  ✗ 42m ago      1.28s  █████████████       44 lines  task ci

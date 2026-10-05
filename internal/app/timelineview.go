@@ -61,6 +61,12 @@ func (a *App) trend() string {
 	for _, p := range slices.Backward(points) {
 		b.WriteString(statusGlyph(p.Status, a.Theme))
 	}
+	// Forwards in time, as every sparkline runs — and so the opposite way to the list under
+	// it, which is newest first. A trend that runs against the rows below it has to say which
+	// end is now, or `✓✓✓✗✗` reads as recovered.
+	if len(points) > 0 {
+		b.WriteString(" ← latest")
+	}
 	return b.String()
 }
 
