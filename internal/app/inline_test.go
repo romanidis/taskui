@@ -146,7 +146,7 @@ func TestFoldingInsideTheBlockMovesOneTask(t *testing.T) {
 	}
 	a.CycleOutputFold()
 
-	folds := a.slotFolds("ci")
+	folds := a.taskSlot("ci").runFolds
 	if folds["build"] != FoldFull {
 		t.Errorf("build = %v, want it opened", folds["build"])
 	}

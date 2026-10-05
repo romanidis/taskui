@@ -15,7 +15,6 @@ package app
 
 import (
 	"github.com/romanidis/taskui/internal/pivot"
-	"github.com/romanidis/taskui/internal/run"
 )
 
 // PickerRow is one row of the picker list: a row of the task tree, or a row of a run
@@ -44,19 +43,6 @@ type PickerRow struct {
 // IsRun reports whether the row belongs to a run rather than to the task tree.
 func (r PickerRow) IsRun() bool { return r.Tree < 0 }
 
-// slotFolds is the fold state of the slot rooted at name — the run on screen, or one parked
-// behind it.
-//
-// The map handed back is the slot's own, so a task unfolded in the picker is unfolded when
-// you switch to the run view. The fold belongs to the run, not to the screen you happened
-// to be on when you set it. Nil when no slot holds that task.
-func (a *App) slotFolds(name string) map[string]Fold {
-	if s := a.taskSlot(name); s != nil {
-		return s.runFolds
-	}
-	return nil
-}
-
 // BlockFold is how much of a run the picker is showing under its task: hidden is nothing at
 // all, peek is every task's last few lines, full is all of it.
 //
@@ -64,20 +50,19 @@ func (a *App) slotFolds(name string) map[string]Fold {
 // state would be one the run view could contradict — open a task over there, come back, and
 // the block would claim to be closed while showing you output.
 func (a *App) BlockFold(root string) Fold {
-	r := a.slotRun(root)
-	if r == nil {
+	s := a.taskSlot(root)
+	if s == nil {
 		return FoldHidden
 	}
-	names := r.TaskNames()
+	names := s.Run.TaskNames()
 	if len(names) == 0 {
 		// Nothing in the graph yet — a run one tick old. Answering "hidden" here would
 		// collapse a block that is about to have something in it.
 		return FoldPeek
 	}
-	folds := a.slotFolds(root)
 	every := func(f Fold) bool {
 		for _, name := range names {
-			if folds[name] != f {
+			if s.runFolds[name] != f {
 				return false
 			}
 		}
@@ -93,63 +78,6 @@ func (a *App) BlockFold(root string) Fold {
 		// more of it rather than less.
 		return FoldPeek
 	}
-}
-
-// CycleBlockFold is `o` on a task the picker is showing a run under: hidden, peek, full,
-// round again — the whole run at once, which is the granularity the picker is for. Inside
-// the block the same key still moves one task.
-func (a *App) CycleBlockFold(root string) {
-	r := a.slotRun(root)
-	if r == nil {
-		return
-	}
-	next := a.BlockFold(root).Next()
-	folds := a.slotFolds(root)
-	for _, name := range r.TaskNames() {
-		folds[name] = next
-	}
-	a.afterFoldChange(root)
-}
-
-// CycleTaskFold is the same key on a row inside the block: one task of the run moves along
-// the cycle and the rest stay as they are.
-func (a *App) CycleTaskFold(root, task string) {
-	folds := a.slotFolds(root)
-	if folds == nil {
-		return
-	}
-	folds[task] = folds[task].Next()
-	a.afterFoldChange(root)
-}
-
-// afterFoldChange rebuilds whatever is showing the run whose folds just moved.
-func (a *App) afterFoldChange(root string) {
-	if a.Run != nil && a.taskSlot(root) == a.slot {
-		// Following hands back a fold it opened itself; one you set is yours.
-		a.followedOpen = ""
-		a.RebuildRunRows()
-	}
-	a.RebuildPickerRows()
-}
-
-// RunUnder is the run the picker is showing under the row at index i, if any.
-func (a *App) RunUnder(i int) (*run.Run, string, bool) {
-	if i < 0 || i >= len(a.PickerRows) {
-		return nil, "", false
-	}
-	row := a.PickerRows[i]
-	if row.IsRun() {
-		if r := a.slotRun(row.Root); r != nil {
-			return r, row.Root, true
-		}
-		return nil, "", false
-	}
-	name, ok := a.taskNameOfTreeRow(row.Tree)
-	if !ok {
-		return nil, "", false
-	}
-	r := a.slotRun(name)
-	return r, name, r != nil
 }
 
 // taskNameOfTreeRow is the task a tree row stands for, if it stands for one.
@@ -180,12 +108,11 @@ func (a *App) RebuildPickerRows() {
 		if !ok {
 			continue
 		}
-		r := a.slotRun(name)
-		if r == nil || a.BlockFold(name) == FoldHidden {
+		s := a.taskSlot(name)
+		if s == nil || a.BlockFold(name) == FoldHidden {
 			continue
 		}
-		folds := a.slotFolds(name)
-		inline := runRowsFor(r, func(task string) Fold { return folds[task] }, a.PeekLines, nil)
+		inline := runRowsFor(s.Run, func(task string) Fold { return s.runFolds[task] }, a.PeekLines, nil)
 		if len(inline) == 0 {
 			continue
 		}
@@ -334,26 +261,50 @@ func (a *App) CursorInRun() bool {
 	return a.Cursor >= 0 && a.Cursor < len(a.PickerRows) && a.PickerRows[a.Cursor].IsRun()
 }
 
-// CycleOutputFold is the fold key aimed at a run: on a task it moves the whole block along
-// the cycle, and on a row inside one it moves that one task. It reports whether there was a
-// run to move — the caller falls back to folding the tree when there was not.
+// CycleOutputFold is the fold key aimed at a run. It reports whether there was a run to
+// move; the caller falls back to folding the tree when there was not.
+//
+// On a task the picker is showing a run under, the whole block moves along the cycle —
+// hidden, peek, full, round again — which is the granularity the picker is for. On a row
+// inside the block, that one task moves and the rest stay as they are.
+//
+// The folds moved are the slot's own, so a task unfolded in the picker is unfolded when you
+// switch to the run view. The fold belongs to the run, not to the screen you happened to be
+// on when you set it.
 func (a *App) CycleOutputFold() bool {
 	if a.Cursor < 0 || a.Cursor >= len(a.PickerRows) {
 		return false
 	}
 	row := a.PickerRows[a.Cursor]
+	var s *slot
 	if row.IsRun() {
+		if s = a.taskSlot(row.Root); s == nil {
+			return false
+		}
 		task := row.Run.Name
 		if !row.Run.IsTask {
 			task = row.Run.Task
 		}
-		a.CycleTaskFold(row.Root, task)
-		return true
+		s.runFolds[task] = s.runFolds[task].Next()
+	} else {
+		name, ok := a.taskNameOfTreeRow(row.Tree)
+		if !ok {
+			return false
+		}
+		if s = a.taskSlot(name); s == nil {
+			return false
+		}
+		next := a.BlockFold(name).Next()
+		for _, task := range s.Run.TaskNames() {
+			s.runFolds[task] = next
+		}
 	}
-	name, ok := a.taskNameOfTreeRow(row.Tree)
-	if !ok || a.slotRun(name) == nil {
-		return false
+
+	if a.Run != nil && s == a.slot {
+		// Following hands back a fold it opened itself; one you set is yours.
+		a.followedOpen = ""
+		a.RebuildRunRows()
 	}
-	a.CycleBlockFold(name)
+	a.RebuildPickerRows()
 	return true
 }
