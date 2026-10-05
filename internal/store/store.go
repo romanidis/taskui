@@ -327,8 +327,13 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 	backfillHistory(base)
 
 	started := time.Now().Unix()
-	if r.HasDuration {
+	switch {
+	case r.HasDuration:
 		started -= int64(r.Duration.Seconds())
+	case !r.Started.IsZero():
+		// Still going — a detach saves what it has — so it has no duration to count back by,
+		// and dating it from now filed a run started an hour ago as starting at the detach.
+		started = r.Started.Unix()
 	}
 	// Seconds alone collide when two runs finish in the same second, which happens
 	// constantly with fast tasks; the task name disambiguates most of them, and a counter

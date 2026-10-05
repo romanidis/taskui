@@ -971,3 +971,22 @@ func TestStatusesAreStoredByName(t *testing.T) {
 		t.Errorf("unknown status: %v, %v", back.Status, err)
 	}
 }
+
+// A run saved while it is still going, as a detach saves it, is dated from when it started.
+// Dated from the save, a run started an hour ago was filed as starting at the detach.
+func TestARunSavedWhileGoingIsDatedFromItsStart(t *testing.T) {
+	base := t.TempDir()
+	r := run.Detached("dev", run.GraphFrom(run.Edge{Parent: "dev"}))
+	r.Started = time.Now().Add(-time.Hour)
+	r.Feed("dev", "listening on :3000")
+	if _, err := Save(base, "/proj", r); err != nil {
+		t.Fatal(err)
+	}
+	runs := List(base)
+	if len(runs) != 1 {
+		t.Fatalf("%d runs stored, want 1", len(runs))
+	}
+	if got, want := runs[0].StartedUnix, r.Started.Unix(); got != want {
+		t.Errorf("dated %d, want %d: an hour before the save", got, want)
+	}
+}
