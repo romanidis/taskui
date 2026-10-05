@@ -76,7 +76,7 @@ func TestCtrlCLeavesFromAnyPrompt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a := appAt(t, "backend:lint")
 			tc.open(a)
-			if !a.promptOpen() {
+			if !a.promptTakes(Char('x')) {
 				t.Fatal("the prompt did not open")
 			}
 			press(a, ctrl('c'))

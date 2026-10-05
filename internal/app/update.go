@@ -115,7 +115,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Presses only. v2 can also report releases and repeats, but only if a frame asks for
 	// them, and nothing here wants a key twice.
 	case tea.KeyPressMsg:
-		if a.handleKey(fromTea(msg)) {
+		if a.HandleKey(fromTea(msg)) {
 			a.shutdown()
 			return a, tea.Quit
 		}

@@ -143,7 +143,7 @@ func (a *App) handleWheel(button tea.MouseButton) {
 	}
 	for range wheelStep {
 		// The return value is "the app is quitting", which no movement key ever is.
-		a.handleKey(k)
+		a.HandleKey(k)
 	}
 }
 

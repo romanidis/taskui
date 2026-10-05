@@ -52,10 +52,8 @@ func (a *App) quit() bool {
 	return false
 }
 
-// HandleKey is the test-visible entry point. It returns true when the app should exit.
-func (a *App) HandleKey(k Key) bool { return a.handleKey(k) }
-
-func (a *App) handleKey(k Key) bool {
+// HandleKey answers one key press. It returns true when the app should exit.
+func (a *App) HandleKey(k Key) bool {
 	// Anything that is not `esc` breaks the streak, so the hint answers a real run of
 	// presses rather than two of them ten minutes apart.
 	if k.kind != keyEsc {
@@ -107,24 +105,22 @@ func (a *App) handleKey(k Key) bool {
 	return a.handlePickerKey(k)
 }
 
-// promptOpen is true while something on screen is taking typed characters — a filter, a
-// search, an argument line, or the running child's own stdin.
-func (a *App) promptOpen() bool {
-	return a.EnteringArgs || a.Searching || a.SendingInput || a.HistorySearching ||
-		a.Jumping || a.Filtering || a.HelpFinding
-}
-
-// promptOwns says whether the prompt on screen answers this particular motion key itself.
+// promptTakes says whether an open prompt should get this key rather than the screen behind
+// it. Both of the handlers that run ahead of the per-screen ones ask this, so a prompt cannot
+// be answered by one of them and ignored by the other.
 //
-// Asked key by key rather than as a blanket "something is open", because these prompts use
-// different parts of the keyboard and a motion the open one has no use for should still
-// move the list behind it: `^d` pages the run while you are searching it, because the
-// search line has nothing to do with `^d` and the output is right there.
-//
-// The filter and the help's find own no motions at all, which is what makes narrowing and
-// then picking one gesture rather than two.
-func (a *App) promptOwns(k Key) bool {
+// A typed character goes to whatever is open: a filter, a search, an argument line, or the
+// running child's own stdin. A motion is asked about prompt by prompt, because these prompts
+// use different parts of the keyboard and a motion the open one has no use for should still
+// move the list behind it: `^d` pages the run while you are searching it, because the search
+// line has nothing to do with `^d` and the output is right there. The filter and the help's
+// find own no motions at all, which is what makes narrowing and then picking one gesture
+// rather than two.
+func (a *App) promptTakes(k Key) bool {
 	switch {
+	case k.typed():
+		return a.EnteringArgs || a.Searching || a.SendingInput || a.HistorySearching ||
+			a.Jumping || a.Filtering || a.HelpFinding
 	// Every key is the child's while you are typing at it — `^d` most of all, since that
 	// is the one that closes its stdin.
 	case a.SendingInput:
@@ -137,16 +133,6 @@ func (a *App) promptOwns(k Key) bool {
 		return k.kind == keyUp || k.kind == keyDown
 	}
 	return false
-}
-
-// promptTakes says whether an open prompt should get this key rather than the screen
-// behind it. Both of the handlers that run ahead of the per-screen ones ask this, so a
-// prompt cannot be answered by one of them and ignored by the other.
-func (a *App) promptTakes(k Key) bool {
-	if k.typed() {
-		return a.promptOpen()
-	}
-	return a.promptOwns(k)
 }
 
 // handleCommonKey answers the two keys that mean the same thing on every screen.
