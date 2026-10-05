@@ -90,12 +90,12 @@ func runHeadless(dir, target string, argv []string, quickfix bool) error {
 	return nil
 }
 
-// drive plays keys into a live run, then lets it finish.
+// playKeys plays keys into a live run, then lets it finish.
 //
 // The plain screenshot path applies keys to a finished run, which cannot exercise anything
 // interactive — an interactive run never finishes on its own, so waiting first is a
 // deadlock. Keys are paced so the child has time to reach its prompt between them.
-func drive(a *app.App, feed string) {
+func playKeys(a *app.App, feed string) {
 	deadline := time.Now().Add(30 * time.Second)
 	pending := app.KeysFrom(feed)
 	nextKey := time.Now().Add(400 * time.Millisecond)
@@ -143,7 +143,7 @@ func screenshotRun(out io.Writer, a *app.App) error {
 	a.ResumeRun()
 	started := a.Run
 	a.AwaitDetails(detailGrace)
-	drive(a, opts.keys)
+	playKeys(a, opts.keys)
 	if err := screenshot(out, a, opts.screenshot, ""); err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func screenshot(out io.Writer, a *app.App, size, feed string) error {
 		// it is aimed at what it printed. Let it finish before playing the next one, or
 		// the fold key lands on a run with nothing in it yet.
 		if a.RunInFlight() {
-			drive(a, "")
+			playKeys(a, "")
 		}
 	}
 	a.Phase = opts.phase

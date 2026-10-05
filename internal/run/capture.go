@@ -45,7 +45,7 @@ func capture(p *process, events *queue, dir, root string, argv []string, attende
 
 	// go-task tags every line with its task, except under `interleaved`.
 	tagged := !slices.Contains(argv, "interleaved")
-	switch err := drive(p, events, dir, argv, attended, tagged, redactor); {
+	switch err := runOnPty(p, events, dir, argv, attended, tagged, redactor); {
 	case errors.Is(err, errStoppedBeforeStart):
 		events.push(Exited{Code: -1})
 	case err != nil:
@@ -54,12 +54,12 @@ func capture(p *process, events *queue, dir, root string, argv []string, attende
 	}
 }
 
-// drive runs `task` on a pty and relays what it prints, blocking until the child exits.
+// runOnPty runs `task` on a pty and relays what it prints, blocking until the child exits.
 //
 // Unattended, its input is /dev/null rather than the terminal, which is how go-task knows
 // there is nobody to answer a prompt. The pty stays its controlling terminal, reached through
 // stdout instead, so stopping the run still reaches the whole group.
-func drive(
+func runOnPty(
 	p *process,
 	events *queue,
 	dir string,

@@ -962,9 +962,9 @@ func TestAStopBeforeTheChildStartsMeansItNeverStarts(t *testing.T) {
 	r := &Run{Root: "mark", Tasks: map[string]*TaskRun{}, events: &queue{}}
 	r.Cancel()
 
-	err := drive(&r.proc, r.events, dir, r.argv(), true, true, redact.Empty())
+	err := runOnPty(&r.proc, r.events, dir, r.argv(), true, true, redact.Empty())
 	if !errors.Is(err, errStoppedBeforeStart) {
-		t.Fatalf("drive = %v", err)
+		t.Fatalf("runOnPty = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "ran")); err == nil {
 		t.Error("the task ran after being stopped")
