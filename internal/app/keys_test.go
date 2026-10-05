@@ -30,6 +30,13 @@ func appAt(t *testing.T, name string) *App {
 
 func press(a *App, k Key) { a.HandleKey(k) }
 
+// typeText presses each character of text in turn, as typing it would.
+func typeText(a *App, text string) {
+	for _, c := range text {
+		press(a, Char(c))
+	}
+}
+
 // groupRows is where the picker's group headers sit in its list.
 func groupRows(a *App) []int {
 	var out []int
@@ -419,8 +426,8 @@ func TestAnythingElseBreaksTheEscStreak(t *testing.T) {
 // hint, and only starts counting once there is nothing left to dismiss.
 func TestEscClearsAFilterBeforeItCounts(t *testing.T) {
 	a := appAt(t, "backend:lint")
-	a.Filtering = true
-	a.PushQuery('m')
+	press(a, Char('/'))
+	press(a, Char('m'))
 	if a.Query == "" {
 		t.Fatal("no filter to clear")
 	}

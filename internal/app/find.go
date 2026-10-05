@@ -34,16 +34,6 @@ func (a *App) backToJumpOrigin() {
 	a.Cursor = min(a.jumpOrigin, max(0, len(a.PickerRows)-1))
 }
 
-func (a *App) PushJump(c rune) {
-	a.JumpQuery += string(c)
-	a.applyJump()
-}
-
-func (a *App) PopJump() {
-	a.JumpQuery = withoutLastRune(a.JumpQuery)
-	a.applyJump()
-}
-
 // AcceptJump keeps the cursor where the jump left it.
 func (a *App) AcceptJump() {
 	a.Jumping = false
@@ -170,12 +160,14 @@ func (a *App) handleJumpKey(k Key) {
 	case k.kind == keyEnter:
 		a.AcceptJump()
 	case k.kind == keyBackspace:
-		a.PopJump()
+		a.JumpQuery = withoutLastRune(a.JumpQuery)
+		a.applyJump()
 	case k.kind == keyDown, k.kind == keyTab:
 		a.JumpStep(1)
 	case k.kind == keyUp, k.kind == keyBackTab:
 		a.JumpStep(-1)
 	case k.typed():
-		a.PushJump(k.ch)
+		a.JumpQuery += string(k.ch)
+		a.applyJump()
 	}
 }

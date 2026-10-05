@@ -53,7 +53,8 @@ func (a *App) handleRunKey(k Key) bool {
 			a.Searching = false
 			return false
 		case k.kind == keyBackspace:
-			a.PopSearch()
+			a.SearchInput = withoutLastRune(a.SearchInput)
+			a.ApplySearch()
 			return false
 		case k.kind == keyDown:
 			a.SearchStep(1)
@@ -62,7 +63,8 @@ func (a *App) handleRunKey(k Key) bool {
 			a.SearchStep(-1)
 			return false
 		case k.typed():
-			a.PushSearch(k.ch)
+			a.SearchInput += string(k.ch)
+			a.ApplySearch()
 			return false
 		}
 	}

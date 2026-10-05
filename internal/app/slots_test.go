@@ -341,9 +341,7 @@ func TestCancellingAJumpReturnsToTheRowItLeft(t *testing.T) {
 	a.Cursor = at
 
 	a.BeginJump()
-	for _, c := range "a:y" {
-		a.PushJump(c)
-	}
+	typeText(a, "a:y")
 	a.CancelJump()
 
 	if got := a.Tree.Nodes[a.Rows[a.PickerRows[a.Cursor].Tree].Node].Label; got != "b" {

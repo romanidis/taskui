@@ -270,18 +270,6 @@ func (a *App) MoveGroup(delta int) {
 	}
 }
 
-func (a *App) PushQuery(c rune) {
-	keep := a.SelectedTask()
-	a.Query += string(c)
-	a.Rebuild(keep)
-}
-
-func (a *App) PopQuery() {
-	keep := a.SelectedTask()
-	a.Query = withoutLastRune(a.Query)
-	a.Rebuild(keep)
-}
-
 func (a *App) ClearQuery() {
 	keep := a.SelectedTask()
 	a.Query = ""
@@ -301,12 +289,16 @@ func (a *App) handleFilterKey(k Key) bool {
 		a.Filtering = false
 		return true
 	case k.kind == keyBackspace:
-		a.PopQuery()
+		keep := a.SelectedTask()
+		a.Query = withoutLastRune(a.Query)
+		a.Rebuild(keep)
 		return true
 	case k.kind == keyDown, k.kind == keyUp:
 		return false
 	case k.typed():
-		a.PushQuery(k.ch)
+		keep := a.SelectedTask()
+		a.Query += string(k.ch)
+		a.Rebuild(keep)
 		return true
 	default:
 		return false

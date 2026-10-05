@@ -147,9 +147,8 @@ func TestFilteringRevealsMatchesAndRestoresFoldsAfter(t *testing.T) {
 	a := sample(t)
 	collapsed := len(a.Rows)
 
-	for _, c := range "lint" {
-		a.PushQuery(c)
-	}
+	press(a, Char('/'))
+	typeText(a, "lint")
 	names := visibleTaskNames(a)
 	found := false
 	for _, n := range names {
@@ -177,9 +176,7 @@ func TestJumpingMovesTheCursorWithoutNarrowingTheList(t *testing.T) {
 	rowsBefore := len(a.Rows)
 
 	a.BeginJump()
-	for _, c := range "backend:lint" {
-		a.PushJump(c)
-	}
+	typeText(a, "backend:lint")
 
 	if ti := a.SelectedTask(); ti < 0 || a.Tasks[ti].Name != "backend:lint" {
 		t.Errorf("selected = %d", ti)
@@ -198,9 +195,7 @@ func TestCancellingAJumpRestoresTheCursor(t *testing.T) {
 	origin := parkOn(t, a, "app:fmt")
 
 	a.BeginJump()
-	for _, c := range "backend:lint" {
-		a.PushJump(c)
-	}
+	typeText(a, "backend:lint")
 	if a.SelectedTask() == origin {
 		t.Fatal("the jump did not move")
 	}
@@ -215,9 +210,7 @@ func TestCancellingAJumpRestoresTheCursor(t *testing.T) {
 func TestJumpStepsThroughEveryMatch(t *testing.T) {
 	a := sample(t)
 	a.BeginJump()
-	for _, c := range "lint" {
-		a.PushJump(c)
-	}
+	typeText(a, "lint")
 	n := len(a.JumpMatches)
 	if n <= 1 {
 		t.Fatalf("several tasks should match lint: %d", n)
@@ -240,9 +233,7 @@ func TestJumpStepsThroughEveryMatch(t *testing.T) {
 func TestAcceptingAJumpKeepsThePosition(t *testing.T) {
 	a := sample(t)
 	a.BeginJump()
-	for _, c := range "infra:lint" {
-		a.PushJump(c)
-	}
+	typeText(a, "infra:lint")
 	landed := a.SelectedTask()
 	a.AcceptJump()
 	if a.Jumping {
@@ -256,9 +247,8 @@ func TestAcceptingAJumpKeepsThePosition(t *testing.T) {
 // Fuzzy, over the full colon path — `blint` should find `backend:lint`.
 func TestFilterMatchesFuzzilyAcrossThePath(t *testing.T) {
 	a := sample(t)
-	for _, c := range "blint" {
-		a.PushQuery(c)
-	}
+	press(a, Char('/'))
+	typeText(a, "blint")
 	found := false
 	for _, n := range visibleTaskNames(a) {
 		if n == "backend:lint" {
@@ -274,18 +264,16 @@ func TestFilterMatchesFuzzilyAcrossThePath(t *testing.T) {
 // thing exact.
 func TestTheFilterIsSmartCased(t *testing.T) {
 	a := appWith(t, []string{"backend:lint", "Backend:Lint"})
-	for _, c := range "BL" {
-		a.PushQuery(c)
-	}
+	press(a, Char('/'))
+	typeText(a, "BL")
 	names := visibleTaskNames(a)
 	if !reflect.DeepEqual(names, []string{"Backend:Lint"}) {
 		t.Errorf("uppercase should match exactly: %v", names)
 	}
 
 	a.ClearQuery()
-	for _, c := range "bl" {
-		a.PushQuery(c)
-	}
+	press(a, Char('/'))
+	typeText(a, "bl")
 	if len(visibleTaskNames(a)) != 2 {
 		t.Errorf("lowercase should match loosely: %v", visibleTaskNames(a))
 	}

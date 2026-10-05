@@ -27,19 +27,6 @@ func (a *App) BeginHelpFind() {
 	a.HelpOffset = 0
 }
 
-// PushHelpFind and PopHelpFind narrow as you type. Back to the top on every keystroke: the
-// list under the scroll position has changed, and the answer is usually the first line of
-// what is left.
-func (a *App) PushHelpFind(c rune) {
-	a.HelpQuery += string(c)
-	a.HelpOffset = 0
-}
-
-func (a *App) PopHelpFind() {
-	a.HelpQuery = withoutLastRune(a.HelpQuery)
-	a.HelpOffset = 0
-}
-
 // ClearHelpFind drops the query and the prompt, which is what `esc` means here — the whole
 // keymap back, rather than the screen closed.
 func (a *App) ClearHelpFind() {
@@ -68,11 +55,15 @@ func (a *App) handleHelpKey(k Key) bool {
 			// filter does: you search to find the line, then you read it.
 			a.HelpFinding = false
 			return false
+		// Back to the top on every keystroke: the list under the scroll position has
+		// changed, and the answer is usually the first line of what is left.
 		case k.kind == keyBackspace:
-			a.PopHelpFind()
+			a.HelpQuery = withoutLastRune(a.HelpQuery)
+			a.HelpOffset = 0
 			return false
 		case k.typed():
-			a.PushHelpFind(k.ch)
+			a.HelpQuery += string(k.ch)
+			a.HelpOffset = 0
 			return false
 		}
 	}

@@ -335,8 +335,9 @@ func TestFilteringRendersOnEveryKeystroke(t *testing.T) {
 	a := manyTasks(t, 80)
 	w, h := 150, 12
 
+	press(a, Char('/'))
 	for _, c := range "task01" {
-		a.PushQuery(c)
+		press(a, Char(c))
 		lines := a.RenderHeadless(w, h)
 		if !strings.Contains(lines[0], "/"+a.Query) {
 			t.Errorf("header %q does not show the query %q", lines[0], a.Query)

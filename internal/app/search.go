@@ -119,13 +119,3 @@ func (a *App) BeginFilter() {
 	a.SearchError = ""
 	a.Status = ""
 }
-
-func (a *App) PushSearch(c rune) {
-	a.SearchInput += string(c)
-	a.ApplySearch()
-}
-
-func (a *App) PopSearch() {
-	a.SearchInput = withoutLastRune(a.SearchInput)
-	a.ApplySearch()
-}

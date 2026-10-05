@@ -117,16 +117,6 @@ func (a *App) ClearHistorySearch() {
 	a.HistoryCursor = 0
 }
 
-func (a *App) PushHistorySearch(c rune) {
-	a.HistoryQuery += string(c)
-	a.applyHistorySearch()
-}
-
-func (a *App) PopHistorySearch() {
-	a.HistoryQuery = withoutLastRune(a.HistoryQuery)
-	a.applyHistorySearch()
-}
-
 // applyHistorySearch greps the archive and keeps only the runs that matched.
 //
 // This is the "when did this start failing" question — the one thing you could not ask
@@ -275,13 +265,15 @@ func (a *App) handleHistoryKey(k Key) bool {
 			// Keep the query; it carries into the run you open.
 			a.HistorySearching = false
 		case k.kind == keyBackspace:
-			a.PopHistorySearch()
+			a.HistoryQuery = withoutLastRune(a.HistoryQuery)
+			a.applyHistorySearch()
 		case k.kind == keyDown:
 			a.HistoryMoveCursor(1)
 		case k.kind == keyUp:
 			a.HistoryMoveCursor(-1)
 		case k.typed():
-			a.PushHistorySearch(k.ch)
+			a.HistoryQuery += string(k.ch)
+			a.applyHistorySearch()
 		}
 		return false
 	}

@@ -134,7 +134,7 @@ func TestTheFilterTakesLettersAndLeavesMotions(t *testing.T) {
 		t.Errorf("`j` should have been typed: query = %q", a.Query)
 	}
 
-	a.PopQuery()
+	press(a, special(tea.KeyBackspace))
 	a.Cursor = 0
 	press(a, special(tea.KeyDown))
 	if a.Query != "" {

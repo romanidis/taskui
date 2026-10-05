@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/romanidis/taskui/internal/graph"
@@ -68,42 +69,6 @@ func (a *App) CancelArgs() {
 	a.argsComp = nil
 }
 
-func (a *App) ArgsInsert(c rune) {
-	runes := []rune(a.ArgsInput)
-	at := min(a.ArgsCursor, len(runes))
-	out := make([]rune, 0, len(runes)+1)
-	out = append(out, runes[:at]...)
-	out = append(out, c)
-	out = append(out, runes[at:]...)
-	a.ArgsInput = string(out)
-	a.ArgsCursor = at + 1
-}
-
-func (a *App) ArgsBackspace() {
-	if a.ArgsCursor == 0 {
-		return
-	}
-	runes := []rune(a.ArgsInput)
-	at := a.ArgsCursor - 1
-	a.ArgsInput = string(append(runes[:at], runes[at+1:]...))
-	a.ArgsCursor = at
-}
-
-func (a *App) ArgsDelete() {
-	runes := []rune(a.ArgsInput)
-	if a.ArgsCursor >= len(runes) {
-		return
-	}
-	a.ArgsInput = string(append(runes[:a.ArgsCursor], runes[a.ArgsCursor+1:]...))
-}
-
-func (a *App) ArgsMove(delta int) {
-	a.ArgsCursor = clamp(a.ArgsCursor+delta, 0, len([]rune(a.ArgsInput)))
-}
-
-func (a *App) ArgsHome() { a.ArgsCursor = 0 }
-func (a *App) ArgsEnd()  { a.ArgsCursor = len([]rune(a.ArgsInput)) }
-
 func (a *App) ConfirmArgs() {
 	name := a.ArgsTarget
 	if name == "" {
@@ -147,19 +112,25 @@ func (a *App) handleArgsKey(k Key) {
 		a.CancelArgs()
 	case k.kind == keyEnter:
 		a.ConfirmArgs()
-	case k.kind == keyBackspace:
-		a.ArgsBackspace()
-	case k.kind == keyDelete:
-		a.ArgsDelete()
+	case k.kind == keyBackspace && a.ArgsCursor > 0:
+		runes := []rune(a.ArgsInput)
+		a.ArgsCursor--
+		a.ArgsInput = string(slices.Delete(runes, a.ArgsCursor, a.ArgsCursor+1))
+	case k.kind == keyDelete && a.ArgsCursor < len([]rune(a.ArgsInput)):
+		runes := []rune(a.ArgsInput)
+		a.ArgsInput = string(slices.Delete(runes, a.ArgsCursor, a.ArgsCursor+1))
 	case k.kind == keyLeft:
-		a.ArgsMove(-1)
+		a.ArgsCursor = max(a.ArgsCursor-1, 0)
 	case k.kind == keyRight:
-		a.ArgsMove(1)
+		a.ArgsCursor = min(a.ArgsCursor+1, len([]rune(a.ArgsInput)))
 	case k.kind == keyHome:
-		a.ArgsHome()
+		a.ArgsCursor = 0
 	case k.kind == keyEnd:
-		a.ArgsEnd()
+		a.ArgsCursor = len([]rune(a.ArgsInput))
 	case k.typed():
-		a.ArgsInsert(k.ch)
+		runes := []rune(a.ArgsInput)
+		at := min(a.ArgsCursor, len(runes))
+		a.ArgsInput = string(slices.Insert(runes, at, k.ch))
+		a.ArgsCursor = at + 1
 	}
 }
