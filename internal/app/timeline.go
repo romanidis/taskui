@@ -106,12 +106,8 @@ func (a *App) OpenTimelineRun() {
 }
 
 // DiffAgainstLastGreen is `D` from the run view: what changed in this task since it last
-// passed.
-//
-// Last *green* rather than last run, because "it worked before" is the comparison that
-// isolates the failure — diffing two consecutive failures usually shows only that the
-// timestamps moved. When the task has never passed there is nothing green to compare
-// against, and the previous run is the honest second choice rather than an error.
+// passed, or since the run before when it has not. Which run that is is the archive's
+// Baseline.
 func (a *App) DiffAgainstLastGreen() {
 	name, ok := a.RunSelectedTask()
 	if !ok {
@@ -132,26 +128,20 @@ func (a *App) DiffAgainstLastGreen() {
 		return
 	}
 
-	project := a.Root
 	// A live run that has finished is in the archive already, under the id it was saved to
 	// rather than one it was loaded from — and not skipping it compared the run with itself.
 	skip := a.Run.StoredID()
 	if skip == "" && a.SavedTo != "" {
 		skip = filepath.Base(a.SavedTo)
 	}
-	before := a.Run.Started.Unix()
-	point, ok := a.archive.LastGreen(project, name, skip, before)
-	against := "when it last passed"
+	point, ok := a.archive.Baseline(a.Root, name, skip, a.Run.Started.Unix())
 	if !ok {
-		point, ok = a.archive.Previous(project, name, skip, before)
-		against = "the run before"
-		if !ok {
-			a.Status = "no earlier run of `" + name + "` to compare against"
-			return
-		}
-		if !point.Ok() {
-			against = "the run before — which failed too"
-		}
+		a.Status = "no earlier run of `" + name + "` to compare against"
+		return
+	}
+	against := "when it last passed"
+	if !point.Ok() {
+		against = "the run before — which failed too"
 	}
 	a.showDiff(name, a.archive.Output(point), newer, against, point)
 }

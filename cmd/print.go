@@ -256,18 +256,17 @@ func printDiff(out io.Writer, root, taskName string) error {
 		return fmt.Errorf("no stored runs of %q in this project", taskName)
 	}
 	newest := points[0]
-	older, ok := archive.LastGreen(root, taskName, newest.RunID, 0)
+	older, ok := archive.Baseline(root, taskName, newest.RunID, 0)
+	switch {
+	case !ok && len(points) > 1:
+		return fmt.Errorf("the earlier runs of %q are remembered but their output is no longer "+
+			"stored — only the last %d runs keep theirs", taskName, store.KeepRuns)
+	case !ok:
+		return fmt.Errorf("only one stored run of %q — nothing to compare it against", taskName)
+	}
 	against := "when it last passed"
-	if !ok {
-		older, ok = archive.Previous(root, taskName, newest.RunID, 0)
+	if !older.Ok() {
 		against = "the run before"
-		switch {
-		case !ok && len(points) > 1:
-			return fmt.Errorf("the earlier runs of %q are remembered but their output is no longer "+
-				"stored — only the last %d runs keep theirs", taskName, store.KeepRuns)
-		case !ok:
-			return fmt.Errorf("only one stored run of %q — nothing to compare it against", taskName)
-		}
 	}
 
 	edits := diff.Lines(archive.Output(older), archive.Output(newest))

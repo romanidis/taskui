@@ -78,7 +78,7 @@ func TestADiffSkipsRunsWhoseOutputIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	green, ok := archive.LastGreen("/proj", "test", "", 0)
+	green, ok := archive.Baseline("/proj", "test", "", 0)
 	if !ok {
 		t.Fatal("there is still a green run with output")
 	}

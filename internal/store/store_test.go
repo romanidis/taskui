@@ -479,7 +479,7 @@ func TestATimelineSkipsTheTasksThatNeverRan(t *testing.T) {
 	}
 }
 
-func TestLastGreenSkipsTheFailuresAndItself(t *testing.T) {
+func TestTheBaselineIsTheLastPassBeforeTheRun(t *testing.T) {
 	archive := At(t.TempDir())
 	var ids []string
 	for _, c := range []struct {
@@ -492,43 +492,41 @@ func TestLastGreenSkipsTheFailuresAndItself(t *testing.T) {
 		}
 		ids = append(ids, filepath.Base(dir))
 	}
-	newest := ids[2]
 
-	green, ok := archive.LastGreen("/proj", "test", "", 0)
+	green, ok := archive.Baseline("/proj", "test", "", 0)
 	if !ok {
 		t.Fatal("no green run found")
-	}
-	if !green.Ok() {
-		t.Error("last green is not green")
 	}
 	// Two passes, 300s and 200s ago, then a failure. The newer pass is the one to compare
 	// against — the older one is green too, and picking it would answer a question nobody
 	// asked.
-	if green.RunID != ids[1] {
-		t.Errorf("got %s, want the newer pass %s", green.RunID, ids[1])
+	if !green.Ok() || green.RunID != ids[1] {
+		t.Errorf("got %s (ok %v), want the newer pass %s", green.RunID, green.Ok(), ids[1])
 	}
 
-	// Previous, unlike LastGreen, does not care how it went — and skipping itself is what
-	// keeps a stored run from diffing against its own output.
-	prev, ok := archive.Previous("/proj", "test", newest, 0)
-	if !ok {
-		t.Fatal("no previous run")
-	}
-	if prev.RunID == newest {
-		t.Error("Previous returned the run it was told to skip")
+	// Skipping a run is what keeps a stored run from diffing against its own output.
+	older, ok := archive.Baseline("/proj", "test", ids[1], 0)
+	if !ok || older.RunID != ids[0] {
+		t.Errorf("skipping %s got %s, want the pass before it %s", ids[1], older.RunID, ids[0])
 	}
 }
 
-func TestLastGreenOfATaskThatNeverPassed(t *testing.T) {
+func TestTheBaselineOfATaskThatNeverPassedIsTheRunBefore(t *testing.T) {
 	archive := At(t.TempDir())
-	if _, err := archive.Save("/proj", agedRun("all", "test", false, 60)); err != nil {
-		t.Fatal(err)
+	var ids []string
+	for _, ago := range []int{120, 60} {
+		dir, err := archive.Save("/proj", agedRun("all", "test", false, ago))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, filepath.Base(dir))
 	}
-	if _, ok := archive.LastGreen("/proj", "test", "", 0); ok {
-		t.Error("found a green run that does not exist")
+	prev, ok := archive.Baseline("/proj", "test", ids[1], 0)
+	if !ok {
+		t.Fatal("there is a previous run, and it should be offered")
 	}
-	if _, ok := archive.Previous("/proj", "test", "", 0); !ok {
-		t.Error("but there is a previous run, and it should be offered")
+	if prev.Ok() || prev.RunID != ids[0] {
+		t.Errorf("got %s (ok %v), want the failure before %s", prev.RunID, prev.Ok(), ids[0])
 	}
 }
 

@@ -794,7 +794,7 @@ func TestATimelineDiffRefusesAPrunedRun(t *testing.T) {
 }
 
 // A live run that has finished is saved at once, but its Run keeps StoredID() == "", so
-// ⇧D's LastGreen(skip="") finds the run itself as the newest green and diffs it against itself.
+// ⇧D's baseline with no run to skip is the run itself, the newest green, diffed against itself.
 func TestAFinishedLiveRunIsNotDiffedAgainstItself(t *testing.T) {
 	a := sample(t)
 	archived(t, a, "backend:lint", true, 300, "checking", "old output")
@@ -818,7 +818,7 @@ func TestAFinishedLiveRunIsNotDiffedAgainstItself(t *testing.T) {
 	}
 }
 
-// Same with a task that never passed: Previous(skip="") returns the run just saved.
+// Same with a task that never passed: the run before is the run just saved.
 func TestAFinishedLiveRunThatNeverPassedIsNotDiffedAgainstItself(t *testing.T) {
 	a := sample(t)
 	archived(t, a, "backend:lint", false, 300, "boom one")

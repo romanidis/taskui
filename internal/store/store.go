@@ -843,42 +843,11 @@ func readLines(path string) []string {
 	return out
 }
 
-// Outcome is how a task went, and when.
-type Outcome struct {
-	Ok       bool
-	WhenUnix int64
-}
-
-// LastOutcomes reports the last outcome of every task seen in this project's stored runs.
-//
-// Keyed by task name, newest wins. Built from the per-task entries rather than just the
-// run roots, so a single `task all` teaches it about `lint`, `backend:lint` and every
-// other task that run touched.
-func (a Archive) LastOutcomes(project string) map[string]Outcome {
-	out := map[string]Outcome{}
-	// List is newest first, so the first sighting of a task is its latest.
-	for _, manifest := range a.List() {
-		if !SameDir(manifest.Dir, project) || manifest.Cancelled {
-			continue
-		}
-		for _, entry := range manifest.Tasks {
-			// Running is a record saved before the run ended — a detach — which says nothing
-			// yet about how it went.
-			if entry.Status == run.Pending || entry.Status == run.Skipped || entry.Status == run.Running {
-				continue
-			}
-			if _, seen := out[entry.Name]; seen {
-				continue
-			}
-			out[entry.Name] = Outcome{Ok: entry.Status == run.Ok, WhenUnix: manifest.StartedUnix}
-		}
-	}
-	return out
-}
-
 // Point is one appearance of a task in the archive: how it went that time, and when.
 type Point struct {
 	RunID string
+	// Task is the task that appeared.
+	Task string
 	// Run is how the run it was part of was started. `test:one` reached from a `task all`
 	// and from a `task test:one` are the same task and different circumstances, and the
 	// difference explains most of the surprising durations. The arguments are kept for the
@@ -888,8 +857,11 @@ type Point struct {
 	Run      run.Invocation
 	WhenUnix int64
 	// Commit is the git revision the project was at, or empty.
-	Commit     string
-	Status     run.Status
+	Commit string
+	Status run.Status
+	// Stopped means somebody stopped the run it was part of, so the status says the task was
+	// cut short rather than anything about the code. See Manifest.Cancelled.
+	Stopped    bool
 	DurationMs int64
 	Lines      int
 	// File is the basename its output was written under, for reading it back.
@@ -898,61 +870,99 @@ type Point struct {
 
 func (p Point) Ok() bool { return p.Status == run.Ok }
 
-// Timeline is every stored appearance of one task, newest first.
+// points is every appearance in this project's stored runs of a task that ran to a verdict,
+// newest first. An empty project means every project.
 //
-// This is the question the archive was kept for and could not answer: `--search` greps for
-// a string across runs, and the history list is every run in order — neither of them is
-// "how has this one task been going". The manifests have held the answer all along.
-//
-// Pending and skipped appearances are dropped: a task go-task decided was up to date did
-// not run, and a row saying so is a row that makes the trend harder to read.
-func (a Archive) Timeline(project, task string) []Point {
+// The one place that decides what counts as an appearance, so the timeline, the picker's
+// outcomes and `--flaky` cannot each decide differently. Pending and skipped tasks did not
+// run — a task go-task decided was up to date has no verdict to draw — and a Running one is
+// in a record saved before its run ended, a detach, which says nothing yet about how it went.
+func (a Archive) points(project string) []Point {
 	var out []Point
 	for _, m := range a.List() {
 		if project != "" && !SameDir(m.Dir, project) {
 			continue
 		}
 		for _, e := range m.Tasks {
-			if e.Name != task || e.Status == run.Pending || e.Status == run.Skipped || e.Status == run.Running {
+			if e.Status != run.Ok && e.Status != run.Failed {
 				continue
 			}
 			out = append(out, Point{
-				RunID: m.ID, Run: m.Invocation(), WhenUnix: m.StartedUnix, Commit: m.Commit,
-				Status: e.Status, DurationMs: e.DurationMs, Lines: e.Lines, File: e.File,
+				RunID: m.ID, Task: e.Name, Run: m.Invocation(), WhenUnix: m.StartedUnix, Commit: m.Commit,
+				Status: e.Status, Stopped: m.Cancelled, DurationMs: e.DurationMs, Lines: e.Lines, File: e.File,
 			})
 		}
 	}
 	return out
 }
 
-// LastGreen is the most recent stored run in which this task succeeded.
-//
-// `skip` is a run id to ignore, so a diff of a stored run against the archive does not find
-// itself, and `before` the time the run being compared started: a run is compared with what
-// came before it, and ⇧D on an old failure found the pass that came after it instead. Zero
-// means no bound.
-// Runs whose output has been pruned are passed over rather than returned: a timeline shows
-// them because a verdict and a duration are all it draws, but a diff needs the text, and
-// comparing against a run whose lines are gone reports every line as deleted.
-func (a Archive) LastGreen(project, task, skip string, before int64) (Point, bool) {
-	for _, p := range a.Timeline(project, task) {
-		if p.Ok() && p.RunID != skip && (before == 0 || p.WhenUnix <= before) && a.HasOutput(p.RunID) {
-			return p, true
-		}
-	}
-	return Point{}, false
+// Outcome is how a task went, and when.
+type Outcome struct {
+	Ok       bool
+	WhenUnix int64
 }
 
-// Previous is the most recent stored appearance at all, green or not — the comparison you
-// want when the task has never passed and "what changed since last time" is still a real
-// question.
-func (a Archive) Previous(project, task, skip string, before int64) (Point, bool) {
-	for _, p := range a.Timeline(project, task) {
-		if p.RunID != skip && (before == 0 || p.WhenUnix <= before) && a.HasOutput(p.RunID) {
-			return p, true
+// LastOutcomes reports the last outcome of every task seen in this project's stored runs.
+//
+// Keyed by task name, newest wins. Built from every task a run reached rather than just the
+// task it was started as, so a single `task all` teaches it about `lint`, `backend:lint` and
+// every other task that run touched. A stopped run has no outcome to give.
+func (a Archive) LastOutcomes(project string) map[string]Outcome {
+	out := map[string]Outcome{}
+	for _, p := range a.points(project) {
+		if _, seen := out[p.Task]; seen || p.Stopped {
+			continue
+		}
+		out[p.Task] = Outcome{Ok: p.Ok(), WhenUnix: p.WhenUnix}
+	}
+	return out
+}
+
+// Timeline is every stored appearance of one task, newest first.
+//
+// This is the question the archive was kept for and could not answer: `--search` greps for
+// a string across runs, and the history list is every run in order — neither of them is
+// "how has this one task been going". The manifests have held the answer all along.
+func (a Archive) Timeline(project, task string) []Point {
+	var out []Point
+	for _, p := range a.points(project) {
+		if p.Task == task {
+			out = append(out, p)
 		}
 	}
-	return Point{}, false
+	return out
+}
+
+// Baseline is the stored appearance a diff of task compares against: the last time it
+// passed, or, when it has not passed in any run whose output is still kept, the run just
+// before. The point's own status says which of the two it is.
+//
+// Last *green* rather than last run, because "it worked before" is the comparison that
+// isolates the failure — diffing two consecutive failures usually shows only that the
+// timestamps moved. When the task has never passed there is nothing green to compare
+// against, and the run before is the honest second choice rather than an error.
+//
+// `skip` is a run id to pass over, so a diff of a stored run does not find itself, and
+// `before` the time the run being compared started: a run is compared with what came before
+// it, and ⇧D on an old failure found the pass that came after it instead. Zero means no
+// bound. Runs whose output has been pruned are passed over too: a timeline shows them
+// because a verdict and a duration are all it draws, but a diff needs the text, and
+// comparing against a run whose lines are gone reports every line as deleted.
+func (a Archive) Baseline(project, task, skip string, before int64) (Point, bool) {
+	var previous Point
+	found := false
+	for _, p := range a.Timeline(project, task) {
+		if p.RunID == skip || (before != 0 && p.WhenUnix > before) {
+			continue
+		}
+		if p.Ok() && a.HasOutput(p.RunID) {
+			return p, true
+		}
+		if !found && a.HasOutput(p.RunID) {
+			previous, found = p, true
+		}
+	}
+	return previous, found
 }
 
 // Output reads back what one task printed in one stored run, stripped of escapes.
@@ -1046,29 +1056,22 @@ type Flake struct {
 // task that behaved exactly as it was told to. The archive has held `Args` all along.
 func (a Archive) Flaky(project string) []Flake {
 	seen := map[string]*Flake{}
-
-	for _, m := range a.List() {
-		if (project != "" && !SameDir(m.Dir, project)) || m.Commit == "" || strings.HasSuffix(m.Commit, "-dirty") ||
-			m.Cancelled {
+	for _, p := range a.points(project) {
+		if p.Stopped || p.Commit == "" || strings.HasSuffix(p.Commit, "-dirty") {
 			continue
 		}
-		for _, e := range m.Tasks {
-			if e.Status != run.Ok && e.Status != run.Failed {
-				continue
-			}
-			k := e.Name + "\x00" + QuestionKey(m.Commit, m.Root, m.Args)
-			f, ok := seen[k]
-			if !ok {
-				f = &Flake{Task: e.Name, Root: m.Root, Args: m.Args, Commit: m.Commit}
-				seen[k] = f
-			}
-			if e.Status == run.Ok {
-				f.Passed++
-			} else {
-				f.Failed++
-			}
-			f.LastUnix = max(f.LastUnix, m.StartedUnix)
+		k := p.Task + "\x00" + p.Question()
+		f, ok := seen[k]
+		if !ok {
+			f = &Flake{Task: p.Task, Root: p.Run.Task, Args: p.Run.Args, Commit: p.Commit}
+			seen[k] = f
 		}
+		if p.Ok() {
+			f.Passed++
+		} else {
+			f.Failed++
+		}
+		f.LastUnix = max(f.LastUnix, p.WhenUnix)
 	}
 
 	var out []Flake
