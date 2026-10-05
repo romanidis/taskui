@@ -54,7 +54,9 @@ func (a *App) OpenLastRun() bool {
 
 // OpenHistory loads the archive and switches to it.
 func (a *App) OpenHistory() {
-	a.reloadHistory()
+	// A kept search still narrows the list. Reloaded bare, every run came back under a
+	// header still reading `/FAIL`, and ⏎ opened runs the search never matched filtered to it.
+	a.applyHistorySearch()
 	a.HistoryCursor = 0
 	a.HistoryOffset = 0
 	a.Screen = ScreenHistory
@@ -166,7 +168,7 @@ func (a *App) ToggleHistoryScope() {
 	if a.HistoryCursor < len(a.History) {
 		keep = a.History[a.HistoryCursor].ID
 	}
-	a.reloadHistory()
+	a.applyHistorySearch()
 	// Stay on the same run across the widening, as the pivot does in the picker.
 	a.HistoryCursor = 0
 	for i, m := range a.History {
@@ -262,8 +264,10 @@ func (a *App) OpenStoredRun() {
 	}
 
 	// Arriving from a cross-run search: land with the same query applied, so the run opens
-	// on the thing you were looking for rather than making you retype it.
-	if a.HistoryQuery != "" {
+	// on the thing you were looking for rather than making you retype it. Only for a run the
+	// search found — the timeline opens runs through here too, and one it never matched
+	// opened filtered down to nothing.
+	if a.HistoryQuery != "" && a.HistoryHits[manifest.ID] > 0 {
 		a.SearchInput = a.HistoryQuery
 		a.FilterMatches = true
 		a.ApplySearch()

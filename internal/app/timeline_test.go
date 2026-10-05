@@ -736,3 +736,34 @@ func TestTheFailureToOpenIsTheOneThatBroke(t *testing.T) {
 		t.Errorf("firstFailure = %q, %v; want test", got, ok)
 	}
 }
+
+// A search kept with ⏎ goes on narrowing the list it was kept for. Coming back to history
+// reloaded every run under a header still reading `/FAIL`, and ⏎ on one the search never
+// matched opened it filtered down to nothing.
+func TestAKeptHistorySearchStillNarrowsTheList(t *testing.T) {
+	a := sample(t)
+	archived(t, a, "backend:lint", false, 300, "--- FAIL: TestX")
+	archived(t, a, "app:lint", true, 100, "all clean")
+
+	press(a, Char('h'))
+	press(a, Char('/'))
+	for _, c := range "FAIL" {
+		press(a, Char(c))
+	}
+	press(a, Enter())
+	press(a, Esc())
+	press(a, Char('h'))
+
+	if len(a.History) != 1 || a.History[0].Root != "backend:lint" {
+		t.Fatalf("history = %d runs under a kept /FAIL, want only the one it matched", len(a.History))
+	}
+
+	// The timeline reaches runs the search never matched, through the same door.
+	press(a, Esc())
+	parkOn(t, a, "app:lint")
+	press(a, Char('H'))
+	press(a, Enter())
+	if a.FilterMatches && a.SearchInput == "FAIL" {
+		t.Error("a run the search never matched opened filtered to it")
+	}
+}
