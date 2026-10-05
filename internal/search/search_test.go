@@ -291,3 +291,11 @@ func countHits(runs []RunHits) int {
 	}
 	return n
 }
+
+// Smart case reads any script's capitals: `ОШИБКА` is as deliberate as `FAIL`.
+func TestSmartCaseKnowsCapitalsBeyondASCII(t *testing.T) {
+	r := runWith([][2]string{{"a", "ОШИБКА: диск полон"}, {"a", "ошибка: нет сети"}})
+	if got := len(InRun(r, mustQuery(t, "ОШИБКА"))); got != 1 {
+		t.Errorf("uppercase matched %d, want 1", got)
+	}
+}

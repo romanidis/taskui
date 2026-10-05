@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/store"
@@ -51,7 +52,8 @@ func hasUpper(pattern string) bool {
 			i++
 			continue
 		}
-		if runes[i] >= 'A' && runes[i] <= 'Z' {
+		// Any script's capitals, not only ASCII's: `ОШИБКА` asks for exactly that.
+		if unicode.IsUpper(runes[i]) {
 			return true
 		}
 	}
