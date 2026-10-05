@@ -238,13 +238,13 @@ func rootRun(cmd *cobra.Command, args []string) error {
 	if errReadingConfig != nil {
 		return fmt.Errorf("could not read the config: %w", errReadingConfig)
 	}
-	config := theme.FromViper(v)
-	// The flag beats the config file, so a look can be tried without committing to it.
+	// The flag beats the config file, so a look can be tried without committing to it — by
+	// standing in for `theme:` itself, so the file's own `colors:` still land on top of it as
+	// they do on a theme the file names. Swapped in afterwards, it replaced them too.
 	if opts.themeName != "" {
-		picked, problems := theme.LoadTheme(opts.themeName)
-		config.Theme = picked
-		config.Problems = append(config.Problems, problems...)
+		v.Set("theme", opts.themeName)
 	}
+	config := theme.FromViper(v)
 	// And the project gets the last word on the two things that are about its own task list
 	// — which never includes what your terminal looks like or what your keys do.
 	config = config.WithProject(theme.LoadProject(root))

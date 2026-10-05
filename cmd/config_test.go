@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -364,5 +365,47 @@ func TestACompanionFlagAloneIsRefused(t *testing.T) {
 		if _, err := execute(t, args...); err == nil {
 			t.Errorf("%v was accepted", args)
 		}
+	}
+}
+
+// `--theme` is documented as the flag form of `theme:`, with the config's own `colors:`
+// landing on top of the named theme. Through the file or TASKUI_THEME they do; through the
+// flag the whole Theme is replaced and the user's colour overrides vanish.
+func TestTheThemeFlagKeepsTheConfigsColours(t *testing.T) {
+	if _, err := exec.LookPath("task"); err != nil {
+		t.Skip("no go-task")
+	}
+	cfg := inTempConfig(t)
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(cfg), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, []byte("colors:\n  selection: \"#123456\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	taskfile := "version: \"3\"\ntasks:\n  build:\n    desc: Compile\n    cmds: ['echo hi']\n"
+	if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { opts.screenshot, opts.colour, opts.themeName = "", false, "" })
+
+	const selection = "18;52;86" // #123456 as a truecolor SGR
+
+	t.Setenv("TASKUI_THEME", "default")
+	viaEnv, err := execute(t, "--screenshot", "60x6", "--colour", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TASKUI_THEME", "")
+	viaFlag, err := execute(t, "--theme", "default", "--screenshot", "60x6", "--colour", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(viaEnv, selection) {
+		t.Fatalf("baseline: TASKUI_THEME=default did not paint the configured selection")
+	}
+	if !strings.Contains(viaFlag, selection) {
+		t.Errorf("--theme default dropped `colors: selection` from the config; TASKUI_THEME=default kept it")
 	}
 }
