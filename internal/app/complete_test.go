@@ -154,6 +154,28 @@ func TestTabCompletesPathsUnderTheProject(t *testing.T) {
 	}
 }
 
+// The task runs beside its Taskfile, not in the directory taskui was opened in, so that is
+// what a path given to it is relative to.
+func TestTabCompletesPathsFromTheProjectWhenOpenedBelowIt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(dir, "web")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a := New(pivot.Fixture([]string{"test"}), sub)
+	a.SetArchive(store.At(t.TempDir()))
+	promptFor(t, a, "test")
+
+	typeArgs(a, "-- Task")
+	press(a, Tab())
+	if a.ArgsInput != "-- Taskfile.yml" {
+		t.Errorf("input = %q, want -- Taskfile.yml from the project above", a.ArgsInput)
+	}
+}
+
 // The candidates are only true for the word they were built from, so anything that changes
 // that word ends the cycle.
 func TestTypingEndsTheCompletionCycle(t *testing.T) {

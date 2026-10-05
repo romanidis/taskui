@@ -112,7 +112,7 @@ func (a *App) openLocationFrom(l loc.Loc, task, note string) {
 	// Looked for where the task runs, as far as taskui can tell: beside the Taskfile that
 	// defines it, which is go-task's default for an included one. A task with its own `dir:`
 	// is the case this misses — neither listing says what that is — and it falls back to the
-	// project root, which is where everything was resolved before.
+	// project, which is where everything was resolved before.
 	dir := ""
 	if def, ok := a.WhereIs(task); ok {
 		dir = filepath.Dir(def.File)
@@ -120,11 +120,11 @@ func (a *App) openLocationFrom(l loc.Loc, task, note string) {
 	// The project is indexed on the first `e` rather than in New: most sessions never press
 	// it, and walking the tree for a key nobody used is a cost paid by everyone.
 	if a.locs == nil {
-		a.locs = loc.NewResolver(a.Root)
+		a.locs = loc.NewResolver(a.Project)
 	}
 	abs, ambiguous, ok := a.locs.ResolveIn(dir, l.Path)
 	if !ok {
-		a.Status = where + " — no such file under " + baseName(a.Root) + note
+		a.Status = where + " — no such file under " + baseName(a.Project) + note
 		return
 	}
 
@@ -138,7 +138,7 @@ func (a *App) openLocationFrom(l loc.Loc, task, note string) {
 		a.events.Send(events.Edit{
 			Type: "edit", Path: abs, Line: l.Line, Col: l.Col, Note: strings.TrimSpace(reason),
 		})
-		a.Status = fmt.Sprintf("opening %s:%d in the editor", relativeTo(a.Root, abs), l.Line) + reason
+		a.Status = fmt.Sprintf("opening %s:%d in the editor", relativeTo(a.Project, abs), l.Line) + reason
 		return
 	}
 
@@ -149,7 +149,7 @@ func (a *App) openLocationFrom(l loc.Loc, task, note string) {
 	}
 	a.pendingEdit = &editor
 
-	a.Status = fmt.Sprintf("opening %s:%d in %s", relativeTo(a.Root, abs), l.Line, baseName(editor.Name))
+	a.Status = fmt.Sprintf("opening %s:%d in %s", relativeTo(a.Project, abs), l.Line, baseName(editor.Name))
 	if ambiguous {
 		a.Status += " — several files share that name"
 	}

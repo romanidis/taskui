@@ -385,6 +385,48 @@ func TestPressingEOnALocationAsksForAnEditor(t *testing.T) {
 	}
 }
 
+// A task prints paths relative to where it ran, which is beside its Taskfile — and from a
+// subdirectory that is above where taskui was opened.
+func TestPressingEFromASubdirectoryFindsTheFileInTheProject(t *testing.T) {
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "vim")
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	guide := filepath.Join(dir, "docs", "guide.md")
+	if err := os.WriteFile(guide, []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(dir, "web")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(pivot.Fixture([]string{"lint"}), sub)
+	a.SetArchive(store.At(t.TempDir()))
+	r := run.Detached("lint", run.GraphFrom(run.Edge{Parent: "lint"}))
+	r.Feed("lint", "docs/guide.md:3: broken link")
+	r.ApplyFailed("lint")
+	r.Finish(1)
+	a.OpenRunForTest(r)
+	a.Screen = ScreenRun
+	a.RunSetFold("lint", FoldFull)
+	a.RebuildRunRows()
+	press(a, Char('e'))
+
+	editor, ok := a.TakeEdit()
+	if !ok {
+		t.Fatalf("no editor was asked for — status %q", a.Status)
+	}
+	if got := editor.Args[len(editor.Args)-1]; got != guide {
+		t.Errorf("opened %s, want %s", got, guide)
+	}
+}
+
 // The intent is taken exactly once. Leaving it set would reopen the editor on the next
 // keystroke, which is the sort of bug that only shows up in a real terminal.
 func TestTheEditorIsOnlyLaunchedOnce(t *testing.T) {

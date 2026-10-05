@@ -184,7 +184,7 @@ func (a *App) argsHistory() [][]string {
 // offering them all would bury the three files you meant.
 func (a *App) pathsMatching(prefix string) []string {
 	dir, stem := path.Split(prefix)
-	entries, err := os.ReadDir(filepath.Join(a.Root, filepath.FromSlash(dir)))
+	entries, err := os.ReadDir(filepath.Join(a.Project, filepath.FromSlash(dir)))
 	if err != nil {
 		return nil
 	}

@@ -87,7 +87,7 @@ func (a *App) taskfilePaths() []string {
 	// Only the one go-task would read, not all eight spellings of it: the task package
 	// picks it the way go-task does, which keeps the watched set the same on a
 	// case-insensitive filesystem as it is on Linux.
-	if path := task.Find(a.Root); path != "" && !seen[path] {
+	if path := task.Find(a.Project); path != "" && !seen[path] {
 		seen[path] = true
 		out = append(out, path)
 	}

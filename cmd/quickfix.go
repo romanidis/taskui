@@ -65,7 +65,7 @@ func printQuickfix(out io.Writer, root, only string) error {
 // top, so the first entry should be the first thing that broke. Named a task with `--task`
 // and its status stops mattering: you asked for that one.
 func writeQuickfix(out io.Writer, r *run.Run, dir, only string) int {
-	resolver := loc.NewResolver(dir)
+	resolver := loc.NewResolver(task.ProjectDir(dir))
 	// Where each task ran, so a path it printed is read from there — the same answer the
 	// `e` key gets. A project go-task cannot list resolves against the root, as it always
 	// did.

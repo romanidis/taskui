@@ -81,8 +81,16 @@ type App struct {
 	// of running one task costs nothing.
 	marked map[string]bool
 
-	Root   string
-	Status string
+	// Root is the directory taskui was opened in. It is where go-task is run from, which is
+	// what a task sees as USER_WORKING_DIR, and how the archive files a run.
+	Root string
+	// Project is the directory of the Taskfile that governs Root: Root itself, or the
+	// nearest directory above it with one. It is where the tasks run, so it is what the paths
+	// they print and the paths they are given are relative to. Opened from `web/src`, the two
+	// differ, and a Taskfile watch, a path completion or an `e` that read Root looked in the
+	// wrong place.
+	Project string
+	Status  string
 	// statusShown is the notice the clock below is running for, and statusAt is when it
 	// went up. Kept beside the text rather than folded into it because every one of the
 	// hundred-odd places that writes a status writes the field directly.
@@ -356,6 +364,7 @@ func New(tasks []task.Task, root string) *App {
 		Tree:          &pivot.Tree{},
 		expanded:      map[string]map[string]bool{},
 		Root:          root,
+		Project:       task.ProjectDir(root),
 		Theme:         theme.DefaultTheme(),
 		Keymap:        keys.NewKeymap(),
 		Screen:        ScreenPicker,

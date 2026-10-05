@@ -126,6 +126,26 @@ func TestTheWatchCoversTheRootTaskfileAndEveryIncludedOne(t *testing.T) {
 	}
 }
 
+// Opened from a subdirectory, the Taskfile go-task reads is the one above it — and an
+// `includes:`-only file there is exactly where a new namespace gets added.
+func TestTheWatchFindsTheProjectsTaskfileFromASubdirectory(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Taskfile.yml")
+	if err := os.WriteFile(root, []byte("version: '3'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(dir, "web", "src")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a := New(pivot.Fixture([]string{"site:new"}), sub)
+	a.SetArchive(store.At(t.TempDir()))
+
+	if got := a.taskfilePaths(); len(got) != 1 || got[0] != root {
+		t.Errorf("paths = %v, want the project's Taskfile %s", got, root)
+	}
+}
+
 // The whole loop, against a real Taskfile and a real go-task: edit the file taskui read,
 // and the list catches up without a restart. This is the one that would have failed before
 // any of the parts above existed.

@@ -80,6 +80,35 @@ func TestQuickfixDefaultsTheColumn(t *testing.T) {
 	}
 }
 
+// A run made from a subdirectory is filed under that directory, but its tasks ran beside the
+// Taskfile above it, and the paths they printed are relative to there.
+func TestQuickfixFromASubdirectoryReadsPathsFromTheProject(t *testing.T) {
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, "Taskfile.yml"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(project, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "docs", "guide.md"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(project, "web")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := run.Detached("docs", run.GraphFrom(run.Edge{Parent: "docs"}))
+	r.Feed("docs", "docs/guide.md:3:1: broken link")
+	r.ApplyFailed("docs")
+	r.Finish(1)
+
+	got := quickfixOf(t, r, sub, "")
+	want := filepath.Join(project, "docs", "guide.md") + ":3:1: broken link"
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("quickfix =\n%s\nwant\n%s", strings.Join(got, "\n"), want)
+	}
+}
+
 // Only the tasks that failed, unless one was named — a passing task's warnings are not what
 // you asked for when you asked where it broke.
 func TestQuickfixKeepsTheFailedTasksAndWhatWasAskedFor(t *testing.T) {
