@@ -311,6 +311,11 @@ func TestTheTreeIsNeverSplitIntoColumns(t *testing.T) {
 	for _, w := range []int{100, 150, 300} {
 		lines := a.RenderHeadless(w, 30)
 		for _, l := range lines[2 : len(lines)-2] {
+			// The list only: a wide frame has the preview beside it, naming the task the
+			// cursor is on a second time on purpose.
+			if at := strings.LastIndex(l, "│"); at >= 0 {
+				l = l[:at]
+			}
 			if n := strings.Count(l, "task"); n > 1 {
 				t.Errorf("%d wide: two tasks on one row: %q", w, l)
 			}
@@ -1500,6 +1505,50 @@ func TestAnAliasSitsBesideTheName(t *testing.T) {
 			if strings.HasSuffix(strings.TrimRight(l, " "), "b") {
 				t.Errorf("row = %q still ends in the alias", l)
 			}
+		}
+	}
+}
+
+// --- the preview ------------------------------------------------------------------------
+
+// With the room, what the task under the cursor is sits beside the list and follows the
+// cursor: what it does, where it is written, and what it will run — the last from the
+// coverage walk, so moving the cursor starts no process. Without the room, the list keeps
+// the whole width.
+func TestThePreviewDescribesTheTaskUnderTheCursor(t *testing.T) {
+	a := appWith(t, []string{"build", "lint"})
+	a.Tasks[0].Desc = "Compile the workspace"
+	a.Tasks[0].Aliases = []string{"b"}
+	a.Details = map[string]task.Detail{"build": {Where: task.Where{File: "/tmp/repo/Taskfile.yml", Line: 12}}}
+	a.summaries = map[string]graph.Detail{"build": {Commands: []string{"go build ./..."}}}
+	a.calls = graph.Graph{Edges: map[string][]string{"lint": {"build"}}}
+	a.Rebuild(0)
+
+	wide := strings.Join(a.RenderHeadless(150, 20), "\n")
+	for _, want := range []string{"│ build", "Compile the workspace", "Taskfile.yml:12", "go build ./...", "called by    lint"} {
+		if !strings.Contains(wide, want) {
+			t.Errorf("the preview is missing %q:\n%s", want, wide)
+		}
+	}
+	if narrow := strings.Join(a.RenderHeadless(120, 20), "\n"); strings.Contains(narrow, "go build ./...") {
+		t.Errorf("a 120-column frame drew a preview:\n%s", narrow)
+	}
+}
+
+// The detail panel says the same things about a task as the preview, because both read one
+// description: a fact added to one used to be a fact the other did not have.
+func TestTheDetailPanelSaysWhatThePreviewSays(t *testing.T) {
+	a := appWith(t, []string{"build"})
+	a.Tasks[0].Aliases = []string{"b"}
+	a.Details = map[string]task.Detail{"build": {Where: task.Where{File: "/tmp/repo/Taskfile.yml", Line: 12}}}
+	a.DetailOf = "build"
+	a.Detail = graph.Detail{Commands: []string{"go build ./..."}}
+	a.Screen = ScreenDetail
+
+	page := strings.Join(a.RenderHeadless(100, 20), "\n")
+	for _, want := range []string{"also called  b", "written in   Taskfile.yml:12", "go build ./..."} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the panel is missing %q:\n%s", want, page)
 		}
 	}
 }

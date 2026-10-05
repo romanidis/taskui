@@ -82,7 +82,7 @@ func (a *App) frame() string {
 	switch a.Screen {
 	case ScreenPicker:
 		header = a.pickerHeader()
-		body = a.drawTree(width, bodyH)
+		body = a.drawPicker(width, bodyH)
 		footer = a.pickerFooter()
 	case ScreenRun:
 		header = a.runHeader()

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/romanidis/taskui/internal/graph"
 	"github.com/romanidis/taskui/internal/pivot"
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/store"
@@ -876,5 +877,21 @@ tasks:
 	if a.SendingInput && a.Run != typingAt {
 		t.Errorf("still in input mode, but the run on screen is now %q — the next key goes to it, not to %q",
 			a.Run.Task, typingAt.Task)
+	}
+}
+
+// The frame a screenshot draws waits for the walk instead of polling for it, and that path
+// kept two of the walk's three results: the preview drew a task with nothing to run.
+func TestWaitingForTheWalkKeepsEverythingItFound(t *testing.T) {
+	a := appWith(t, []string{"build"})
+	a.reaches = begin(func() (covered, bool) {
+		return covered{
+			calls:     graph.Graph{Edges: map[string][]string{"build": nil}},
+			summaries: map[string]graph.Detail{"build": {Commands: []string{"go build"}}},
+		}, true
+	})
+	a.AwaitCoverage(5 * time.Second)
+	if len(a.summaries["build"].Commands) == 0 {
+		t.Error("the summaries were dropped on the way in")
 	}
 }

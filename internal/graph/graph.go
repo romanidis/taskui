@@ -12,6 +12,7 @@
 package graph
 
 import (
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -411,25 +412,30 @@ func Resolve(dir, root string) Graph {
 	return g
 }
 
-// ResolveAll is the graph of everything roots reach, one `--summary` per distinct task
-// however many of the roots reach it.
+// ResolveProject is the graph of everything roots reach, with every task spelled the way
+// go-task lists it, and what each task's `--summary` says about it. One `--summary` per
+// distinct task however many of the roots reach it.
 //
 // For asking about every task at once. Resolving them one at a time repeats the part their
 // graphs share — every aggregate's walk summarised `backend:lint` again — and the tasks of
 // one Taskfile share most of theirs.
-func ResolveAll(dir string, roots []string) Graph {
-	g, _ := resolveParallel(roots, func(task string) string { return summaryOf(dir, task) })
-	return g
-}
-
-// ResolveProject is ResolveAll with every task spelled the way go-task lists it: a call
-// through an alias is a call to the task the list knows it as.
 //
-// It is the graph to ask what reaches what. Spelled as the Taskfile happens to call them, one
-// task is two — and `lint` calling `api:lint` by its alias `al` was reported by `--lint` as
-// never reaching it, while the picker, which renamed its own copy, said it did.
-func ResolveProject(dir string, roots []string) Graph {
-	return ResolveAll(dir, roots).Renamed(taskpkg.ReadProject(dir).Names.Canonical)
+// Spelled as the list spells them because a Taskfile calls a task by whichever of its names
+// it likes, and spelled as it was called one task is two: `lint` calling `api:lint` by its
+// alias `al` was reported by `--lint` as never reaching it, while the picker, which renamed
+// its own copy, said it did.
+//
+// The summaries are the walk's by-product, kept so the picker can say what a task will run
+// without asking go-task again on every cursor move. Parsed as the detail panel parses them,
+// which leaves the resolved environment, and every secret in it, behind.
+func ResolveProject(dir string, roots []string) (Graph, map[string]Detail) {
+	g, summaries := resolveParallel(roots, func(task string) string { return summaryOf(dir, task) })
+	canonical := taskpkg.ReadProject(dir).Names.Canonical
+	details := make(map[string]Detail, len(summaries))
+	for name, text := range summaries {
+		details[canonical(name)] = parseDetail(text)
+	}
+	return g.Renamed(canonical), details
 }
 
 // ResolveDetailed is Resolve, but also hands back the raw `--summary` text of every task
@@ -441,7 +447,13 @@ func ResolveProject(dir string, roots []string) Graph {
 // summary never mentions it. It is returned rather than stored so the caller is forced
 // to decide what happens to it; it must not be persisted or displayed.
 func ResolveDetailed(dir, root string) (Graph, string) {
-	return resolveParallel([]string{root}, func(task string) string { return summaryOf(dir, task) })
+	g, summaries := resolveParallel([]string{root}, func(task string) string { return summaryOf(dir, task) })
+	var all strings.Builder
+	for _, name := range slices.Sorted(maps.Keys(summaries)) {
+		all.WriteString(summaries[name])
+		all.WriteString("\n")
+	}
+	return g, all.String()
 }
 
 // lanes is enough to hide the latency without spawning a process per task in a wide graph.
@@ -460,9 +472,9 @@ const lanes = 8
 //
 // fetch gets a task's `--summary`. A parameter of the walk rather than called by it, so a
 // test can hand the real walk a Taskfile's worth of summaries without go-task installed.
-func resolveParallel(roots []string, fetch func(string) string) (Graph, string) {
+func resolveParallel(roots []string, fetch func(string) string) (Graph, map[string]string) {
 	g := New()
-	var summaries strings.Builder
+	summaries := map[string]string{}
 	var frontier []string
 	for _, root := range roots {
 		if !contains(frontier, root) {
@@ -490,8 +502,7 @@ func resolveParallel(roots []string, fetch func(string) string) (Graph, string) 
 			wg.Wait()
 
 			for i, task := range batch {
-				summaries.WriteString(texts[i])
-				summaries.WriteString("\n")
+				summaries[task] = texts[i]
 				for _, c := range results[i] {
 					if _, known := g.Edges[c]; !known && !contains(next, c) {
 						next = append(next, c)
@@ -514,7 +525,7 @@ func resolveParallel(roots []string, fetch func(string) string) (Graph, string) 
 		}
 	}
 
-	return g, summaries.String()
+	return g, summaries
 }
 
 func contains(haystack []string, needle string) bool {

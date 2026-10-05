@@ -27,6 +27,11 @@ is a path, not a name. It pivots: by domain (`backend` › `migrate` › `down`)
 the first. Each row says how the task went last time, or how long it has been running right
 now, in a slot you may not be looking at.
 
+**A preview** sits beside the list on a terminal 140 columns or wider, and follows the
+cursor: what the task does, where it is written, what it is also called, how it went last
+time, what calls it, and the commands it will run. Narrower, `d` shows the same description
+on a screen of its own.
+
 **Runs unfold in the list.** `⏎` starts the task and leaves you where you were: the
 execution tree grows under the row it came from — every task the run pulled in, every
 command each of those ran with the verdict of that command beside it, and the last few

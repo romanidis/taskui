@@ -24,7 +24,7 @@ func printLint(out io.Writer, root string, tasks []task.Task, matrix bool) int {
 	}
 	// Every task at once, as the picker resolves them: the aggregates share most of what they
 	// reach, and one walk asks go-task about each task once.
-	calls := graph.ResolveProject(root, names)
+	calls, _ := graph.ResolveProject(root, names)
 	g := cover.BuildGrid(tasks, calls.Reachable, cover.Exemptions(root))
 	if matrix {
 		return printMatrix(out, g)

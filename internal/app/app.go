@@ -259,6 +259,10 @@ type App struct {
 	// calls is what every task calls, at every depth, from the same walk. What the danger
 	// check reads to see past the task you started; empty until the walk lands.
 	calls graph.Graph
+	// summaries is what go-task's `--summary` said about every task, which the walk had to
+	// ask anyway: what each requires, runs first and will run. The preview reads it on every
+	// cursor move, where asking go-task would be a process per keystroke.
+	summaries map[string]graph.Detail
 
 	// Where the run on screen spent its time, slowest first.
 	ProfileRows   []run.Cost

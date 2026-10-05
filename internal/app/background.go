@@ -61,28 +61,35 @@ func (a *App) StartCoverage() {
 		for i, t := range tasks {
 			names[i] = t.Name
 		}
-		calls := graph.ResolveProject(root, names)
+		calls, summaries := graph.ResolveProject(root, names)
 		// No exemptions: `.taskui-cover` says which gaps are deliberate, and a gap is not
 		// what this projection reads. A namespace is annotated with what reaches it.
-		return covered{reaches: cover.BuildGrid(tasks, calls.Reachable, nil).Reaches(), calls: calls}, true
+		return covered{
+			reaches: cover.BuildGrid(tasks, calls.Reachable, nil).Reaches(), calls: calls, summaries: summaries,
+		}, true
 	})
 }
 
 // covered is what the coverage walk finds: the aggregates that reach each namespace, and
 // what every task calls, which it had to resolve to find them.
 type covered struct {
-	reaches map[string][]string
-	calls   graph.Graph
+	reaches   map[string][]string
+	calls     graph.Graph
+	summaries map[string]graph.Detail
 }
 
 // collectCoverage takes the answer if it has arrived. Non-blocking, like collectDetails: it
 // is called from the poll loop, which must not wait for anything.
 func (a *App) collectCoverage() bool {
 	found, ok := a.reaches.take()
-	if !ok {
-		return false
-	}
-	a.calls = found.calls
+	return ok && a.keepCoverage(found)
+}
+
+// keepCoverage keeps what the walk found, and reports whether there is anything new to draw.
+// Both ways of taking the answer go through it: the one a screenshot waits on kept two of the
+// walk's three results, and drew a preview with nothing in it to run.
+func (a *App) keepCoverage(found covered) bool {
+	a.calls, a.summaries = found.calls, found.summaries
 	if len(found.reaches) == 0 {
 		return false
 	}
@@ -97,7 +104,7 @@ func (a *App) collectCoverage() bool {
 // the race went.
 func (a *App) AwaitCoverage(grace time.Duration) {
 	if found, ok := a.reaches.await(grace); ok {
-		a.Reaches, a.calls = found.reaches, found.calls
+		a.keepCoverage(found)
 	}
 }
 
