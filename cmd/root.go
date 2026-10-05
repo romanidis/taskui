@@ -228,7 +228,7 @@ func rootRun(cmd *cobra.Command, args []string) error {
 
 	// `--json` is a form the other flags can be printed in, not a command of its own.
 	// Saying so beats launching the TUI at somebody who is piping this into a program.
-	if err := formsOK(); err != nil {
+	if err := refuseStrayFlags(); err != nil {
 		return err
 	}
 

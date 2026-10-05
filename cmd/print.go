@@ -59,7 +59,7 @@ func projectCommand(cmd *cobra.Command, root string, tasks []task.Task, config t
 		// Checked against the listing first: go-task answers an unknown name with nothing,
 		// which printed the name alone as a one-node graph and exited 0 — the same answer
 		// as a real task that runs nothing else.
-		if !listed(tasks, opts.graph) {
+		if !goTaskRuns(tasks, opts.graph) {
 			return true, fmt.Errorf("no task called %s — `taskui --list` shows them", opts.graph)
 		}
 		printGraph(out, root, opts.graph)

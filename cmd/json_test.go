@@ -111,3 +111,13 @@ func TestANarrowingFlagOnItsOwnIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// `--matrix` is the full-table form of `--lint`. On its own it opened the TUI at somebody who
+// had asked for a table.
+func TestMatrixOnItsOwnIsRefused(t *testing.T) {
+	t.Cleanup(func() { opts.matrix = false })
+	_, err := execute(t, "--matrix", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "full-table form of --lint") {
+		t.Errorf("err = %v", err)
+	}
+}
