@@ -9,7 +9,7 @@ previous runs.
  ─────────────────────────────────────────────────────────────────────────────
 ▌▾ backend                                                                  26
  ├ build          Compile the workspace
- ├ check          Type-check only — fastest feedback                 c    ✓ 4m
+ ├ check (c)      Type-check only — fastest feedback                      ✓ 4m
  ├ lint           Clippy, warnings are errors, plus a format check        ✗ 9m
  └ migrate        Apply pending migrations                                   ⚠
  ▸ deploy                                                               ⚠    9

@@ -592,50 +592,34 @@ func TestDurationsReadAtAGlance(t *testing.T) {
 	}
 }
 
-// Descriptions wrap into their column instead of being cut off mid-word. They used to be
-// suppressed in a narrow column because a truncated description is noise — wrapping
-// removes the reason for that.
-func TestDescriptionsWrapRatherThanTruncate(t *testing.T) {
-	tasks := pivot.Fixture([]string{"alpha"})
-	tasks[0].Desc = "A description long enough that it cannot possibly fit on one line"
+// One row per task, so the list shows as many tasks as it has rows. A description too long
+// for its row is cut at a word and marked as cut; the whole of it is in the detail panel.
+// Descriptions used to wrap, which at sixty columns halved how many tasks fit.
+func TestADescriptionIsCutToOneRow(t *testing.T) {
+	tasks := []task.Task{{Name: "alpha", Desc: "A description long enough that it cannot possibly fit on one line"}}
 	a := New(tasks, "/tmp/repo")
 	a.SetArchive(store.At(t.TempDir()))
 	a.SetFoldAll(true)
 
-	narrow := strings.Join(a.RenderHeadless(56, 10), "\n")
-	for _, want := range []string{"alpha", "A description", "one line"} {
-		if !strings.Contains(narrow, want) {
-			t.Errorf("missing %q in:\n%s", want, narrow)
+	for i, r := range a.Rows {
+		if a.Tree.Nodes[r.Node].Task == pivot.NoTask {
+			continue
 		}
-	}
-}
-
-// A wrapped description makes its row taller, and the layout has to know that.
-func TestAWrappedDescriptionMakesItsRowTaller(t *testing.T) {
-	build := func(desc string) *App {
-		tasks := []task.Task{{Name: "alpha", Desc: desc}}
-		a := New(tasks, "/tmp/repo")
-		a.SetArchive(store.At(t.TempDir()))
-		a.SetFoldAll(true)
-		return a
-	}
-	height := func(a *App) int {
-		for i, r := range a.Rows {
-			if a.Tree.Nodes[r.Node].Task != pivot.NoTask {
-				return len(a.treeItem(i, 56))
-			}
+		rows := a.treeItem(i, 56)
+		if len(rows) != 1 {
+			t.Fatalf("the task took %d rows", len(rows))
 		}
-		t.Fatal("no task row")
-		return 0
-	}
-
-	short := height(build("Short"))
-	long := height(build("A description long enough that it cannot possibly fit on one line"))
-	if short != 1 {
-		t.Errorf("short row = %d", short)
-	}
-	if long <= 1 {
-		t.Errorf("long row should be taller: %d", long)
+		var text strings.Builder
+		for _, sp := range rows[0] {
+			text.WriteString(sp.text)
+		}
+		got := text.String()
+		if !strings.Contains(got, "A description") || !strings.HasSuffix(strings.TrimRight(got, " "), "…") {
+			t.Errorf("row = %q, want the start of the description, cut and marked", got)
+		}
+		if strings.Contains(got, "one line") {
+			t.Errorf("row = %q, the end of the description did not fit and is still there", got)
+		}
 	}
 }
 
@@ -852,81 +836,6 @@ func TestTheRailMarksTheCursorRow(t *testing.T) {
 	}
 }
 
-// A wrapped description used to leave the guide column blank, which put a gap in the run of
-// branches that read as the end of the group.
-func TestAWrappedDescriptionCarriesTheGuideDown(t *testing.T) {
-	long := "A description long enough that it has to wrap onto a second line"
-	tasks := pivot.Fixture([]string{"group:first", "group:second"})
-	for i := range tasks {
-		tasks[i].Desc = long
-	}
-	a := New(tasks, "/tmp/repo")
-	a.SetArchive(store.At(t.TempDir()))
-	a.SetFoldAll(true)
-
-	lines := a.RenderHeadless(56, 12)
-	guide := a.Theme.Glyphs.GuideVertical
-
-	var continuations []string
-	for _, l := range lines {
-		if strings.Contains(l, "wrap onto") || strings.Contains(l, "second line") {
-			continuations = append(continuations, l)
-		}
-	}
-	if len(continuations) != 2 {
-		t.Fatalf("expected one continuation per task, got %d: %#v", len(continuations), lines)
-	}
-
-	// `first` has a sibling below it, so its guide continues.
-	if !strings.HasPrefix(strings.TrimPrefix(continuations[0], " "), guide) {
-		t.Errorf("the guide should carry down: %q", continuations[0])
-	}
-	// `second` is the last child — a vertical there would promise a sibling that does not
-	// exist.
-	if strings.Contains(continuations[1], guide) {
-		t.Errorf("the last child should not carry a guide: %q", continuations[1])
-	}
-}
-
-// The continuation hangs under the description, not under the guide.
-func TestAWrappedDescriptionStaysInItsColumn(t *testing.T) {
-	tasks := pivot.Fixture([]string{"group:one"})
-	tasks[0].Desc = "A description long enough that it has to wrap onto a second line"
-	a := New(tasks, "/tmp/repo")
-	a.SetArchive(store.At(t.TempDir()))
-	a.SetFoldAll(true)
-
-	// Columns, not byte offsets: a guide glyph is three bytes and one column, and the row
-	// with the description on it has one in front while its continuation does not.
-	column := func(l string, at int) int { return utf8.RuneCountInString(l[:at]) }
-	textStarts := func(l string) int {
-		at := strings.IndexFunc(l, func(r rune) bool {
-			return r != ' ' && r != []rune(a.Theme.Glyphs.GuideVertical)[0]
-		})
-		if at < 0 {
-			return -1
-		}
-		return column(l, at)
-	}
-
-	first, second := -1, -1
-	for _, l := range a.RenderHeadless(56, 10) {
-		if i := strings.Index(l, "A description"); i >= 0 {
-			first = column(l, i)
-			continue
-		}
-		if first >= 0 && second < 0 && strings.Contains(l, "line") {
-			second = textStarts(l)
-		}
-	}
-	if first < 0 || second < 0 {
-		t.Fatal("the description did not wrap")
-	}
-	if first != second {
-		t.Errorf("continuation starts at column %d, the first line at %d", second, first)
-	}
-}
-
 // A tree that stops distinguishing depth is not a tree. `backend:migrate` and `deploy` are
 // at different levels and used to render byte-identically: both spent their two columns on
 // a fold marker and a space, so the only thing that said one was nested was the row above
@@ -1045,23 +954,17 @@ func TestALongLabelKeepsItsRowAndItsSignals(t *testing.T) {
 	if !strings.Contains(page, "9h ago") {
 		t.Errorf("the outcome was squeezed off the end:\n%s", page)
 	}
-	// The long name's own row carries no description; the description is on the next one.
-	for i, l := range lines {
-		if !strings.Contains(l, "backend:migrate:control:check") {
-			continue
+	// The long name keeps one row, with its description pushed along it rather than onto a
+	// row of its own.
+	for _, l := range lines {
+		if strings.Contains(l, "backend:migrate:control:check") && !strings.Contains(l, "Control: history") {
+			t.Errorf("the description left the label's row: %q", l)
 		}
-		if strings.Contains(l, "Control: history") {
-			t.Errorf("the description is still crammed onto the label's row: %q", l)
-		}
-		if i+1 < len(lines) && !strings.Contains(lines[i+1], "Control: history") {
-			t.Errorf("the description did not move to the next row: %q", lines[i+1])
-		}
-		break
 	}
 }
 
-// Wherever it lands, a description starts in the same column. That is the whole reason the
-// column exists.
+// A description starts in the same column whenever the name fits the one before it. That is
+// the whole reason the column exists. A longer name pushes its own description along.
 func TestEveryDescriptionStartsInOneColumn(t *testing.T) {
 	a := appWith(t, []string{"backend:migrate:control:check", "api:lint", "short"})
 	for i := range a.Tasks {
@@ -1072,7 +975,7 @@ func TestEveryDescriptionStartsInOneColumn(t *testing.T) {
 
 	columns := map[int]bool{}
 	for _, l := range a.RenderHeadless(96, 20) {
-		if before, _, ok := strings.Cut(l, "A description"); ok {
+		if before, _, ok := strings.Cut(l, "A description"); ok && !strings.Contains(before, "control:check") {
 			columns[utf8.RuneCountInString(before)] = true
 		}
 	}
@@ -1578,6 +1481,25 @@ func TestATabInADetailCommandKeepsTheRowItsWidth(t *testing.T) {
 	for i, row := range strings.Split(a.RenderFrame(50, 12), "\n") {
 		if n := ansi.StringWidth(row); n != 50 {
 			t.Errorf("row %d is %d cells wide, want 50: %q", i, n, ansi.Strip(row))
+		}
+	}
+}
+
+// An alias is another name for the task, so it is written with the name. At the right edge it
+// sat where every other row says how the task went, and `b` read as a status.
+func TestAnAliasSitsBesideTheName(t *testing.T) {
+	a := appWith(t, []string{"build", "lint"})
+	a.Tasks[0].Aliases = []string{"b"}
+	a.Outcomes = map[string]store.Outcome{"lint": {Ok: true, WhenUnix: time.Now().Unix()}}
+	a.Rebuild(-1)
+	for _, l := range a.RenderHeadless(90, 8) {
+		if strings.Contains(l, "build") {
+			if !strings.Contains(l, "build (b)") {
+				t.Errorf("row = %q, want the alias beside the name", l)
+			}
+			if strings.HasSuffix(strings.TrimRight(l, " "), "b") {
+				t.Errorf("row = %q still ends in the alias", l)
+			}
 		}
 	}
 }

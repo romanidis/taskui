@@ -301,6 +301,16 @@ func (a *App) treeItem(i, width int) []line {
 	}
 	used := max(1, row.Depth)*2 + cells(node.Label)
 
+	// An alias is another name for the task, so it sits with the name. In the signal column
+	// it read as a status: `b` where every other row said `✓ 1h ago`.
+	if node.Task != pivot.NoTask {
+		if aliases := a.Tasks[node.Task].Aliases; len(aliases) > 0 {
+			alias := " (" + strings.Join(aliases, ", ") + ")"
+			l = append(l, styled(alias, fg(t.Colors.Alias)))
+			used += cells(alias)
+		}
+	}
+
 	// Everything that is not content — the count, an alias, how it went — right-anchors
 	// into a signal column against the edge, so all of it ends where the eye expects it.
 	var signals line
@@ -319,14 +329,9 @@ func (a *App) treeItem(i, width int) []line {
 		used = nameColumn + cells(covers.text)
 	}
 
-	var extra []line
-
 	if node.Task != pivot.NoTask {
 		task := a.Tasks[node.Task]
 		var badges line
-		if len(task.Aliases) > 0 {
-			badges = append(badges, styled(strings.Join(task.Aliases, ", "), fg(t.Colors.Alias)), plain("  "))
-		}
 		if task.Dangerous {
 			badges = append(badges, styled(g.Danger+" ", fgBold(t.Colors.Danger)))
 		}
@@ -356,50 +361,25 @@ func (a *App) treeItem(i, width int) []line {
 			signals = append(signals, plain(strings.Repeat(" ", countWidth)))
 		}
 
-		// Descriptions wrap into their own column rather than being cut off mid-word — a
-		// truncated description is the half that does not tell you anything. Continuation
-		// rows hang under the first, and carry the guide down with them.
+		// One row per task, so the list shows as many tasks as it has rows and the cursor
+		// moves a task at a time. Descriptions used to wrap into a second and third row,
+		// which at sixty columns halved what fit; the whole of one is in the detail panel and
+		// the preview. Cut at a word, and marked as cut. A name wider than its column — the
+		// verb and file pivots show whole colon paths — pushes its description along rather
+		// than onto a row of its own.
 		signalWidth := 0
 		for _, sp := range signals {
 			signalWidth += cells(sp.text)
 		}
-		room := width - nameColumn - signalWidth - 2
-		if task.Desc != "" && room >= 12 {
-			chunks := wrap(task.Desc, room)
-			// A label wider than the column it was given pushes its description sideways and
-			// squeezes the signals off the end — which is how `✓ 9h ago` came out as `✓ 9h`.
-			// The domain pivot never hits this, because its labels are single segments; the
-			// verb and custom pivots show whole colon paths and hit it constantly. Where the
-			// name does not fit, it keeps the row to itself and the description starts on the
-			// next one, in the column it belongs to.
-			first := 0
-			if used <= nameColumn {
-				l = append(l,
-					plain(strings.Repeat(" ", max(1, nameColumn-used))),
-					styled(chunks[0], fg(t.Colors.Dim)),
-				)
-				used = nameColumn + cells(chunks[0])
-				first = 1
+		start := max(nameColumn, used+2)
+		room := width - start - signalWidth - 2
+		if task.Desc != "" && room >= 8 {
+			desc := task.Desc
+			if cells(desc) > room {
+				desc = strings.TrimRight(wrap(desc, room-1)[0], " ") + "…"
 			}
-			// A wrapped description used to leave the guide column blank, which broke the
-			// run of branches in half: the eye follows the vertical down the list, and a
-			// task with a two-line description put a gap in it that read as the end of the
-			// group. The guide continues instead — except on the last child, where there
-			// is nothing below to connect to and a vertical would promise a sibling that
-			// does not exist, and at the top level, where the row itself draws no guide
-			// for the vertical to continue.
-			cont := g.GuideVertical
-			if last || row.Depth == 0 {
-				cont = " "
-			}
-			prefix := indent + cont + " "
-			for _, chunk := range chunks[first:] {
-				extra = append(extra, line{
-					styled(prefix, fg(t.Colors.Faint)),
-					plain(strings.Repeat(" ", max(0, nameColumn-cells(prefix)))),
-					styled(chunk, fg(t.Colors.Dim)),
-				})
-			}
+			l = append(l, plain(strings.Repeat(" ", start-used)), styled(desc, fg(t.Colors.Dim)))
+			used = start + cells(desc)
 		}
 	}
 
@@ -412,7 +392,7 @@ func (a *App) treeItem(i, width int) []line {
 		l = append(l, signals...)
 	}
 
-	return append([]line{l}, extra...)
+	return []line{l}
 }
 
 // drawTree lays the picker out in one column, whatever the width.

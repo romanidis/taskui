@@ -900,9 +900,13 @@ The verb and custom pivots show whole colon paths, and `backend:migrate:control:
 twenty-nine, so the description started wherever the name happened to end and the signals
 were squeezed off the end of the row: `✓ 9h ago` rendered as `✓ 9h`.
 
-A name that does not fit keeps the row to itself now, and its description starts on the next
-one in the column it belongs to — reusing the continuation rows that a wrapped description
-already had. Every description starts in the same place again, which is the entire reason
+A name that does not fit kept the row to itself for a while, its description starting on the
+next one in the column it belonged to, as a wrapped description's continuation rows did.
+That made a row in the list one, two or three rows on screen, and at sixty columns half the
+tasks it could have shown. Every task is one row now: a description too long for its row is
+cut at a word and marked `…`, its whole text in the detail panel and the preview, and a name
+wider than its column pushes its own description along it. The signals still keep their
+room, and every description whose name fits starts in the same column, which is the reason
 there is a column.
 
 ## A manual that had gone two rewrites stale
