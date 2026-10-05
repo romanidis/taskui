@@ -132,7 +132,7 @@ func printTimelineJSON(out io.Writer, root, taskName string) error {
 // The shapes and the diffing live in internal/events, which the TUI's `--events` uses too:
 // one protocol with two ways out, rather than two protocols that drift.
 func streamRun(out io.Writer, dir, target string, argv []string) error {
-	r, err := run.Start(dir, target, argv, false, false)
+	r, err := run.StartUnattended(dir, target, argv, false)
 	if err != nil {
 		return err
 	}

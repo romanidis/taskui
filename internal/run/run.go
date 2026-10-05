@@ -115,6 +115,23 @@ type Run struct {
 // Interactive runs are inherently sequential, so that trade is worth making — but only
 // when asked for.
 func Start(dir, root string, args []string, interactive, force bool) (*Run, error) {
+	return startCapture(dir, root, args, interactive, force, true), nil
+}
+
+// StartUnattended is Start for a run nobody can type at: `--run`, with or without `--json`.
+//
+// go-task asks a task's `prompt:` only on a terminal, and taskui always gives it one — so
+// with nobody at the keyboard the question waited for ever, and `taskui --run deploy` in CI
+// hung until the job timed out where `task deploy` fails at once. Here go-task has nothing to
+// read from, so a prompt fails the way go-task fails it without a terminal, saying that
+// `--yes` runs it anyway.
+func StartUnattended(dir, root string, args []string, force bool) (*Run, error) {
+	return startCapture(dir, root, args, false, force, false), nil
+}
+
+// startCapture makes the Run and sets the goroutine that captures it going. attended says
+// whether somebody can type at it.
+func startCapture(dir, root string, args []string, interactive, force, attended bool) *Run {
 	r := &Run{
 		Root:        root,
 		Args:        append([]string(nil), args...),
@@ -130,8 +147,8 @@ func Start(dir, root string, args []string, interactive, force bool) (*Run, erro
 	// Handed what it shares with the run and nothing more: the process it starts and reaps,
 	// and the queue it fills. Everything else on a Run belongs to whoever calls Poll, and a
 	// goroutine that is never given the run cannot reach any of it.
-	go capture(&r.proc, r.events, dir, root, r.argv())
-	return r, nil
+	go capture(&r.proc, r.events, dir, root, r.argv(), attended)
+	return r
 }
 
 // argv is what go-task is invoked with: the output mode, the task, then the flags.

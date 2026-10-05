@@ -962,7 +962,8 @@ func TestAStopBeforeTheChildStartsMeansItNeverStarts(t *testing.T) {
 	r := &Run{Root: "mark", Tasks: map[string]*TaskRun{}, events: &queue{}}
 	r.Cancel()
 
-	if err := drive(&r.proc, r.events, dir, r.argv(), redact.Empty()); !errors.Is(err, errStoppedBeforeStart) {
+	err := drive(&r.proc, r.events, dir, r.argv(), true, redact.Empty())
+	if !errors.Is(err, errStoppedBeforeStart) {
 		t.Fatalf("drive = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "ran")); err == nil {
@@ -1127,6 +1128,31 @@ func TestARunsOutcomeFollowsItsExit(t *testing.T) {
 	failed.Finish(201)
 	if failed.Outcome() != Failed || failed.ExitCode() != 201 {
 		t.Errorf("failed: %v, %d", failed.Outcome(), failed.ExitCode())
+	}
+}
+
+// Nobody can answer a prompt in an unattended run, so go-task must be told so — or a task
+// with `prompt:` waits on the pty for ever and `taskui --run deploy` in CI hangs until the job
+// times out, where `task deploy` itself fails at once.
+func TestAnUnattendedRunRefusesAPromptInsteadOfHanging(t *testing.T) {
+	needsGoTask(t)
+	dir := taskfile(t, "version: \"3\"\ntasks:\n  deploy:\n    prompt: Ship it?\n    cmds: ['touch shipped']\n")
+
+	r, err := StartUnattended(dir, "deploy", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Kill()
+	pollUntil(r, 20*time.Second, r.Finished)
+
+	if !r.Finished() {
+		t.Fatal("still waiting on a prompt nobody can answer")
+	}
+	if r.Exit == 0 {
+		t.Error("a refused prompt exited 0")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "shipped")); err == nil {
+		t.Error("the task ran without its prompt being answered")
 	}
 }
 

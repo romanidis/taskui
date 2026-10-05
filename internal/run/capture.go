@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
@@ -18,7 +19,7 @@ import (
 
 // capture is the capture goroutine: it works out what the run will look like, then runs it,
 // and reports all of it as events.
-func capture(p *process, events *queue, dir, root string, argv []string) {
+func capture(p *process, events *queue, dir, root string, argv []string, attended bool) {
 	// Read alongside the graph: the names the graph and the output are spelled in, and the
 	// Taskfile's own env, which the summaries leave out.
 	var project task.Project
@@ -40,7 +41,7 @@ func capture(p *process, events *queue, dir, root string, argv []string) {
 	redactor := redact.Harvest(summary, project.Env, argv)
 	events.push(Redacting{N: redactor.Len()})
 
-	switch err := drive(p, events, dir, argv, redactor); {
+	switch err := drive(p, events, dir, argv, attended, redactor); {
 	case errors.Is(err, errStoppedBeforeStart):
 		events.push(Exited{Code: -1})
 	case err != nil:
@@ -50,8 +51,21 @@ func capture(p *process, events *queue, dir, root string, argv []string) {
 }
 
 // drive runs `task` on a pty and relays what it prints, blocking until the child exits.
-func drive(p *process, events *queue, dir string, argv []string, redactor *redact.Redactor) error {
+//
+// Unattended, its input is /dev/null rather than the terminal, which is how go-task knows
+// there is nobody to answer a prompt. The pty stays its controlling terminal, reached through
+// stdout instead, so stopping the run still reaches the whole group.
+func drive(p *process, events *queue, dir string, argv []string, attended bool, redactor *redact.Redactor) error {
 	cmd := exec.Command("task", argv...)
+	if !attended {
+		null, err := os.Open(os.DevNull)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = null.Close() }()
+		cmd.Stdin = null
+		cmd.SysProcAttr = &syscall.SysProcAttr{Ctty: 1}
+	}
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",

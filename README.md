@@ -1649,6 +1649,9 @@ task theme THEME=synthwave      # preview a theme in colour
 — which for go-task's own errors is in the 200s. That makes `taskui --run ci` usable as a CI
 step, which it was not before: it printed `exit 1` and returned 0.
 
+Nobody can answer a question in a `--run`, so a task with a `prompt:` fails the way
+`task` does without a terminal, rather than waiting for ever: `--args --yes` runs it anyway.
+
 `--flaky` and `--lint` get a code of their own so a script can tell "this task is flaky" or
 "this aggregate misses a namespace" from "there is no Taskfile here", which is the
 distinction an exit code exists to draw.
