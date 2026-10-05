@@ -1306,3 +1306,19 @@ func TestTheWheelDoesNotReachTheChildWhileTyping(t *testing.T) {
 		t.Errorf("cursor moved to %d", a.RunCursor)
 	}
 }
+
+// A jump that names a task outright lands on it, wherever the fuzzy matches sort. The Neovim
+// plugin runs a task by jumping to it and pressing ⏎, so landing on `app:build` for `build`
+// ran the wrong one.
+func TestAJumpPrefersTheTaskItNames(t *testing.T) {
+	a := appWith(t, []string{"app:build", "build", "test"})
+	a.SetFoldAll(true)
+	press(a, Char('f'))
+	for _, c := range "build" {
+		press(a, Char(c))
+	}
+	press(a, Enter())
+	if got := a.Tasks[a.SelectedTask()].Name; got != "build" {
+		t.Errorf("jump to `build` landed on %q", got)
+	}
+}

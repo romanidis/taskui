@@ -1,6 +1,8 @@
 package app
 
 import (
+	"slices"
+
 	"github.com/sahilm/fuzzy"
 )
 
@@ -72,7 +74,17 @@ func (a *App) applyJump() {
 		return
 	}
 	a.JumpMatches = a.matchingTasks(a.JumpQuery)
+	// Land first on the task the query names outright, by its name or an alias, and otherwise
+	// on the first in tree order. `build` beside `app:build` landed on `app:build`, which sorts
+	// first — and the Neovim plugin's `:TaskUI run build` is a jump and a ⏎, so it ran the
+	// wrong task.
 	a.JumpIdx = 0
+	for i, ti := range a.JumpMatches {
+		if t := a.Tasks[ti]; t.Name == a.JumpQuery || slices.Contains(t.Aliases, a.JumpQuery) {
+			a.JumpIdx = i
+			break
+		}
+	}
 	a.gotoMatch()
 }
 
