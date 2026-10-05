@@ -422,6 +422,16 @@ func ResolveAll(dir string, roots []string) Graph {
 	return g
 }
 
+// ResolveProject is ResolveAll with every task spelled the way go-task lists it: a call
+// through an alias is a call to the task the list knows it as.
+//
+// It is the graph to ask what reaches what. Spelled as the Taskfile happens to call them, one
+// task is two — and `lint` calling `api:lint` by its alias `al` was reported by `--lint` as
+// never reaching it, while the picker, which renamed its own copy, said it did.
+func ResolveProject(dir string, roots []string) Graph {
+	return ResolveAll(dir, roots).Renamed(taskpkg.ReadProject(dir).Names.Canonical)
+}
+
 // ResolveDetailed is Resolve, but also hands back the raw `--summary` text of every task
 // in the graph.
 //

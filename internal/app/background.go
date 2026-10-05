@@ -61,9 +61,7 @@ func (a *App) StartCoverage() {
 		for i, t := range tasks {
 			names[i] = t.Name
 		}
-		// Spelled the way the list spells them, as a run spells its own graph: a call to an
-		// alias is a call to the task the list knows it as.
-		calls := graph.ResolveAll(root, names).Renamed(task.ReadProject(root).Names.Canonical)
+		calls := graph.ResolveProject(root, names)
 		// No exemptions: `.taskui-cover` says which gaps are deliberate, and a gap is not
 		// what this projection reads. A namespace is annotated with what reaches it.
 		return covered{reaches: cover.BuildGrid(tasks, calls.Reachable, nil).Reaches(), calls: calls}, true

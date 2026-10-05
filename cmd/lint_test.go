@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -164,5 +165,38 @@ func TestTheMatrixSaysWhenThereIsNothingToTabulate(t *testing.T) {
 	got := matrixOf(t, tasks, func(n string) []string { return []string{n} }, nil)
 	if !strings.Contains(got, "no aggregate tasks here") {
 		t.Errorf("got %q", got)
+	}
+}
+
+// A Taskfile calls a task by whichever of its names it likes. `lint` reaching `api:lint` by
+// its alias reaches it, and saying otherwise failed CI over a gap that was not there.
+func TestLintCountsACallThroughAnAlias(t *testing.T) {
+	if _, err := exec.LookPath("task"); err != nil {
+		t.Skip("go-task is not installed")
+	}
+	dir := t.TempDir()
+	taskfile := `version: '3'
+tasks:
+  api:lint:
+    aliases: [al]
+    cmds: ['echo api']
+  web:lint:
+    cmds: ['echo web']
+  lint:
+    desc: Lint everything
+    cmds:
+      - task: al
+      - task: web:lint
+`
+	if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := task.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if gaps := printLint(&out, dir, tasks, false); gaps != 0 {
+		t.Errorf("%d gaps reported:\n%s", gaps, out.String())
 	}
 }

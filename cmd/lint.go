@@ -18,8 +18,14 @@ import (
 // reach. Returns the number of gaps, which is what the exit code is decided on — notes are
 // printed and not counted.
 func printLint(out io.Writer, root string, tasks []task.Task, matrix bool) int {
-	reach := func(name string) []string { return graph.Resolve(root, name).Reachable(name) }
-	g := cover.BuildGrid(tasks, reach, cover.Exemptions(root))
+	names := make([]string, len(tasks))
+	for i, t := range tasks {
+		names[i] = t.Name
+	}
+	// Every task at once, as the picker resolves them: the aggregates share most of what they
+	// reach, and one walk asks go-task about each task once.
+	calls := graph.ResolveProject(root, names)
+	g := cover.BuildGrid(tasks, calls.Reachable, cover.Exemptions(root))
 	if matrix {
 		return printMatrix(out, g)
 	}
