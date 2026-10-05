@@ -868,6 +868,10 @@ starts; what does not is said out loud rather than silently skipped, because the
 lost would be the ones you never see fail. Nothing is ever stacked on top of itself: a save
 during a build does not kill the build that is already checking the previous save.
 
+A watched task re-runs without asking, so `⇧W` will not watch one that touches production —
+on the danger list, or calling something that is. One yes when it was armed would be a yes
+to every save after it.
+
 **The task list keeps up with the Taskfile.** It used to be read once, at startup — while
 `e` opens the very file it was read from, so the intended loop was already "edit the
 Taskfile, come back", and coming back showed the list from before you edited. Now the files

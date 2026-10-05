@@ -775,6 +775,23 @@ func TestWatchingOneTaskFromThePicker(t *testing.T) {
 	}
 }
 
+// Watch re-runs without asking, so arming it on a task that reaches the danger list would be
+// a yes to production on every save. It refuses instead — for the task itself and for one
+// that calls it.
+func TestWatchWillNotArmOnAProductionTask(t *testing.T) {
+	for _, name := range []string{"deploy:prod", "release"} {
+		a := dangerousCaller(t)
+		parkOn(t, a, name)
+		press(a, Char('W'))
+		if len(a.Watching) != 0 {
+			t.Errorf("%s: watching %v, want nothing", name, a.Watching)
+		}
+		if !strings.Contains(a.Status, "touches production") {
+			t.Errorf("%s: status = %q", name, a.Status)
+		}
+	}
+}
+
 // `.taskui-danger` says `deploy:*`. `deploy:apply` matches it but is `internal: true`, so
 // `task --list-all` never lists it, a.Tasks never holds it, and isDangerous answers false
 // for it — so `release`, which calls it, starts without a question.

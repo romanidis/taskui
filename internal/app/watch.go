@@ -37,6 +37,17 @@ func (a *App) ToggleWatch() {
 		names = []string{name}
 	}
 
+	// Refused rather than asked: the re-runs go out without a question, so one yes here
+	// would be a yes to every save from now on. The danger list exists so that a production
+	// task never runs without somebody deciding it should.
+	for _, name := range names {
+		if a.touchesProduction(name) {
+			a.Status = "`" + name + "` touches production — watch would run it on every save " +
+				"without asking, so it is not watched"
+			return
+		}
+	}
+
 	w, err := watch.Start(a.Root)
 	if err != nil {
 		a.Status = fmt.Sprintf("could not watch this directory: %v", err)
@@ -115,8 +126,8 @@ func (a *App) PollWatch() bool {
 		}
 
 		// Deliberately bypasses the confirmation: watch mode is opt-in, on tasks you chose,
-		// and a `y` prompt firing on every keystroke would be unusable. Which is also why
-		// arming it on a production task is a bad idea.
+		// and a `y` prompt firing on every keystroke would be unusable. Which is why
+		// ToggleWatch will not arm it on a production task.
 		if err := a.start(inv); err != nil {
 			a.Status = fmt.Sprintf("could not re-run `task %s`: %v", name, err)
 			return false
