@@ -508,14 +508,10 @@ func (a *App) drawRun(width, height int) []string {
 	a.RunOffset = offsetForCursor(heights, a.RunCursor, height, columns)
 	bounds := columnBounds(heights, a.RunOffset, height, columns)
 
-	build := func(from, to int) [][]line {
-		out := make([][]line, 0, to-from)
-		for i := from; i < to; i++ {
-			out = append(out, a.runRowLines(a.Run, a.RunRows[i], gutters[i], a.bodyWidth(colWidth)))
-		}
-		return out
+	item := func(i int) []line {
+		return a.runRowLines(a.Run, a.RunRows[i], gutters[i], a.bodyWidth(colWidth))
 	}
-	return a.composeColumns(bounds, widths, colWidth, height, a.RunCursor, build)
+	return a.composeColumns(bounds, widths, colWidth, height, a.RunCursor, item)
 }
 
 func (a *App) runFooter() line {

@@ -181,7 +181,7 @@ type rowFilter struct {
 // app is not focused on — every open slot at once — and a walk that reached for a.Run would
 // draw the wrong one under every task but the last. The two views therefore cannot disagree
 // about what a run contains; they differ in what surrounds the rows, not in the rows.
-func runRowsFor(r *run.Run, foldOf func(string) Fold, peek int, filter *rowFilter) []RunRow {
+func runRowsFor(r *run.Run, folds map[string]Fold, peek int, filter *rowFilter) []RunRow {
 	var rows []RunRow
 	seen := map[string]bool{}
 	type frame struct {
@@ -215,7 +215,7 @@ func runRowsFor(r *run.Run, foldOf func(string) Fold, peek int, filter *rowFilte
 
 		// Filtering answers the question the fold state usually answers — you asked for
 		// these lines by searching for them — so it opens everything it keeps.
-		fold := foldOf(top.name)
+		fold := folds[top.name]
 		if filter != nil {
 			fold = FoldFull
 		}
@@ -308,7 +308,7 @@ func (a *App) RebuildRunRows() {
 		}
 	}
 
-	a.RunRows = runRowsFor(r, a.FoldOf, a.PeekLines, filter)
+	a.RunRows = runRowsFor(r, a.runFolds, a.PeekLines, filter)
 	switch {
 	case anchored:
 		a.RunCursor = a.locate(anchorTask, anchorLine, anchorOffset)

@@ -352,12 +352,13 @@ func (a *App) bodyWidth(width int) int {
 // composeColumns lays items into columns and zips them into terminal rows.
 //
 // The cursor lives in whichever column contains it; the rest are a look-ahead, which is
-// why the selection is only drawn once.
+// why the selection is only drawn once. item renders one row, and only the rows that land
+// in a column are asked for.
 func (a *App) composeColumns(
 	bounds [][2]int,
 	widths []int,
 	colWidth, height, cursor int,
-	build func(from, to int) [][]line,
+	item func(i int) []line,
 ) []string {
 	cols := make([][]string, len(widths))
 	for c := range cols {
@@ -371,17 +372,17 @@ func (a *App) composeColumns(
 		if c >= len(widths) || b[0] >= b[1] {
 			break
 		}
-		items := build(b[0], b[1])
 		at := 0
-		for i, item := range items {
-			selected := b[0]+i == cursor
-			for li, l := range item {
+		for i := b[0]; i < b[1]; i++ {
+			lines := item(i)
+			selected := i == cursor
+			for li, l := range lines {
 				if at >= height {
 					break
 				}
-				// len(item), not 1: this is the one place a row can be more than a line
+				// len(lines), not 1: this is the one place a row can be more than a line
 				// tall, and the rail has to know so it does not animate itself into pieces.
-				text := l.renderRow(colWidth, selected, a.Theme, a.Phase, li, len(item))
+				text := l.renderRow(colWidth, selected, a.Theme, a.Phase, li, len(lines))
 				// The gap to the next column is outside the row: its shade glyph is the row's
 				// right edge. Painting the gap in the selection colour ran the bar past that
 				// edge, and did it on every frame, so a blinking theme's bar went dark while

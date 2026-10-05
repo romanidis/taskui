@@ -472,14 +472,7 @@ func (a *App) drawTree(width, height int) []string {
 	a.Offset = offsetForCursor(heights, a.Cursor, height, columns)
 	bounds := columnBounds(heights, a.Offset, height, columns)
 
-	build := func(from, to int) [][]line {
-		out := make([][]line, 0, to-from)
-		for i := from; i < to; i++ {
-			out = append(out, item(i))
-		}
-		return out
-	}
-	return a.composeColumns(bounds, widths, colWidth, height, a.Cursor, build)
+	return a.composeColumns(bounds, widths, colWidth, height, a.Cursor, item)
 }
 
 // pickerRunHeight is how many terminal rows one inline run row occupies, indentation

@@ -112,7 +112,7 @@ func (a *App) RebuildPickerRows() {
 		if s == nil || a.BlockFold(name) == FoldHidden {
 			continue
 		}
-		inline := runRowsFor(s.Run, func(task string) Fold { return s.runFolds[task] }, a.PeekLines, nil)
+		inline := runRowsFor(s.Run, s.runFolds, a.PeekLines, nil)
 		if len(inline) == 0 {
 			continue
 		}
