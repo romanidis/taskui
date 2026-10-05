@@ -90,7 +90,9 @@ func (a *App) drawDetail(width, height int) []string {
 				if i > 0 {
 					indent = "    "
 				}
-				for _, chunk := range wrap(indent+text, room) {
+				// Expanded before it is measured: a heredoc keeps its tabs, and a tab
+				// counted as nothing and drawn as several pushed the row past its width.
+				for _, chunk := range wrap(indent+expandTabs(text), room) {
 					lines = append(lines, line{styled(chunk, fg(t.Colors.Text))})
 				}
 			}

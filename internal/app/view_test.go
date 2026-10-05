@@ -11,6 +11,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/romanidis/taskui/internal/graph"
 	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/pivot"
@@ -1471,6 +1473,20 @@ func TestOutputHangsOffItsCommand(t *testing.T) {
 	} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("want %q in:\n%s", want, frame)
+		}
+	}
+}
+
+// A literal tab in a multi-line command — a `<<-EOF` heredoc, which go-task's --summary
+// prints verbatim — is measured as zero cells and drawn by lipgloss as four spaces.
+func TestATabInADetailCommandKeepsTheRowItsWidth(t *testing.T) {
+	a := appAt(t, "backend:lint")
+	a.DetailOf = "backend:lint"
+	a.Detail = graph.Detail{Commands: []string{"cat <<-EOF > out.txt\n\tindented=1\nEOF"}}
+	a.Screen = ScreenDetail
+	for i, row := range strings.Split(a.RenderFrame(50, 12), "\n") {
+		if n := ansi.StringWidth(row); n != 50 {
+			t.Errorf("row %d is %d cells wide, want 50: %q", i, n, ansi.Strip(row))
 		}
 	}
 }
