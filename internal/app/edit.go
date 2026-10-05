@@ -10,17 +10,6 @@ import (
 	"github.com/romanidis/taskui/internal/loc"
 )
 
-// resolver indexes the project lazily, and only once.
-//
-// Built on demand rather than in New: most sessions never press `e`, and walking the tree
-// for a key nobody used is a cost paid by everyone to benefit no one.
-func (a *App) resolver() *loc.Resolver {
-	if a.locs == nil {
-		a.locs = loc.NewResolver(a.Root)
-	}
-	return a.locs
-}
-
 // TakeEdit hands over the editor the last keypress asked for, and clears it.
 //
 // The key handlers cannot return a Bubble Tea command, so the intent is parked here and
@@ -37,118 +26,78 @@ func (a *App) TakeEdit() (loc.Editor, bool) {
 
 // EditUnderCursor opens whatever file the row under the cursor points at.
 //
-// The row is tried first and the task second. A failing Go test prints its assertion on one
-// line and the `--- FAIL` on another, and pressing `e` on the wrong one of those two should
-// not be a dead keystroke — so a row with no location of its own falls back to the first one
-// its task printed, which for a compiler is the error and for a test runner is the first
-// failing assertion. Both are the place you wanted to go.
+// The row is tried first and the rest of the screen second. A failing Go test prints its
+// assertion on one line and the `--- FAIL` on another, and pressing `e` on the wrong one of
+// those two should not be a dead keystroke — so a row with no location of its own falls back
+// to the first one its task printed, which for a compiler is the error and for a test runner
+// is the first failing assertion. Both are the place you wanted to go.
+//
+// What the rest of the screen is depends on the screen. The run view has the task's captured
+// output in memory; a diff opened from a timeline does not — `a.Run` there is whatever
+// happened to be open before, which is a different run or none at all, and reading it would
+// answer a question about the wrong thing.
 func (a *App) EditUnderCursor() {
-	text, task, ok := a.rowTextForEdit()
-	if !ok {
-		a.Status = "nothing here to open"
-		return
+	// Tried in order. at is the line a candidate is on, counted from 1, for the note saying
+	// where a location came from; the row under the cursor needs no note.
+	type candidate struct {
+		text string
+		at   int
 	}
-	if l, found := loc.First(text); found {
-		a.openLocationFrom(l, task, "")
-		return
+	var tries []candidate
+	var task, source string
+
+	if a.Screen == ScreenDiff {
+		if a.DiffCursor >= len(a.DiffRows) {
+			a.Status = "nothing here to open"
+			return
+		}
+		task, source = a.DiffOf, "the diff"
+		tries = append(tries, candidate{text: a.DiffRows[a.DiffCursor].Text})
+		// The lines that arrived first. In a diff, what is new is what you are there about — a
+		// location on a line both runs printed is the one that was already fine.
+		for _, arrived := range []bool{true, false} {
+			for i, row := range a.DiffRows {
+				if !row.Gap && (row.Op == diff.Ins) == arrived {
+					tries = append(tries, candidate{row.Text, i + 1})
+				}
+			}
+		}
+	} else {
+		if a.Run == nil || a.RunCursor >= len(a.RunRows) {
+			a.Status = "nothing here to open"
+			return
+		}
+		row := a.RunRows[a.RunCursor]
+		task = row.Task
+		if row.IsTask {
+			task = row.Name
+		}
+		source = "`" + task + "`"
+		if t := a.Run.Tasks[task]; t != nil {
+			if !row.IsTask && row.Index < len(t.Lines) {
+				tries = append(tries, candidate{text: t.Lines[row.Index].Plain})
+			}
+			for i, l := range t.Lines {
+				tries = append(tries, candidate{l.Plain, i + 1})
+			}
+		}
 	}
-	if l, note, found := a.fallbackLocation(task); found {
-		a.openLocationFrom(l, task, note)
-		return
+
+	for _, c := range tries {
+		if l, ok := loc.First(c.text); ok {
+			note := ""
+			if c.at > 0 {
+				note = fmt.Sprintf(" (from line %d of %s)", c.at, source)
+			}
+			a.openLocationFrom(l, task, note)
+			return
+		}
 	}
 	if a.Screen == ScreenDiff {
 		a.Status = "no file:line anywhere in this diff"
 		return
 	}
 	a.Status = "no file:line here — `" + task + "` did not print one"
-}
-
-// fallbackLocation is where `e` goes when the row under the cursor names no file, and the
-// note explaining where it came from.
-//
-// It has to be per screen because the two screens are looking at different things. The run
-// view has the task's captured output in memory; a diff opened from a timeline does not —
-// `a.Run` there is whatever happened to be open before, which is a different run or none at
-// all, and reading it would answer a question about the wrong thing.
-func (a *App) fallbackLocation(task string) (loc.Loc, string, bool) {
-	if a.Screen == ScreenDiff {
-		if l, at, ok := a.firstLocationInDiff(); ok {
-			return l, fmt.Sprintf(" (from line %d of the diff)", at+1), true
-		}
-		return loc.Loc{}, "", false
-	}
-	if l, at, ok := a.firstLocationIn(task); ok {
-		return l, fmt.Sprintf(" (from line %d of `%s`)", at+1, task), true
-	}
-	return loc.Loc{}, "", false
-}
-
-// firstLocationInDiff prefers the lines that arrived. In a diff, what is new is what you
-// are there about — a location on a line both runs printed is the one that was already
-// fine.
-func (a *App) firstLocationInDiff() (loc.Loc, int, bool) {
-	for _, want := range []bool{true, false} {
-		for i, row := range a.DiffRows {
-			if row.Gap || (row.Op == diff.Ins) != want {
-				continue
-			}
-			if found, ok := loc.First(row.Text); ok {
-				return found, i, true
-			}
-		}
-	}
-	return loc.Loc{}, 0, false
-}
-
-// rowTextForEdit is the text `e` should look in, the task it belongs to, and whether there
-// is anything here at all.
-func (a *App) rowTextForEdit() (string, string, bool) {
-	if a.Screen == ScreenDiff {
-		if a.DiffCursor < len(a.DiffRows) {
-			row := a.DiffRows[a.DiffCursor]
-			return row.Text, a.DiffOf, true
-		}
-		return "", "", false
-	}
-	if a.Run == nil || a.RunCursor >= len(a.RunRows) {
-		return "", "", false
-	}
-	row := a.RunRows[a.RunCursor]
-	if row.IsTask {
-		return "", row.Name, true
-	}
-	if t, found := a.Run.Tasks[row.Task]; found && row.Index < len(t.Lines) {
-		return t.Lines[row.Index].Plain, row.Task, true
-	}
-	return "", row.Task, true
-}
-
-// firstLocationIn is the first file location this task printed, and which line it was on.
-func (a *App) firstLocationIn(task string) (loc.Loc, int, bool) {
-	if a.Run == nil {
-		return loc.Loc{}, 0, false
-	}
-	t, ok := a.Run.Tasks[task]
-	if !ok {
-		return loc.Loc{}, 0, false
-	}
-	for i, l := range t.Lines {
-		if found, ok := loc.First(l.Plain); ok {
-			return found, i, true
-		}
-	}
-	return loc.Loc{}, 0, false
-}
-
-// taskDir is where a task runs, as far as taskui can tell: beside the Taskfile that
-// defines it, which is go-task's default for an included one. A task with its own `dir:` is
-// the case this misses — neither listing says what that is — and it falls back to the
-// project root, which is where everything was resolved before.
-func (a *App) taskDir(name string) string {
-	if where, ok := a.WhereIs(name); ok {
-		return filepath.Dir(where.File)
-	}
-	return ""
 }
 
 // openLocationFrom resolves a location printed by task and parks the editor command for
@@ -160,7 +109,20 @@ func (a *App) taskDir(name string) string {
 // the editor is one whose line-number spelling is unknown.
 func (a *App) openLocationFrom(l loc.Loc, task, note string) {
 	where := fmt.Sprintf("%s:%d", l.Path, l.Line)
-	abs, ambiguous, ok := a.resolver().ResolveIn(a.taskDir(task), l.Path)
+	// Looked for where the task runs, as far as taskui can tell: beside the Taskfile that
+	// defines it, which is go-task's default for an included one. A task with its own `dir:`
+	// is the case this misses — neither listing says what that is — and it falls back to the
+	// project root, which is where everything was resolved before.
+	dir := ""
+	if def, ok := a.WhereIs(task); ok {
+		dir = filepath.Dir(def.File)
+	}
+	// The project is indexed on the first `e` rather than in New: most sessions never press
+	// it, and walking the tree for a key nobody used is a cost paid by everyone.
+	if a.locs == nil {
+		a.locs = loc.NewResolver(a.Root)
+	}
+	abs, ambiguous, ok := a.locs.ResolveIn(dir, l.Path)
 	if !ok {
 		a.Status = where + " — no such file under " + baseName(a.Root) + note
 		return
@@ -193,11 +155,6 @@ func (a *App) openLocationFrom(l loc.Loc, task, note string) {
 	}
 	a.Status += note
 }
-
-// locationsIn is what the renderer draws as links. Syntax only — the filesystem is not
-// consulted until a key is actually pressed, because this runs on every visible row of
-// every frame and the answer is only needed once.
-func locationsIn(text string) []loc.Loc { return loc.All(text) }
 
 // EditDefinition opens the Taskfile a task is written in, at its own line.
 //

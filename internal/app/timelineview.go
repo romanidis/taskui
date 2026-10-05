@@ -9,6 +9,7 @@ import (
 
 	"github.com/romanidis/taskui/internal/diff"
 	"github.com/romanidis/taskui/internal/keys"
+	"github.com/romanidis/taskui/internal/loc"
 )
 
 // --- timeline ---------------------------------------------------------------------
@@ -265,7 +266,9 @@ func numberOrBlank(n, width int) string {
 // not a signal. The underline is what says "this one is reachable" — and `e` is the key
 // that reaches it.
 func (a *App) textWithLocations(text string, base lipgloss.Style) []span {
-	found := locationsIn(text)
+	// Syntax only: the filesystem is not consulted until `e` is pressed, because this runs on
+	// every visible row of every frame and the answer is only needed once.
+	found := loc.All(text)
 	if len(found) == 0 {
 		return []span{styled(text, base)}
 	}
