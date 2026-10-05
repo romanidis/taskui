@@ -261,7 +261,7 @@ type App struct {
 	calls graph.Graph
 
 	// Where the run on screen spent its time, slowest first.
-	ProfileRows   []Cost
+	ProfileRows   []run.Cost
 	ProfileCursor int
 	ProfileOffset int
 	profileReturn Screen

@@ -154,7 +154,7 @@ func TestTheProfileRanksBySelfTimeNotTotal(t *testing.T) {
 		t.Errorf("slowest is %q, want compile — the one that did the work", got)
 	}
 
-	by := map[string]Cost{}
+	by := map[string]run.Cost{}
 	for _, c := range a.ProfileRows {
 		by[c.Name] = c
 	}
@@ -181,7 +181,7 @@ func TestSelfTimeNeverGoesNegative(t *testing.T) {
 	a := sample(t)
 	timed(t, a)
 	a.Run.Tasks["all"].SetDurationForTest(10 * time.Millisecond)
-	for _, c := range a.Profile() {
+	for _, c := range a.Run.Profile() {
 		if c.Self < 0 {
 			t.Errorf("%s has self time %v", c.Name, c.Self)
 		}

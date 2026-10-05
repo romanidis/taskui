@@ -1,76 +1,11 @@
 package app
 
 import (
-	"sort"
 	"time"
 
 	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/run"
 )
-
-// Cost is one task's share of a run.
-type Cost struct {
-	Name     string
-	Duration time.Duration
-	Lines    int
-	Status   run.Status
-	// Self is Duration minus whatever its children accounted for. An aggregate that only
-	// invokes other tasks has a large Duration and almost no Self, and reporting the first
-	// as though it were the second would put `all` at the top of every profile saying
-	// nothing.
-	Self time.Duration
-	// Children is how many tasks ran underneath it, for telling an aggregate from a leaf.
-	Children int
-}
-
-// Profile is where a run's time went, slowest first.
-//
-// Every task already carries its own clock and the run view already shows it — beside the
-// task, in tree order, which is the right place to answer "is this step slow" and the wrong
-// one to answer "what makes this take four minutes". That second question is about the
-// whole run at once, and it is a sort, not a walk.
-//
-// Self time is what makes it useful. A `task all` that invokes six things has a duration
-// equal to the sum of theirs, so ranking by duration puts every aggregate above every task
-// that did any work. Subtracting the children leaves the time a task spent on its own
-// commands, which is the time that would actually go away if you made it faster.
-func (a *App) Profile() []Cost {
-	if a.Run == nil {
-		return nil
-	}
-	out := make([]Cost, 0, len(a.Run.Tasks))
-	for name, t := range a.Run.Tasks {
-		d, ok := t.Elapsed()
-		if !ok || t.Status == run.Skipped || t.Status == run.Pending {
-			continue
-		}
-		children := a.Run.Graph.Children(name)
-		self := d
-		for _, child := range children {
-			if c, ok := a.Run.Tasks[child]; ok {
-				if cd, ok := c.Elapsed(); ok {
-					self -= cd
-				}
-			}
-		}
-		// A parent that overlapped its children, or a clock that rounded the wrong way, can
-		// take this below zero. Zero is the honest floor: it did not spend negative time.
-		self = max(0, self)
-
-		out = append(out, Cost{
-			Name: name, Duration: d, Lines: len(t.Lines),
-			Status: t.Status, Self: self, Children: len(children),
-		})
-	}
-
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Self != out[j].Self {
-			return out[i].Self > out[j].Self
-		}
-		return out[i].Name < out[j].Name
-	})
-	return out
-}
 
 // ProfileTotal is the run's own elapsed time — the denominator the shares are of.
 //
@@ -90,7 +25,7 @@ func (a *App) OpenProfile() {
 		a.Status = "nothing running to profile"
 		return
 	}
-	a.ProfileRows = a.Profile()
+	a.ProfileRows = a.Run.Profile()
 	a.ProfileCursor = 0
 	a.ProfileOffset = 0
 	// Opened on a finished run, these figures are already the final ones.
@@ -133,7 +68,7 @@ func (a *App) RefreshProfile() {
 	if cost, ok := a.SelectedCost(); ok {
 		on = cost.Name
 	}
-	a.ProfileRows = a.Profile()
+	a.ProfileRows = a.Run.Profile()
 	for i, c := range a.ProfileRows {
 		if c.Name == on {
 			a.ProfileCursor = i
@@ -159,9 +94,9 @@ func (a *App) ProfileMoveCursor(delta int) {
 }
 
 // SelectedCost is the row under the cursor.
-func (a *App) SelectedCost() (Cost, bool) {
+func (a *App) SelectedCost() (run.Cost, bool) {
 	if a.ProfileCursor >= len(a.ProfileRows) {
-		return Cost{}, false
+		return run.Cost{}, false
 	}
 	return a.ProfileRows[a.ProfileCursor], true
 }

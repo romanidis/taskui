@@ -464,7 +464,7 @@ func TestEveryScreenRendersAtEveryAwkwardSize(t *testing.T) {
 
 	// The profile is a list like the others, and a mark held in the picker changes a glyph
 	// and takes over the footer — both have to survive the same shapes.
-	a.ProfileRows = a.Profile()
+	a.ProfileRows = a.Run.Profile()
 	a.marked = map[string]bool{"task001": true, "task002": true}
 
 	screens := []Screen{
