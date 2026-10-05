@@ -1477,6 +1477,53 @@ func TestOutputHangsOffItsCommand(t *testing.T) {
 	}
 }
 
+// A task sitting on a `[y/N]` takes the run view's footer ahead of the confirmation bar, so a
+// question taskui asks — here, whether to restart `release`, which calls deploy:prod — is
+// never shown. The footer instead shows the child's own `[y/N]`, and the `y` typed at it
+// answers taskui's hidden question instead, twice, and starts the production caller.
+func TestTaskuisQuestionIsNotHiddenBehindTheTasks(t *testing.T) {
+	a := dangerousCaller(t)
+	r := run.Detached("release", run.GraphFrom(run.Edge{Parent: "release", Children: []string{"build", "deploy:prod"}}))
+	r.Apply(run.Partial{Task: "build", Text: "Proceed? [y/N] "})
+	a.OpenRunForTest(r)
+	a.Screen = ScreenRun
+	if !a.AwaitingInput() {
+		t.Fatal("setup: run should be awaiting input")
+	}
+
+	press(a, Char('r'))
+	if a.Confirm == nil {
+		t.Fatal("setup: `r` on a live run should ask first")
+	}
+	lines := a.RenderHeadless(120, 12)
+	footer := lines[len(lines)-1]
+	if !strings.Contains(footer, "release") || !strings.Contains(footer, "anything else cancels") {
+		t.Errorf("taskui's own question is not on screen; footer = %q", footer)
+	}
+}
+
+// The same precedence hides the search prompt: with the task awaiting input, `/` opens a
+// search whose typed query never appears in the footer.
+func TestTheSearchPromptIsNotHiddenBehindTheTasksQuestion(t *testing.T) {
+	a := dangerousCaller(t)
+	r := run.Detached("build", run.GraphFrom(run.Edge{Parent: "build"}))
+	r.Feed("build", "some output")
+	r.Apply(run.Partial{Task: "build", Text: "Password: "})
+	a.OpenRunForTest(r)
+	a.Screen = ScreenRun
+	press(a, Char('/'))
+	press(a, Char('o'))
+	press(a, Char('u'))
+	if !a.Searching || a.SearchInput != "ou" {
+		t.Fatalf("setup: searching=%v input=%q", a.Searching, a.SearchInput)
+	}
+	lines := a.RenderHeadless(120, 12)
+	footer := lines[len(lines)-1]
+	if !strings.Contains(footer, "/ou") {
+		t.Errorf("the search prompt is not on screen; footer = %q", footer)
+	}
+}
+
 // A literal tab in a multi-line command — a `<<-EOF` heredoc, which go-task's --summary
 // prints verbatim — is measured as zero cells and drawn by lipgloss as four spaces.
 func TestATabInADetailCommandKeepsTheRowItsWidth(t *testing.T) {

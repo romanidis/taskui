@@ -546,26 +546,9 @@ func (a *App) runFooter() line {
 		return append(l, styled("   esc to stop typing", fg(t.Colors.Dim)))
 	}
 
-	// Under `prefixed` a blocked task emits nothing at all, so this is the only warning
-	// available — otherwise it reads as an unusually slow build.
-	if a.PossiblyStuck() {
-		return line{
-			styled("  …  ", onBg(t.Colors.WarningFg, t.Colors.WarningBg)),
-			styled(" no output for a while", fg(t.Colors.Notice)),
-			styled("   waiting for input?  i types at it   ⇧I re-runs so you can see it   x stops", fg(t.Colors.Dim)),
-		}
-	}
-
-	// A task blocked on a question looks identical to a slow one; say which it is.
-	if a.AwaitingInput() {
-		prompt, _ := promptOf(a.Run)
-		return line{
-			styled("  ?  ", onBg(t.Colors.WarningFg, t.Colors.WarningBg)),
-			styled(" "+prompt, fg(t.Colors.Notice)),
-			styled("   i to answer   x to stop", fg(t.Colors.Dim)),
-		}
-	}
-
+	// A question taskui is asking, and a prompt you opened, come before what the task is
+	// doing. Behind the `?` bar, `r` on a task sitting at `[y/N]` asked whether to restart
+	// it out of sight, and the `y` meant for the task answered taskui instead.
 	if l, ok := a.confirmBar(); ok {
 		return l
 	}
@@ -600,6 +583,26 @@ func (a *App) runFooter() line {
 				len(tasks), plural(len(tasks), "task", "tasks")), fg(t.Colors.Dim)))
 		}
 		return append(l, styled("   ⏎ keep   esc clear", fg(t.Colors.Dim)))
+	}
+
+	// Under `prefixed` a blocked task emits nothing at all, so this is the only warning
+	// available — otherwise it reads as an unusually slow build.
+	if a.PossiblyStuck() {
+		return line{
+			styled("  …  ", onBg(t.Colors.WarningFg, t.Colors.WarningBg)),
+			styled(" no output for a while", fg(t.Colors.Notice)),
+			styled("   waiting for input?  i types at it   ⇧I re-runs so you can see it   x stops", fg(t.Colors.Dim)),
+		}
+	}
+
+	// A task blocked on a question looks identical to a slow one; say which it is.
+	if a.AwaitingInput() {
+		prompt, _ := promptOf(a.Run)
+		return line{
+			styled("  ?  ", onBg(t.Colors.WarningFg, t.Colors.WarningBg)),
+			styled(" "+prompt, fg(t.Colors.Notice)),
+			styled("   i to answer   x to stop", fg(t.Colors.Dim)),
+		}
 	}
 
 	return a.statusBar(&keys.Run)
