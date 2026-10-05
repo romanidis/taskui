@@ -146,14 +146,14 @@ func readmeTable(section *keys.Section, km *keys.Keymap) string {
 		for key := range strings.FieldsSeq(binding.Keys) {
 			cells = append(cells, "`"+key+"`")
 		}
-		fmt.Fprintf(&b, "| %s | %s |\n", strings.Join(cells, " "), markdown(binding.What))
+		fmt.Fprintf(&b, "| %s | %s |\n", strings.Join(cells, " "), tableCell(binding.What))
 	}
 	b.WriteString("\n")
 	return b.String()
 }
 
-// markdown keeps a description inside its table cell. A pipe would end the cell early and
+// tableCell keeps a description inside its table cell. A pipe would end the cell early and
 // silently drop the rest of the sentence.
-func markdown(s string) string {
+func tableCell(s string) string {
 	return strings.ReplaceAll(s, "|", `\|`)
 }

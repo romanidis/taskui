@@ -87,7 +87,7 @@ func TestElideKeepsTheEndOfAPath(t *testing.T) {
 }
 
 func TestBlockIndentsTheLinesItMade(t *testing.T) {
-	out := block("one two three four five six seven eight", "  ", "  ", 24)
+	out := indentedWrap("one two three four five six seven eight", "  ", "  ", 24)
 	lines := strings.Split(out, "\n")
 	if len(lines) < 2 {
 		t.Fatalf("nothing wrapped: %q", out)

@@ -132,7 +132,7 @@ func (e example) write(out io.Writer, width int) {
 		case len(p.shell) > 0:
 			writeBlock(out, p.shell)
 		default:
-			fmt.Fprintln(out, wrapText(p.text, width))
+			fmt.Fprintln(out, strings.Join(wrap(p.text, width), "\n"))
 		}
 	}
 }
@@ -147,28 +147,6 @@ func writeBlock(out io.Writer, lines []string) {
 		}
 		fmt.Fprintf(out, "  %s\n", line)
 	}
-}
-
-// wrapText breaks prose at word boundaries. The frames beside it are already exactly as wide
-// as they should be; the sentences have to be made to match.
-func wrapText(s string, width int) string {
-	var out []string
-	line := ""
-	for word := range strings.FieldsSeq(s) {
-		switch {
-		case line == "":
-			line = word
-		case len(line)+1+len([]rune(word)) <= width:
-			line += " " + word
-		default:
-			out = append(out, line)
-			line = word
-		}
-	}
-	if line != "" {
-		out = append(out, line)
-	}
-	return strings.Join(out, "\n")
 }
 
 // --- the sample project -----------------------------------------------------------------

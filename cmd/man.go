@@ -139,17 +139,17 @@ func manOptions() string {
 		} else {
 			fmt.Fprintf(&b, ".BI \\-\\-%s \" %s\"\n", roff(f.Name), strings.ToUpper(placeholder(f)))
 		}
-		b.WriteString(sentence(generic(f.Usage)) + "\n")
+		b.WriteString(sentence(withoutHomeDir(f.Usage)) + "\n")
 	})
 	return b.String()
 }
 
-// generic strips this machine out of a flag's help.
+// withoutHomeDir strips this machine out of a flag's help.
 //
 // `--config` names its default, which is useful at a terminal and wrong in a file that is
 // committed and then shipped: the generated page would otherwise carry whichever home
 // directory happened to run the generator.
-func generic(usage string) string {
+func withoutHomeDir(usage string) string {
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		usage = strings.ReplaceAll(usage, home, "~")
 	}

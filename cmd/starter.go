@@ -172,7 +172,7 @@ func (m *starterModel) View() tea.View {
 	inner := min(width, 78)
 
 	var b strings.Builder
-	b.WriteString("\n" + key.Render(block("no Taskfile here, nor in any directory above",
+	b.WriteString("\n" + key.Render(indentedWrap("no Taskfile here, nor in any directory above",
 		"  ", "  ", inner)) + "\n")
 	b.WriteString(dim.Render("  "+elide(tilde(m.root), inner-2)) + "\n\n")
 
@@ -187,7 +187,7 @@ func (m *starterModel) View() tea.View {
 	option("e", "write it and open it in $EDITOR first")
 	option("q", "quit, and add your own "+task.StarterName)
 
-	b.WriteString("\n" + dim.Render(block("The starter is a hello-world with the parts "+
+	b.WriteString("\n" + dim.Render(indentedWrap("The starter is a hello-world with the parts "+
 		"taskui reads spelled out: a desc:, a name that folds into a namespace, an args "+
 		"hint. Edit it into your own — the picker reloads whenever the file changes.",
 		"  ", "  ", inner)) + "\n\n")
@@ -215,10 +215,10 @@ func elide(path string, width int) string {
 	return "…" + string(runes[len(runes)-(width-1):])
 }
 
-// block is wrap plus indentation: first in front of the first line, rest in front of the
-// ones the wrap produced. Which is the part lipgloss's Width does not do for a block whose
-// indent was written outside it.
-func block(text, first, rest string, width int) string {
+// indentedWrap is wrap plus indentation: first in front of the first line, rest in front of
+// the ones the wrap produced. Which is the part lipgloss's Width does not do for a block
+// whose indent was written outside it.
+func indentedWrap(text, first, rest string, width int) string {
 	lines := wrap(text, width-len([]rune(rest)))
 	for i := range lines {
 		if i == 0 {
