@@ -13,6 +13,7 @@ import (
 	"github.com/romanidis/taskui/internal/store"
 	"github.com/romanidis/taskui/internal/task"
 	"github.com/romanidis/taskui/internal/theme"
+	"github.com/romanidis/taskui/internal/watch"
 )
 
 // --- marks ---------------------------------------------------------------------------
@@ -771,5 +772,67 @@ func TestWatchingOneTaskFromThePicker(t *testing.T) {
 	}
 	if a.WatchLabel() != "backend:lint" {
 		t.Errorf("label = %q", a.WatchLabel())
+	}
+}
+
+// You are typing at `prompt` (input mode, `i`). Watch mode re-runs `test` on a save; start()
+// claims a slot by parking the focused one and putting the new run on screen. SendingInput
+// is an app-wide flag, not the slot's, so it stays on — and the next keystroke (a `y⏎`, a
+// ^C) is written to `test`'s pty, not to the task you were answering.
+func TestAWatchedRunStartingEndsTyping(t *testing.T) {
+	dir := t.TempDir()
+	taskfile := `version: '3'
+tasks:
+  prompt:
+    cmds:
+      - read -r x; echo "got $x"
+  test:
+    cmds:
+      - sleep 5
+`
+	if err := os.WriteFile(filepath.Join(dir, "Taskfile.yml"), []byte(taskfile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := task.Discover(dir)
+	if err != nil {
+		t.Skip(err)
+	}
+	a := New(tasks, dir)
+	a.SetStateDir(t.TempDir())
+	defer a.KillAll()
+
+	a.Screen = ScreenRun
+	if err := a.StartRunWith("prompt", nil); err != nil {
+		t.Fatal(err)
+	}
+	typingAt := a.Run
+	a.BeginInput()
+	if !a.SendingInput {
+		t.Fatal("input mode did not start")
+	}
+
+	w, err := watch.Start(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Settle = 10 * time.Millisecond
+	a.watcher = w
+	a.Watching = []string{"test"}
+	defer w.Close()
+
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !a.PollWatch() {
+		if time.Now().After(deadline) {
+			t.Fatal("watch never fired")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if a.SendingInput && a.Run != typingAt {
+		t.Errorf("still in input mode, but the run on screen is now %q — the next key goes to it, not to %q",
+			a.Run.Root, typingAt.Root)
 	}
 }

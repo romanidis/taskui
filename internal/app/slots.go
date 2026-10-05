@@ -224,10 +224,15 @@ func (a *App) claimStoredSlot() (uint64, string) {
 }
 
 // parkFocused moves the slot on screen into the parking lot, view and all.
+//
+// Typing stops with it. Input goes to whatever run is on screen, so a watched task starting
+// in a new slot while you answered a prompt took the next keystroke — a `y`, a `^C` — and
+// sent it to a task that never asked.
 func (a *App) parkFocused() {
 	if a.Run == nil {
 		return
 	}
+	a.EndInput()
 	a.Parked = append(a.Parked, a.slot)
 	a.slot = newSlot(nil, 0)
 }
@@ -238,6 +243,9 @@ func (a *App) parkFocused() {
 // on. The search hits cannot: they are indices into the run just left, and running the
 // query again against this one is both cheap and what keeping the query meant.
 func (a *App) show(s *slot) {
+	if s != a.slot {
+		a.EndInput()
+	}
 	a.slot = s
 	a.refreshSearch()
 	a.RebuildRunRows()
