@@ -33,14 +33,14 @@ import (
 // time the answer was `fmt`'s, which passed, and the failure it was told about never reached
 // the list.
 func printQuickfix(out io.Writer, root, only string) error {
-	base := store.StateDir()
+	archive := store.Default()
 	var latest *store.Manifest
 	var latestEnd int64 // milliseconds
-	for _, m := range store.List(base) {
+	for _, m := range archive.List() {
 		// The ledger remembers further back than the output is kept, and a quickfix list is
 		// built out of the text. Walk past what is only remembered to the runs there is still
 		// something to read.
-		if !store.SameDir(m.Dir, root) || !store.HasOutput(base, m.ID) {
+		if !store.SameDir(m.Dir, root) || !archive.HasOutput(m.ID) {
 			continue
 		}
 		// List is newest-started first, so a tie keeps the later start.
@@ -51,7 +51,7 @@ func printQuickfix(out io.Writer, root, only string) error {
 	if latest == nil {
 		return fmt.Errorf("no stored runs for this project yet")
 	}
-	r, err := store.Load(base, *latest)
+	r, err := archive.Load(*latest)
 	if err != nil {
 		return fmt.Errorf("reading run %s: %w", latest.ID, err)
 	}

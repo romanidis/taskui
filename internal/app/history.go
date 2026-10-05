@@ -40,7 +40,7 @@ func (s HistoryScope) String() string {
 // OpenLastRun opens the most recent stored run for this project, as `--last` does.
 func (a *App) OpenLastRun() bool {
 	here := a.Root
-	for _, m := range store.List(a.stateDir) {
+	for _, m := range a.archive.List() {
 		if !store.SameDir(m.Dir, here) {
 			continue
 		}
@@ -68,7 +68,7 @@ func (a *App) OpenHistory() {
 }
 
 func (a *App) reloadHistory() {
-	all := store.List(a.stateDir)
+	all := a.archive.List()
 	if a.HistoryScope == ScopeEverywhere {
 		a.History = all
 		return
@@ -133,7 +133,7 @@ func (a *App) applyHistorySearch() {
 		// Half-typed regex: leave the list alone rather than emptying it.
 		return
 	}
-	results, _ := search.InStore(a.stateDir, query, 200, search.Scope{})
+	results, _ := search.InStore(a.archive, query, 200, search.Scope{})
 	for _, r := range results {
 		a.HistoryHits[r.Manifest.ID] = len(r.Hits)
 	}
@@ -177,7 +177,7 @@ func (a *App) nextHistoryScope() HistoryScope {
 		// The repository rung only shows something new when the archive holds runs from this
 		// repository made somewhere other than here: another worktree.
 		if repo := a.repoDir(); repo != "" {
-			for _, m := range store.List(a.stateDir) {
+			for _, m := range a.archive.List() {
 				if m.Repo == repo && !store.SameDir(m.Dir, a.Root) {
 					return ScopeRepo
 				}
@@ -218,7 +218,7 @@ func (a *App) OpenStoredRun() {
 		return
 	}
 	manifest := a.History[a.HistoryCursor]
-	r, err := store.Load(a.stateDir, manifest)
+	r, err := a.archive.Load(manifest)
 	if err != nil {
 		a.Status = fmt.Sprintf("could not read that run: %v", err)
 		return
@@ -231,7 +231,7 @@ func (a *App) OpenStoredRun() {
 	a.retire(a.Run)
 	a.slot = newSlot(r, seq)
 	a.Following = false
-	a.SavedTo = store.RunDir(a.stateDir, manifest.ID)
+	a.SavedTo = a.archive.RunDir(manifest.ID)
 	a.Screen = ScreenRun
 	a.ClearSearch()
 	a.Status = ""

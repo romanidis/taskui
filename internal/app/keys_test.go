@@ -15,6 +15,7 @@ import (
 	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/pivot"
 	"github.com/romanidis/taskui/internal/run"
+	"github.com/romanidis/taskui/internal/store"
 )
 
 // appAt puts the cursor on a task in a real but empty directory: pressing enter starts a
@@ -23,7 +24,7 @@ import (
 func appAt(t *testing.T, name string) *App {
 	t.Helper()
 	a := New(pivot.Fixture([]string{"backend:migrate", "backend:migrate:down", "backend:lint"}), t.TempDir())
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	parkOn(t, a, name)
 	return a
 }
@@ -1076,7 +1077,7 @@ func TestTwoLongRunningTasksShareTheTool(t *testing.T) {
 	}
 
 	a := New(pivot.Fixture([]string{"up", "logs"}), dir)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.RequestRun("up", nil)
 	a.RequestRun("logs", nil)
 	defer a.KillAll()

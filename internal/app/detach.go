@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/romanidis/taskui/internal/run"
-	"github.com/romanidis/taskui/internal/store"
 )
 
 // Detach lets the focused run outlive taskui.
@@ -44,7 +43,7 @@ func (a *App) Detach() {
 	// when the run ends, the record is rewritten whole rather than stopping at this moment.
 	kept := ""
 	if a.SavedTo == "" {
-		if dir, err := store.Save(a.stateDir, a.Root, a.Run); err == nil {
+		if dir, err := a.archive.Save(a.Root, a.Run); err == nil {
 			a.SavedTo = dir
 			if a.partial == nil {
 				a.partial = map[*run.Run]bool{}

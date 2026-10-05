@@ -16,7 +16,7 @@ func appWith(t *testing.T, names []string) *App {
 	t.Helper()
 	a := New(pivot.Fixture(names), "/tmp/repo")
 	// Never touch the user's real archive from a test.
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	return a
 }
 
@@ -870,7 +870,7 @@ func TestTheConfiguredOrderIsInTheFirstTreeDrawn(t *testing.T) {
 
 	a := New(pivot.Fixture([]string{"app:build", "backend:build", "infra:lint", "site:build"}),
 		"/tmp/repo")
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.WithConfig(config)
 	a.SetFoldAll(false)
 

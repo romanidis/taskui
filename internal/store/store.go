@@ -135,38 +135,51 @@ func (m Manifest) Invocation() run.Invocation {
 	return run.Invocation{Task: m.Root, Args: m.Args, Force: m.Force, Interactive: m.Interactive}
 }
 
-// StateDir is `$XDG_STATE_HOME/taskui` if set, else `~/.local/state/taskui`.
-func StateDir() string {
+// Archive is where finished runs are kept: a directory per run under `runs/`, and the
+// ledger of every run each project has had beside it.
+type Archive struct {
+	dir string
+}
+
+// At is the archive kept in dir.
+func At(dir string) Archive { return Archive{dir: dir} }
+
+// Default is the archive taskui keeps for whoever is running it: `$XDG_STATE_HOME/taskui` if
+// that is set, else `~/.local/state/taskui`.
+func Default() Archive {
 	if x := os.Getenv("XDG_STATE_HOME"); x != "" {
-		return filepath.Join(x, "taskui")
+		return At(filepath.Join(x, "taskui"))
 	}
 	home := os.Getenv("HOME")
 	if home == "" {
 		home = "."
 	}
-	return filepath.Join(home, ".local/state/taskui")
+	return At(filepath.Join(home, ".local/state/taskui"))
 }
 
-func runsDir(base string) string { return filepath.Join(base, "runs") }
+// Dir is the directory the archive is kept in.
+func (a Archive) Dir() string { return a.dir }
+
+func (a Archive) runsDir() string { return filepath.Join(a.dir, "runs") }
 
 // historyPath is the ledger: one manifest per line, newest last.
 //
 // Beside `runs/` rather than in `~/.config`, because it is written by the program and not by
 // you — deleting the state directory has always been how you remove everything taskui
 // accumulated, and a second home for half of it would quietly stop being true.
-func historyPath(base string) string { return filepath.Join(base, "history.ndjson") }
+func (a Archive) historyPath() string { return filepath.Join(a.dir, "history.ndjson") }
 
 // appendHistory adds one run to the ledger.
 //
 // Errors are returned but a caller is expected to ignore them: the run directory is already
 // written at this point, and losing the ledger line costs a row in a timeline. Failing the
 // save over it would cost the output as well.
-func appendHistory(base string, m Manifest) error {
+func (a Archive) appendHistory(m Manifest) error {
 	blob, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(historyPath(base), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(a.historyPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -180,8 +193,8 @@ func appendHistory(base string, m Manifest) error {
 // A line that will not parse is skipped rather than fatal. The file is append-only from
 // several processes, so a torn last line is a thing that can happen; one unreadable run is
 // not a reason to lose the other two thousand.
-func readHistory(base string) []Manifest {
-	blob, err := os.ReadFile(historyPath(base))
+func (a Archive) readHistory() []Manifest {
+	blob, err := os.ReadFile(a.historyPath())
 	if err != nil {
 		return nil
 	}
@@ -222,8 +235,8 @@ func readHistory(base string) []Manifest {
 // The rewrite is the one moment the append-only story does not hold: a run finishing inside
 // the rename loses its line. That is one row in one timeline, once every few thousand runs,
 // against a lock on every write for the rest of them.
-func compactHistory(base string) error {
-	all := readHistory(base)
+func (a Archive) compactHistory() error {
+	all := a.readHistory()
 	if len(all) <= compactAt {
 		return nil
 	}
@@ -252,7 +265,7 @@ func compactHistory(base string) error {
 	var b strings.Builder
 	// What this build cannot read is not this build's to drop. A newer taskui sharing the
 	// archive wrote it, and readHistory leaving it out meant compacting threw its runs away.
-	for _, line := range newerHistory(base) {
+	for _, line := range a.newerHistory() {
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
@@ -266,12 +279,12 @@ func compactHistory(base string) error {
 	}
 	// A temporary file of its own rather than a fixed `.tmp`, which two processes
 	// compacting at once both wrote into.
-	return writeAtomic(historyPath(base), []byte(b.String()))
+	return writeAtomic(a.historyPath(), []byte(b.String()))
 }
 
 // newerHistory is the ledger lines written by a newer format than this build reads.
-func newerHistory(base string) []string {
-	blob, err := os.ReadFile(historyPath(base))
+func (a Archive) newerHistory() []string {
+	blob, err := os.ReadFile(a.historyPath())
 	if err != nil {
 		return nil
 	}
@@ -345,11 +358,11 @@ func lockDown(path string, dir bool) error {
 	return os.Chmod(path, mode)
 }
 
-// Save writes a finished run into base and returns the directory it landed in.
-func Save(base, projectDir string, r *run.Run) (string, error) {
+// Save writes a finished run into the archive and returns the directory it landed in.
+func (a Archive) Save(projectDir string, r *run.Run) (string, error) {
 	// Before this run's own directory exists, or it would be absorbed here and appended
 	// again below.
-	backfillHistory(base)
+	a.backfillHistory()
 
 	started := time.Now().Unix()
 	switch {
@@ -365,14 +378,14 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 	// takes the rest. Two runs of the *same* task inside one second used to be one run —
 	// which is exactly the pair a timeline is built to show you, so silently keeping the
 	// second and dropping the first is the worst place for that to happen.
-	if err := os.MkdirAll(runsDir(base), 0o700); err != nil {
-		return "", fmt.Errorf("creating %s: %w", runsDir(base), err)
+	if err := os.MkdirAll(a.runsDir(), 0o700); err != nil {
+		return "", fmt.Errorf("creating %s: %w", a.runsDir(), err)
 	}
-	id, err := claimID(base, fmt.Sprintf("%d-%s", started, safeName(r.Task)))
+	id, err := a.claimID(fmt.Sprintf("%d-%s", started, safeName(r.Task)))
 	if err != nil {
 		return "", err
 	}
-	return writeRun(base, projectDir, r, id, started)
+	return a.writeRun(projectDir, r, id, started)
 }
 
 // Resave rewrites a run already in the archive, in place and under the same id.
@@ -381,13 +394,13 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 // may be the last chance — and then finished while taskui was still there to see it. A
 // second Save would put the run in history twice, once cut off; leaving the first would
 // keep only the part before the detach, with the outcome it did not have yet.
-func Resave(base, dir, projectDir string, r *run.Run) (string, error) {
+func (a Archive) Resave(dir, projectDir string, r *run.Run) (string, error) {
 	id := filepath.Base(dir)
 	blob, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		// Pruned while it ran: fifty other runs saved in the meantime took the partial
 		// record. Failing here kept the archive's last word on it as still running, for good.
-		return Save(base, projectDir, r)
+		return a.Save(projectDir, r)
 	}
 	if err != nil {
 		return "", err
@@ -402,14 +415,14 @@ func Resave(base, dir, projectDir string, r *run.Run) (string, error) {
 		_ = os.Remove(filepath.Join(dir, t.File+".txt"))
 		_ = os.Remove(filepath.Join(dir, t.File+".ansi"))
 	}
-	return writeRun(base, projectDir, r, id, was.StartedUnix)
+	return a.writeRun(projectDir, r, id, was.StartedUnix)
 }
 
 // writeRun writes a run's output and manifest into the directory id names, and records it
 // in the ledger.
-func writeRun(base, projectDir string, r *run.Run, id string, started int64) (string, error) {
-	dir := RunDir(base, id)
-	if err := lockDown(runsDir(base), true); err != nil {
+func (a Archive) writeRun(projectDir string, r *run.Run, id string, started int64) (string, error) {
+	dir := a.RunDir(id)
+	if err := lockDown(a.runsDir(), true); err != nil {
 		return "", err
 	}
 	if err := lockDown(dir, true); err != nil {
@@ -504,10 +517,10 @@ func writeRun(base, projectDir string, r *run.Run, id string, started int64) (st
 	// Best-effort: the run is already safely on disk, and failing to remember it is not a
 	// reason to report the save as failed. Before the prune, or the prune would delete
 	// output whose only record is the directory it is about to remove.
-	_ = appendHistory(base, manifest)
-	_ = compactHistory(base)
+	_ = a.appendHistory(manifest)
+	_ = a.compactHistory()
 
-	if _, err := Prune(base, KeepRuns); err != nil {
+	if _, err := a.Prune(KeepRuns); err != nil {
 		return "", err
 	}
 	return dir, nil
@@ -519,13 +532,13 @@ func writeRun(base, projectDir string, r *run.Run, id string, started int64) (st
 // whatever the fifty surviving directories still hold, and from then on the ledger is ahead
 // of them. It also picks up anything an older build wrote in the meantime, so running two
 // versions of taskui alternately does not lose runs.
-func backfillHistory(base string) {
+func (a Archive) backfillHistory() {
 	known := map[string]bool{}
-	for _, m := range readHistory(base) {
+	for _, m := range a.readHistory() {
 		known[m.ID] = true
 	}
 	missing := make([]Manifest, 0)
-	for _, m := range scanRuns(base) {
+	for _, m := range a.scanRuns() {
 		if !known[m.ID] {
 			missing = append(missing, m)
 		}
@@ -533,7 +546,7 @@ func backfillHistory(base string) {
 	sortNewestFirst(missing)
 	// Oldest first, so the file stays in the order it would have been written in.
 	for _, m := range slices.Backward(missing) {
-		_ = appendHistory(base, m)
+		_ = a.appendHistory(m)
 	}
 }
 
@@ -547,18 +560,18 @@ func backfillHistory(base string) {
 //
 // Zero-padded so the suffixes still sort the way List expects: `.10` has to come after
 // `.02`, and lexically it only does with the padding.
-func claimID(base, want string) (string, error) {
+func (a Archive) claimID(want string) (string, error) {
 	for n := range 100 {
 		candidate := want
 		if n > 0 {
 			candidate = fmt.Sprintf("%s.%02d", want, n)
 		}
-		err := os.Mkdir(RunDir(base, candidate), 0o700)
+		err := os.Mkdir(a.RunDir(candidate), 0o700)
 		if err == nil {
 			return candidate, nil
 		}
 		if !errors.Is(err, fs.ErrExist) {
-			return "", fmt.Errorf("creating %s: %w", RunDir(base, candidate), err)
+			return "", fmt.Errorf("creating %s: %w", a.RunDir(candidate), err)
 		}
 	}
 	return "", fmt.Errorf("a hundred runs of %s inside one second: not saving another", want)
@@ -698,13 +711,13 @@ func gitOutput(dir string, args ...string) (string, error) {
 // directories are what an older build wrote and what the current one is still holding text
 // for, and a run present in only one of them is a real run either way. Nothing here writes:
 // a directory the ledger has not heard of is absorbed by the next Save.
-func List(base string) []Manifest {
-	out := readHistory(base)
+func (a Archive) List() []Manifest {
+	out := a.readHistory()
 	seen := make(map[string]bool, len(out))
 	for _, m := range out {
 		seen[m.ID] = true
 	}
-	for _, m := range scanRuns(base) {
+	for _, m := range a.scanRuns() {
 		if !seen[m.ID] {
 			out = append(out, m)
 		}
@@ -714,14 +727,14 @@ func List(base string) []Manifest {
 }
 
 // scanRuns reads the manifest out of every run directory.
-func scanRuns(base string) []Manifest {
-	entries, err := os.ReadDir(runsDir(base))
+func (a Archive) scanRuns() []Manifest {
+	entries, err := os.ReadDir(a.runsDir())
 	if err != nil {
 		return nil
 	}
 	var out []Manifest
 	for _, e := range entries {
-		blob, err := os.ReadFile(filepath.Join(runsDir(base), e.Name(), "manifest.json"))
+		blob, err := os.ReadFile(filepath.Join(a.runsDir(), e.Name(), "manifest.json"))
 		if err != nil {
 			continue
 		}
@@ -743,26 +756,26 @@ func scanRuns(base string) []Manifest {
 // A ledger entry outlives its directory by design, so everything that wants to read what a
 // run printed — the diff, the quickfix list, reopening it — has to ask first rather than
 // discover it as an empty file.
-func HasOutput(base, id string) bool {
-	return exists(filepath.Join(RunDir(base, id), "manifest.json"))
+func (a Archive) HasOutput(id string) bool {
+	return exists(filepath.Join(a.RunDir(id), "manifest.json"))
 }
 
-func RunDir(base, id string) string { return filepath.Join(runsDir(base), id) }
+func (a Archive) RunDir(id string) string { return filepath.Join(a.runsDir(), id) }
 
 // Load rebuilds a stored run so it can be folded and searched like a live one.
 //
 // Reading `.txt` and `.ansi` side by side is what gives an archived run its colour back:
 // the stripped half is what search matches on, the escaped half is what renders. They are
 // written a line at a time from the same buffer, so they stay in step.
-func Load(base string, manifest Manifest) (*run.Run, error) {
+func (a Archive) Load(manifest Manifest) (*run.Run, error) {
 	// The ledger remembers runs whose output has been pruned. Rebuilding one of those gives a
 	// run with every task empty, which reads as "it printed nothing" rather than as "that is
 	// no longer here" — so say which it is.
-	if !HasOutput(base, manifest.ID) {
+	if !a.HasOutput(manifest.ID) {
 		return nil, fmt.Errorf("the output of %s is no longer stored (kept: the last %d runs)",
 			manifest.ID, KeepRuns)
 	}
-	dir := RunDir(base, manifest.ID)
+	dir := a.RunDir(manifest.ID)
 	tasks := map[string]*run.TaskRun{}
 	var order []string
 
@@ -841,10 +854,10 @@ type Outcome struct {
 // Keyed by task name, newest wins. Built from the per-task entries rather than just the
 // run roots, so a single `task all` teaches it about `lint`, `backend:lint` and every
 // other task that run touched.
-func LastOutcomes(base, project string) map[string]Outcome {
+func (a Archive) LastOutcomes(project string) map[string]Outcome {
 	out := map[string]Outcome{}
 	// List is newest first, so the first sighting of a task is its latest.
-	for _, manifest := range List(base) {
+	for _, manifest := range a.List() {
 		if !SameDir(manifest.Dir, project) || manifest.Cancelled {
 			continue
 		}
@@ -893,9 +906,9 @@ func (p Point) Ok() bool { return p.Status == run.Ok }
 //
 // Pending and skipped appearances are dropped: a task go-task decided was up to date did
 // not run, and a row saying so is a row that makes the trend harder to read.
-func Timeline(base, project, task string) []Point {
+func (a Archive) Timeline(project, task string) []Point {
 	var out []Point
-	for _, m := range List(base) {
+	for _, m := range a.List() {
 		if project != "" && !SameDir(m.Dir, project) {
 			continue
 		}
@@ -921,9 +934,9 @@ func Timeline(base, project, task string) []Point {
 // Runs whose output has been pruned are passed over rather than returned: a timeline shows
 // them because a verdict and a duration are all it draws, but a diff needs the text, and
 // comparing against a run whose lines are gone reports every line as deleted.
-func LastGreen(base, project, task, skip string, before int64) (Point, bool) {
-	for _, p := range Timeline(base, project, task) {
-		if p.Ok() && p.RunID != skip && (before == 0 || p.WhenUnix <= before) && HasOutput(base, p.RunID) {
+func (a Archive) LastGreen(project, task, skip string, before int64) (Point, bool) {
+	for _, p := range a.Timeline(project, task) {
+		if p.Ok() && p.RunID != skip && (before == 0 || p.WhenUnix <= before) && a.HasOutput(p.RunID) {
 			return p, true
 		}
 	}
@@ -933,9 +946,9 @@ func LastGreen(base, project, task, skip string, before int64) (Point, bool) {
 // Previous is the most recent stored appearance at all, green or not — the comparison you
 // want when the task has never passed and "what changed since last time" is still a real
 // question.
-func Previous(base, project, task, skip string, before int64) (Point, bool) {
-	for _, p := range Timeline(base, project, task) {
-		if p.RunID != skip && (before == 0 || p.WhenUnix <= before) && HasOutput(base, p.RunID) {
+func (a Archive) Previous(project, task, skip string, before int64) (Point, bool) {
+	for _, p := range a.Timeline(project, task) {
+		if p.RunID != skip && (before == 0 || p.WhenUnix <= before) && a.HasOutput(p.RunID) {
 			return p, true
 		}
 	}
@@ -946,16 +959,16 @@ func Previous(base, project, task, skip string, before int64) (Point, bool) {
 //
 // The `.txt` half rather than the `.ansi` half: this feeds the diff, and two lines that
 // differ only in the colour they were painted are not a difference anyone wants reported.
-func Output(base string, p Point) []string {
-	return readLines(filepath.Join(RunDir(base, p.RunID), p.File+".txt"))
+func (a Archive) Output(p Point) []string {
+	return readLines(filepath.Join(a.RunDir(p.RunID), p.File+".txt"))
 }
 
 // Prune drops the oldest runs beyond keep.
-func Prune(base string, keep int) (int, error) {
-	all := List(base)
+func (a Archive) Prune(keep int) (int, error) {
+	all := a.List()
 	removed := 0
 	for i := keep; i < len(all); i++ {
-		dir := RunDir(base, all[i].ID)
+		dir := a.RunDir(all[i].ID)
 		// Only what is actually on disk. List merges the ledger with the directories, and
 		// the ledger remembers far more runs than it keeps output for — so past `keep` this
 		// is mostly ids pruned long ago. RemoveAll answers nil for a path that is not there,
@@ -968,7 +981,7 @@ func Prune(base string, keep int) (int, error) {
 			removed++
 		}
 	}
-	removed += pruneUnfinished(base)
+	removed += a.pruneUnfinished()
 	return removed, nil
 }
 
@@ -981,14 +994,14 @@ const unfinishedGrace = time.Hour
 // A save that was killed partway leaves output but no manifest, and List only knows runs
 // by their manifest — so the loop above, which walks List, would keep such a directory
 // forever, outside KeepRuns and invisible to everything that reads the archive.
-func pruneUnfinished(base string) int {
-	entries, err := os.ReadDir(runsDir(base))
+func (a Archive) pruneUnfinished() int {
+	entries, err := os.ReadDir(a.runsDir())
 	if err != nil {
 		return 0
 	}
 	removed := 0
 	for _, e := range entries {
-		dir := filepath.Join(runsDir(base), e.Name())
+		dir := filepath.Join(a.runsDir(), e.Name())
 		if !e.IsDir() || exists(filepath.Join(dir, "manifest.json")) {
 			continue
 		}
@@ -1031,10 +1044,10 @@ type Flake struct {
 // `deploy ENV=prod` passed is two answers to two different questions, and reporting it as a
 // flake is the confident kind of wrong — it sends someone to look for nondeterminism in a
 // task that behaved exactly as it was told to. The archive has held `Args` all along.
-func Flaky(base, project string) []Flake {
+func (a Archive) Flaky(project string) []Flake {
 	seen := map[string]*Flake{}
 
-	for _, m := range List(base) {
+	for _, m := range a.List() {
 		if (project != "" && !SameDir(m.Dir, project)) || m.Commit == "" || strings.HasSuffix(m.Commit, "-dirty") ||
 			m.Cancelled {
 			continue

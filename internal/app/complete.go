@@ -169,7 +169,7 @@ func (a *App) argsHistory() [][]string {
 		return a.argsPast
 	}
 	a.argsPastRead = true
-	for _, m := range store.List(a.stateDir) {
+	for _, m := range a.archive.List() {
 		if store.SameDir(m.Dir, a.Root) && m.Root == a.ArgsTarget && len(m.Args) > 0 {
 			a.argsPast = append(a.argsPast, m.Args)
 		}

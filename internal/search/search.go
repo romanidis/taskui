@@ -139,11 +139,11 @@ type Scope struct {
 // Grepping every stored run is the right default and the wrong thing to do twice. Once you
 // know it is `backend:test` that has been failing, every hit from every other task is
 // something to scroll past — and the manifests already hold the task name and the time.
-func InStore(base string, q *Query, maxPerRun int, scope Scope) ([]RunHits, int) {
+func InStore(archive store.Archive, q *Query, maxPerRun int, scope Scope) ([]RunHits, int) {
 	var out []RunHits
 	dropped := 0
 
-	for _, manifest := range store.List(base) {
+	for _, manifest := range archive.List() {
 		switch {
 		case scope.Project != "" && !store.SameDir(manifest.Dir, scope.Project):
 			continue
@@ -152,10 +152,10 @@ func InStore(base string, q *Query, maxPerRun int, scope Scope) ([]RunHits, int)
 		// Remembered but pruned: the ledger keeps a run long after its text is gone, and
 		// there is nothing here to grep. Skipping early saves opening files that are not
 		// there, once per task of every evicted run.
-		case !store.HasOutput(base, manifest.ID):
+		case !archive.HasOutput(manifest.ID):
 			continue
 		}
-		dir := store.RunDir(base, manifest.ID)
+		dir := archive.RunDir(manifest.ID)
 		var hits []StoredHit
 
 		for _, entry := range manifest.Tasks {

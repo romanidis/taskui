@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/romanidis/taskui/internal/pivot"
+	"github.com/romanidis/taskui/internal/store"
 	"github.com/romanidis/taskui/internal/task"
 )
 
@@ -111,7 +112,7 @@ func TestTheWatchCoversTheRootTaskfileAndEveryIncludedOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := New(pivot.Fixture([]string{"site:new"}), dir)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 
 	if got := a.taskfilePaths(); len(got) != 1 || got[0] != root {
 		t.Errorf("paths = %v, want just the root Taskfile", got)
@@ -147,7 +148,7 @@ func TestEditingTheTaskfileUpdatesTheListInPlace(t *testing.T) {
 		t.Skipf("go-task could not read the fixture: %v", err)
 	}
 	a := New(tasks, dir)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.WatchTaskfile()
 	defer func() {
 		if a.taskfileWatch != nil {

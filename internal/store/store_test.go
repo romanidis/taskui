@@ -25,8 +25,8 @@ func finishedRun(root string) *run.Run {
 }
 
 func TestASavedRunRoundTripsThroughTheManifest(t *testing.T) {
-	base := t.TempDir()
-	dir, err := Save(base, "/proj", finishedRun("all"))
+	archive := At(t.TempDir())
+	dir, err := archive.Save("/proj", finishedRun("all"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestASavedRunRoundTripsThroughTheManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	listed := List(base)
+	listed := archive.List()
 	if len(listed) != 1 {
 		t.Fatalf("listed %d runs", len(listed))
 	}
@@ -59,8 +59,8 @@ func TestASavedRunRoundTripsThroughTheManifest(t *testing.T) {
 // The archive has to be readable by anything, not just taskui — that is the whole argument
 // for plain files.
 func TestOutputLandsAsPlainGreppableText(t *testing.T) {
-	base := t.TempDir()
-	dir, _ := Save(base, "/proj", finishedRun("all"))
+	archive := At(t.TempDir())
+	dir, _ := archive.Save("/proj", finishedRun("all"))
 	text, err := os.ReadFile(filepath.Join(dir, "child.txt"))
 	if err != nil {
 		t.Fatal(err)
@@ -72,11 +72,11 @@ func TestOutputLandsAsPlainGreppableText(t *testing.T) {
 
 // Colour is kept beside the searchable text, not instead of it.
 func TestEscapeSequencesAreKeptInASidecar(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := run.Detached("a", run.GraphFrom(run.Edge{Parent: "a"}))
 	r.Feed("a", "\x1b[31merror\x1b[0m: boom")
 	r.Finish(1)
-	dir, _ := Save(base, "/proj", r)
+	dir, _ := archive.Save("/proj", r)
 
 	txt, _ := os.ReadFile(filepath.Join(dir, "a.txt"))
 	if string(txt) != "error: boom\n" {
@@ -99,31 +99,31 @@ func TestNamespacedTaskNamesBecomeSafeFilenames(t *testing.T) {
 }
 
 func TestPruningKeepsTheNewestRuns(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	for i := range 5 {
 		// Distinct task names, so the five runs get distinct ids even when they land in
 		// the same second.
-		if _, err := Save(base, "/proj", finishedRun("task"+string(rune('0'+i)))); err != nil {
+		if _, err := archive.Save("/proj", finishedRun("task"+string(rune('0'+i)))); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got := len(List(base)); got != 5 {
+	if got := len(archive.List()); got != 5 {
 		t.Fatalf("listed %d", got)
 	}
-	if _, err := Prune(base, 2); err != nil {
+	if _, err := archive.Prune(2); err != nil {
 		t.Fatal(err)
 	}
 
 	// Pruning takes the output, not the memory of it: the ledger still names all five, and
 	// two of them still have text to read. That split is the point — a timeline draws
 	// verdicts and durations, and only a diff needs the lines.
-	all := List(base)
+	all := archive.List()
 	if len(all) != 5 {
 		t.Errorf("after pruning the ledger should still name every run, got %d", len(all))
 	}
 	withOutput := 0
 	for _, m := range all {
-		if HasOutput(base, m.ID) {
+		if archive.HasOutput(m.ID) {
 			withOutput++
 		}
 	}
@@ -132,7 +132,7 @@ func TestPruningKeepsTheNewestRuns(t *testing.T) {
 	}
 	// And the newest two are the ones that kept it.
 	for _, m := range all[:2] {
-		if !HasOutput(base, m.ID) {
+		if !archive.HasOutput(m.ID) {
 			t.Errorf("%s is one of the newest two and lost its output", m.ID)
 		}
 	}
@@ -141,16 +141,16 @@ func TestPruningKeepsTheNewestRuns(t *testing.T) {
 // The picker's ✓/✗ column: newest result per task, drawn from the per-task entries so one
 // `task all` teaches it about everything that run touched.
 func TestLastOutcomesTakeTheNewestResultPerTask(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	old := run.Detached("ci", run.GraphFrom(run.Edge{Parent: "ci", Children: []string{"child"}}))
 	old.Feed("child", "boom")
 	old.ApplyFailed("child")
 	old.Finish(1)
-	if _, err := Save(base, "/proj", old); err != nil {
+	if _, err := archive.Save("/proj", old); err != nil {
 		t.Fatal(err)
 	}
 
-	outcomes := LastOutcomes(base, "/proj")
+	outcomes := archive.LastOutcomes("/proj")
 	if outcomes["child"].Ok {
 		t.Error("child failed last time")
 	}
@@ -161,18 +161,18 @@ func TestLastOutcomesTakeTheNewestResultPerTask(t *testing.T) {
 
 // Another project's runs are not this project's business.
 func TestOutcomesAreScopedToTheProject(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := run.Detached("ci", run.GraphFrom(run.Edge{Parent: "ci", Children: []string{"child"}}))
 	r.Feed("child", "fine")
 	r.Finish(0)
-	if _, err := Save(base, "/elsewhere", r); err != nil {
+	if _, err := archive.Save("/elsewhere", r); err != nil {
 		t.Fatal(err)
 	}
 
-	if len(LastOutcomes(base, "/proj")) != 0 {
+	if len(archive.LastOutcomes("/proj")) != 0 {
 		t.Error("another project's runs leaked in")
 	}
-	if len(LastOutcomes(base, "/elsewhere")) == 0 {
+	if len(archive.LastOutcomes("/elsewhere")) == 0 {
 		t.Error("its own project's runs went missing")
 	}
 }
@@ -181,23 +181,23 @@ func TestOutcomesAreScopedToTheProject(t *testing.T) {
 // does this to everybody — `/var` is `/private/var` — and history that depended on which
 // spelling the shell handed over was split in two.
 func TestAProjectReachedThroughASymlinkKeepsOneHistory(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	project := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(project, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Save(base, link, finishedRun("all")); err != nil {
+	if _, err := archive.Save(link, finishedRun("all")); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, ok := LastOutcomes(base, project)["child"]; !ok {
+	if _, ok := archive.LastOutcomes(project)["child"]; !ok {
 		t.Error("a run made through the link is missing from the directory's outcomes")
 	}
-	if len(Timeline(base, project, "child")) != 1 {
+	if len(archive.Timeline(project, "child")) != 1 {
 		t.Error("and from its timeline")
 	}
-	if !SameDir(link, project) || SameDir(link, base) {
+	if !SameDir(link, project) || SameDir(link, archive.dir) {
 		t.Error("SameDir does not tell the directories apart")
 	}
 	// A project deleted since is still itself, by whatever path its runs were saved under.
@@ -210,7 +210,7 @@ func TestAProjectReachedThroughASymlinkKeepsOneHistory(t *testing.T) {
 // same Taskfile further up and ran the same task. Keyed by the directory alone, `taskui` in
 // `web/src` kept a second history that the project's own timeline never showed.
 func TestARunMadeInsideTheProjectIsInItsHistory(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	project := t.TempDir()
 	if err := os.WriteFile(filepath.Join(project, "Taskfile.yml"), []byte("version: '3'\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -226,11 +226,11 @@ func TestARunMadeInsideTheProjectIsInItsHistory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(nested, "Taskfile.yml"), []byte("version: '3'\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Save(base, inside, finishedRun("all")); err != nil {
+	if _, err := archive.Save(inside, finishedRun("all")); err != nil {
 		t.Fatal(err)
 	}
 
-	if len(Timeline(base, project, "child")) != 1 {
+	if len(archive.Timeline(project, "child")) != 1 {
 		t.Error("a run made inside the project is missing from its timeline")
 	}
 	if !SameDir(inside, project) {
@@ -243,15 +243,15 @@ func TestARunMadeInsideTheProjectIsInItsHistory(t *testing.T) {
 
 // A task that was never reached has no outcome — that is not the same as passing.
 func TestSkippedTasksHaveNoOutcome(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := run.Detached("ci", run.GraphFrom(run.Edge{Parent: "ci", Children: []string{"ran", "never"}}))
 	r.Feed("ran", "hello")
 	r.Finish(0)
-	if _, err := Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
 
-	outcomes := LastOutcomes(base, "/proj")
+	outcomes := archive.LastOutcomes("/proj")
 	if _, ok := outcomes["ran"]; !ok {
 		t.Error("the task that ran has no outcome")
 	}
@@ -262,25 +262,25 @@ func TestSkippedTasksHaveNoOutcome(t *testing.T) {
 
 // `--force` is part of what was run, so it belongs in the record.
 func TestForceIsRecordedInTheManifest(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := run.Detached("check", run.GraphFrom(run.Edge{Parent: "check"}))
 	r.Feed("check", "checking")
 	r.Finish(0)
-	if _, err := Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
 	// Detached runs are never forced; the field simply has to round-trip.
-	if List(base)[0].Force {
+	if archive.List()[0].Force {
 		t.Error("force should be false")
 	}
-	if got := List(base)[0].Invocation().Command(); got != "task check" {
+	if got := archive.List()[0].Invocation().Command(); got != "task check" {
 		t.Errorf("command = %q", got)
 	}
 }
 
 func TestTheRunDirectoryIsOwnerOnly(t *testing.T) {
-	base := t.TempDir()
-	dir, _ := Save(base, "/proj", finishedRun("all"))
+	archive := At(t.TempDir())
+	dir, _ := archive.Save("/proj", finishedRun("all"))
 
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -301,18 +301,18 @@ func TestTheRunDirectoryIsOwnerOnly(t *testing.T) {
 // The whole point of the archive: a stored run comes back as the same structure a live one
 // has, so it folds and searches identically.
 func TestAStoredRunReloadsAsARun(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	original := run.Detached("ci", run.GraphFrom(run.Edge{Parent: "ci", Children: []string{"build", "test"}}))
 	original.Feed("build", "compiling core")
 	original.Feed("test", "--- FAIL: TestOrderTotal")
 	original.ApplyFailed("test")
 	original.Finish(1)
-	if _, err := Save(base, "/proj", original); err != nil {
+	if _, err := archive.Save("/proj", original); err != nil {
 		t.Fatal(err)
 	}
 
-	manifest := List(base)[0]
-	reloaded, err := Load(base, manifest)
+	manifest := archive.List()[0]
+	reloaded, err := archive.Load(manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,15 +336,15 @@ func TestAStoredRunReloadsAsARun(t *testing.T) {
 
 // Reopening an archived run should look like it did live, colour included.
 func TestColourSurvivesTheRoundTrip(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	original := run.Detached("a", run.GraphFrom(run.Edge{Parent: "a"}))
 	original.Feed("a", "\x1b[31merror\x1b[0m: boom")
 	original.Finish(1)
-	if _, err := Save(base, "/proj", original); err != nil {
+	if _, err := archive.Save("/proj", original); err != nil {
 		t.Fatal(err)
 	}
 
-	reloaded, _ := Load(base, List(base)[0])
+	reloaded, _ := archive.Load(archive.List()[0])
 	line := reloaded.Tasks["a"].Lines[0]
 	if line.Plain != "error: boom" {
 		t.Errorf("plain = %q, should still be searchable", line.Plain)
@@ -356,16 +356,16 @@ func TestColourSurvivesTheRoundTrip(t *testing.T) {
 
 // IsCommand is derived rather than stored, so a marker never pollutes the greppable text.
 func TestCommandEchoesAreRecognisedAgainOnReload(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	original := run.Detached("a", run.GraphFrom(run.Edge{Parent: "a"}))
 	original.Feed("a", "task: [a] cargo build")
 	original.Feed("a", "Compiling taskui")
 	original.Finish(0)
-	if _, err := Save(base, "/proj", original); err != nil {
+	if _, err := archive.Save("/proj", original); err != nil {
 		t.Fatal(err)
 	}
 
-	reloaded, _ := Load(base, List(base)[0])
+	reloaded, _ := archive.Load(archive.List()[0])
 	if !reloaded.Tasks["a"].Lines[0].IsCommand {
 		t.Error("the command echo was not recognised")
 	}
@@ -407,18 +407,18 @@ func agedRun(root, task string, ok bool, ago int, lines ...string) *run.Run {
 }
 
 func TestATimelineIsOneTasksHistoryNewestFirst(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	for _, r := range []*run.Run{
 		agedRun("all", "test", true, 300, "ok"),
 		agedRun("all", "test", false, 200, "boom"),
 		agedRun("test", "test", true, 100, "ok again"),
 	} {
-		if _, err := Save(base, "/proj", r); err != nil {
+		if _, err := archive.Save("/proj", r); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	points := Timeline(base, "/proj", "test")
+	points := archive.Timeline("/proj", "test")
 	if len(points) != 3 {
 		t.Fatalf("got %d points, want 3", len(points))
 	}
@@ -439,25 +439,25 @@ func TestATimelineIsOneTasksHistoryNewestFirst(t *testing.T) {
 // The root is what explains a surprising duration: the same task reached from `task all`
 // and on its own is the same task under different circumstances.
 func TestATimelinePointRemembersTheRunItWasPartOf(t *testing.T) {
-	base := t.TempDir()
-	if _, err := Save(base, "/proj", agedRun("all", "lint", true, 60)); err != nil {
+	archive := At(t.TempDir())
+	if _, err := archive.Save("/proj", agedRun("all", "lint", true, 60)); err != nil {
 		t.Fatal(err)
 	}
-	points := Timeline(base, "/proj", "lint")
+	points := archive.Timeline("/proj", "lint")
 	if len(points) != 1 || points[0].Run.Task != "all" {
 		t.Fatalf("got %+v", points)
 	}
 }
 
 func TestATimelineIsScopedToItsProject(t *testing.T) {
-	base := t.TempDir()
-	if _, err := Save(base, "/elsewhere", agedRun("all", "test", true, 60)); err != nil {
+	archive := At(t.TempDir())
+	if _, err := archive.Save("/elsewhere", agedRun("all", "test", true, 60)); err != nil {
 		t.Fatal(err)
 	}
-	if got := Timeline(base, "/proj", "test"); len(got) != 0 {
+	if got := archive.Timeline("/proj", "test"); len(got) != 0 {
 		t.Errorf("another project's runs leaked in: %+v", got)
 	}
-	if got := Timeline(base, "", "test"); len(got) != 1 {
+	if got := archive.Timeline("", "test"); len(got) != 1 {
 		t.Errorf("an empty project should mean every project, got %d", len(got))
 	}
 }
@@ -465,28 +465,28 @@ func TestATimelineIsScopedToItsProject(t *testing.T) {
 // A task go-task decided was up to date did not run. A row saying so makes the trend harder
 // to read, not easier.
 func TestATimelineSkipsTheTasksThatNeverRan(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := run.Detached("all", run.GraphFrom(
 		run.Edge{Parent: "all", Children: []string{"ran", "never"}},
 	))
 	r.Feed("ran", "hello")
 	r.Finish(0)
-	if _, err := Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
-	if got := Timeline(base, "/proj", "never"); len(got) != 0 {
+	if got := archive.Timeline("/proj", "never"); len(got) != 0 {
 		t.Errorf("a task that never ran has no timeline, got %+v", got)
 	}
 }
 
 func TestLastGreenSkipsTheFailuresAndItself(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	var ids []string
 	for _, c := range []struct {
 		ok  bool
 		ago int
 	}{{true, 300}, {true, 200}, {false, 100}} {
-		dir, err := Save(base, "/proj", agedRun("all", "test", c.ok, c.ago))
+		dir, err := archive.Save("/proj", agedRun("all", "test", c.ok, c.ago))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -494,7 +494,7 @@ func TestLastGreenSkipsTheFailuresAndItself(t *testing.T) {
 	}
 	newest := ids[2]
 
-	green, ok := LastGreen(base, "/proj", "test", "", 0)
+	green, ok := archive.LastGreen("/proj", "test", "", 0)
 	if !ok {
 		t.Fatal("no green run found")
 	}
@@ -510,7 +510,7 @@ func TestLastGreenSkipsTheFailuresAndItself(t *testing.T) {
 
 	// Previous, unlike LastGreen, does not care how it went — and skipping itself is what
 	// keeps a stored run from diffing against its own output.
-	prev, ok := Previous(base, "/proj", "test", newest, 0)
+	prev, ok := archive.Previous("/proj", "test", newest, 0)
 	if !ok {
 		t.Fatal("no previous run")
 	}
@@ -520,29 +520,29 @@ func TestLastGreenSkipsTheFailuresAndItself(t *testing.T) {
 }
 
 func TestLastGreenOfATaskThatNeverPassed(t *testing.T) {
-	base := t.TempDir()
-	if _, err := Save(base, "/proj", agedRun("all", "test", false, 60)); err != nil {
+	archive := At(t.TempDir())
+	if _, err := archive.Save("/proj", agedRun("all", "test", false, 60)); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := LastGreen(base, "/proj", "test", "", 0); ok {
+	if _, ok := archive.LastGreen("/proj", "test", "", 0); ok {
 		t.Error("found a green run that does not exist")
 	}
-	if _, ok := Previous(base, "/proj", "test", "", 0); !ok {
+	if _, ok := archive.Previous("/proj", "test", "", 0); !ok {
 		t.Error("but there is a previous run, and it should be offered")
 	}
 }
 
 // The diff reads through this, so it has to come back exactly as it went in.
 func TestOutputReadsBackWhatTheTaskPrinted(t *testing.T) {
-	base := t.TempDir()
-	if _, err := Save(base, "/proj", agedRun("all", "test", true, 60, "first", "second", "third")); err != nil {
+	archive := At(t.TempDir())
+	if _, err := archive.Save("/proj", agedRun("all", "test", true, 60, "first", "second", "third")); err != nil {
 		t.Fatal(err)
 	}
-	points := Timeline(base, "/proj", "test")
+	points := archive.Timeline("/proj", "test")
 	if len(points) != 1 {
 		t.Fatalf("got %d points", len(points))
 	}
-	got := Output(base, points[0])
+	got := archive.Output(points[0])
 	want := []string{"first", "second", "third"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %q, want %q", got, want)
@@ -553,22 +553,22 @@ func TestOutputReadsBackWhatTheTaskPrinted(t *testing.T) {
 // the second save landed on the first's directory. That is precisely the pair a timeline
 // exists to show, so losing it there is the worst place for it to happen.
 func TestTwoRunsOfOneTaskInOneSecondBothSurvive(t *testing.T) {
-	base := t.TempDir()
-	first, err := Save(base, "/proj", agedRun("suite", "suite", true, 5, "green"))
+	archive := At(t.TempDir())
+	first, err := archive.Save("/proj", agedRun("suite", "suite", true, 5, "green"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Save(base, "/proj", agedRun("suite", "suite", false, 5, "red"))
+	second, err := archive.Save("/proj", agedRun("suite", "suite", false, 5, "red"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first == second {
 		t.Fatalf("both runs landed in %s", first)
 	}
-	if got := len(List(base)); got != 2 {
+	if got := len(archive.List()); got != 2 {
 		t.Errorf("archive holds %d runs, want 2", got)
 	}
-	points := Timeline(base, "/proj", "suite")
+	points := archive.Timeline("/proj", "suite")
 	if len(points) != 2 {
 		t.Fatalf("timeline has %d points, want 2", len(points))
 	}
@@ -587,24 +587,24 @@ func TestTwoRunsOfOneTaskInOneSecondBothSurvive(t *testing.T) {
 // depend on which one it happens to be sitting in.
 // withArgs is atCommit for a run that carried arguments. One commit throughout: what these
 // tests vary is the command line, and the commit being the same is the premise.
-func withArgs(t *testing.T, base string, args []string, ok bool, ago int) {
+func withArgs(t *testing.T, archive Archive, args []string, ok bool, ago int) {
 	t.Helper()
 	r := agedRun("test", "test", ok, ago)
 	r.Args = args
-	dir, err := Save(base, "/proj", r)
+	dir, err := archive.Save("/proj", r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rewriteStored(t, base, dir, func(m *Manifest) { m.Commit = "abc1234" })
+	rewriteStored(t, archive, dir, func(m *Manifest) { m.Commit = "abc1234" })
 }
 
-func atCommit(t *testing.T, base, project, commit string, ok bool, ago int) {
+func atCommit(t *testing.T, archive Archive, project, commit string, ok bool, ago int) {
 	t.Helper()
-	dir, err := Save(base, project, agedRun("test", "test", ok, ago))
+	dir, err := archive.Save(project, agedRun("test", "test", ok, ago))
 	if err != nil {
 		t.Fatal(err)
 	}
-	rewriteStored(t, base, dir, func(m *Manifest) { m.Commit = commit })
+	rewriteStored(t, archive, dir, func(m *Manifest) { m.Commit = commit })
 }
 
 // rewriteStored edits a saved run's manifest in both places it lives: the copy in the run
@@ -613,7 +613,7 @@ func atCommit(t *testing.T, base, project, commit string, ok bool, ago int) {
 // A manifest is written once from one value and never edited afterwards, so nothing in the
 // program has to keep the two in step — only a test reaching in behind Save, which is what
 // this is for. Editing one alone leaves a run whose commit depends on which reader you ask.
-func rewriteStored(t *testing.T, base, dir string, mutate func(*Manifest)) {
+func rewriteStored(t *testing.T, archive Archive, dir string, mutate func(*Manifest)) {
 	t.Helper()
 	path := filepath.Join(dir, "manifest.json")
 	blob, err := os.ReadFile(path)
@@ -635,7 +635,7 @@ func rewriteStored(t *testing.T, base, dir string, mutate func(*Manifest)) {
 	}
 
 	var rebuilt strings.Builder
-	for _, entry := range readHistory(base) {
+	for _, entry := range archive.readHistory() {
 		if entry.ID == m.ID {
 			entry = m
 		}
@@ -646,7 +646,7 @@ func rewriteStored(t *testing.T, base, dir string, mutate func(*Manifest)) {
 		rebuilt.Write(line)
 		rebuilt.WriteByte('\n')
 	}
-	if err := os.WriteFile(historyPath(base), []byte(rebuilt.String()), 0o600); err != nil {
+	if err := os.WriteFile(archive.historyPath(), []byte(rebuilt.String()), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -654,11 +654,11 @@ func rewriteStored(t *testing.T, base, dir string, mutate func(*Manifest)) {
 // Both outcomes at one commit is not suggestive of flakiness, it is flakiness: the code did
 // not change and the answer did.
 func TestBothOutcomesAtOneCommitIsAFlake(t *testing.T) {
-	base := t.TempDir()
-	atCommit(t, base, "/proj", "abc1234deadbeef", true, 300)
-	atCommit(t, base, "/proj", "abc1234deadbeef", false, 200)
+	archive := At(t.TempDir())
+	atCommit(t, archive, "/proj", "abc1234deadbeef", true, 300)
+	atCommit(t, archive, "/proj", "abc1234deadbeef", false, 200)
 
-	flakes := Flaky(base, "/proj")
+	flakes := archive.Flaky("/proj")
 	if len(flakes) != 1 {
 		t.Fatalf("got %d flakes, want 1: %+v", len(flakes), flakes)
 	}
@@ -673,46 +673,46 @@ func TestBothOutcomesAtOneCommitIsAFlake(t *testing.T) {
 // The obvious explanation for a task that failed and then passed is that somebody fixed it.
 // Only the commit tells those two apart, which is why it is recorded.
 func TestFailingThenPassingAcrossACommitIsNotAFlake(t *testing.T) {
-	base := t.TempDir()
-	atCommit(t, base, "/proj", "broken0000", false, 300)
-	atCommit(t, base, "/proj", "fixed11111", true, 200)
+	archive := At(t.TempDir())
+	atCommit(t, archive, "/proj", "broken0000", false, 300)
+	atCommit(t, archive, "/proj", "fixed11111", true, 200)
 
-	if got := Flaky(base, "/proj"); len(got) != 0 {
+	if got := archive.Flaky("/proj"); len(got) != 0 {
 		t.Errorf("called a fix a flake: %+v", got)
 	}
 }
 
 // Two runs of uncommitted work are not two runs of the same code.
 func TestADirtyTreeIsNeverFlaky(t *testing.T) {
-	base := t.TempDir()
-	atCommit(t, base, "/proj", "abc1234-dirty", true, 300)
-	atCommit(t, base, "/proj", "abc1234-dirty", false, 200)
+	archive := At(t.TempDir())
+	atCommit(t, archive, "/proj", "abc1234-dirty", true, 300)
+	atCommit(t, archive, "/proj", "abc1234-dirty", false, 200)
 
-	if got := Flaky(base, "/proj"); len(got) != 0 {
+	if got := archive.Flaky("/proj"); len(got) != 0 {
 		t.Errorf("a dirty tree cannot establish a flake: %+v", got)
 	}
 }
 
 // A project that is not a checkout still gets its runs kept; it just cannot answer this.
 func TestRunsWithNoCommitAreIgnored(t *testing.T) {
-	base := t.TempDir()
-	atCommit(t, base, "/proj", "", true, 300)
-	atCommit(t, base, "/proj", "", false, 200)
+	archive := At(t.TempDir())
+	atCommit(t, archive, "/proj", "", true, 300)
+	atCommit(t, archive, "/proj", "", false, 200)
 
-	if got := Flaky(base, "/proj"); len(got) != 0 {
+	if got := archive.Flaky("/proj"); len(got) != 0 {
 		t.Errorf("got %+v", got)
 	}
 }
 
 func TestFlakesAreScopedToTheProject(t *testing.T) {
-	base := t.TempDir()
-	atCommit(t, base, "/elsewhere", "abc1234", true, 300)
-	atCommit(t, base, "/elsewhere", "abc1234", false, 200)
+	archive := At(t.TempDir())
+	atCommit(t, archive, "/elsewhere", "abc1234", true, 300)
+	atCommit(t, archive, "/elsewhere", "abc1234", false, 200)
 
-	if got := Flaky(base, "/proj"); len(got) != 0 {
+	if got := archive.Flaky("/proj"); len(got) != 0 {
 		t.Errorf("another project's flake leaked in: %+v", got)
 	}
-	if got := Flaky(base, "/elsewhere"); len(got) != 1 {
+	if got := archive.Flaky("/elsewhere"); len(got) != 1 {
 		t.Errorf("its own project's flake went missing")
 	}
 }
@@ -720,17 +720,17 @@ func TestFlakesAreScopedToTheProject(t *testing.T) {
 // Same commit, two different commands, two different answers: that is two questions with
 // one answer each, not one question with two.
 func TestTheSameTaskWithDifferentArgumentsIsNotAFlake(t *testing.T) {
-	base := t.TempDir()
-	withArgs(t, base, []string{"ENV=prod"}, true, 300)
-	withArgs(t, base, []string{"ENV=staging"}, false, 200)
+	archive := At(t.TempDir())
+	withArgs(t, archive, []string{"ENV=prod"}, true, 300)
+	withArgs(t, archive, []string{"ENV=staging"}, false, 200)
 
-	if got := Flaky(base, "/proj"); len(got) != 0 {
+	if got := archive.Flaky("/proj"); len(got) != 0 {
 		t.Errorf("two different invocations were called one flaky task: %+v", got)
 	}
 
 	// The same command going both ways still is one, and it says which command.
-	withArgs(t, base, []string{"ENV=prod"}, false, 100)
-	got := Flaky(base, "/proj")
+	withArgs(t, archive, []string{"ENV=prod"}, false, 100)
+	got := archive.Flaky("/proj")
 	if len(got) != 1 {
 		t.Fatalf("got %d flakes, want 1: %+v", len(got), got)
 	}
@@ -742,10 +742,10 @@ func TestTheSameTaskWithDifferentArgumentsIsNotAFlake(t *testing.T) {
 // A timeline row names the run it belongs to, and two runs of one task that were invoked
 // differently are the surprising durations it exists to explain.
 func TestATimelinePointCarriesTheArgumentsItRanWith(t *testing.T) {
-	base := t.TempDir()
-	withArgs(t, base, []string{"--", "My Post Title"}, true, 300)
+	archive := At(t.TempDir())
+	withArgs(t, archive, []string{"--", "My Post Title"}, true, 300)
 
-	points := Timeline(base, "/proj", "test")
+	points := archive.Timeline("/proj", "test")
 	if len(points) != 1 {
 		t.Fatalf("got %d points", len(points))
 	}
@@ -755,11 +755,11 @@ func TestATimelinePointCarriesTheArgumentsItRanWith(t *testing.T) {
 }
 
 func TestASteadyTaskIsNotAFlake(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	for i := range 5 {
-		atCommit(t, base, "/proj", "abc1234", true, 300-i*10)
+		atCommit(t, archive, "/proj", "abc1234", true, 300-i*10)
 	}
-	if got := Flaky(base, "/proj"); len(got) != 0 {
+	if got := archive.Flaky("/proj"); len(got) != 0 {
 		t.Errorf("got %+v", got)
 	}
 }
@@ -767,11 +767,11 @@ func TestASteadyTaskIsNotAFlake(t *testing.T) {
 // --- the archive format's own version -----------------------------------------------------
 
 func TestASavedRunRecordsTheFormatItWasWrittenIn(t *testing.T) {
-	base := t.TempDir()
-	if _, err := Save(base, "/proj", finishedRun("all")); err != nil {
+	archive := At(t.TempDir())
+	if _, err := archive.Save("/proj", finishedRun("all")); err != nil {
 		t.Fatal(err)
 	}
-	if got := List(base)[0].Version; got != ManifestVersion {
+	if got := archive.List()[0].Version; got != ManifestVersion {
 		t.Errorf("version = %d, want %d", got, ManifestVersion)
 	}
 }
@@ -779,8 +779,8 @@ func TestASavedRunRecordsTheFormatItWasWrittenIn(t *testing.T) {
 // Every manifest written before the field existed has no version, and all of them are still
 // readable — nothing has changed shape, only been added to.
 func TestAManifestWithNoVersionStillLoads(t *testing.T) {
-	base := t.TempDir()
-	dir, err := Save(base, "/proj", finishedRun("all"))
+	archive := At(t.TempDir())
+	dir, err := archive.Save("/proj", finishedRun("all"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -796,7 +796,7 @@ func TestAManifestWithNoVersionStillLoads(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	listed := List(base)
+	listed := archive.List()
 	if len(listed) != 1 {
 		t.Fatalf("an unversioned manifest was dropped: %d runs listed", len(listed))
 	}
@@ -808,15 +808,15 @@ func TestAManifestWithNoVersionStillLoads(t *testing.T) {
 // An old binary meeting a newer archive skips it rather than guessing. Garbling somebody's
 // runs is worse than admitting they cannot be read.
 func TestAManifestFromTheFutureIsSkipped(t *testing.T) {
-	base := t.TempDir()
-	dir, err := Save(base, "/proj", finishedRun("all"))
+	archive := At(t.TempDir())
+	dir, err := archive.Save("/proj", finishedRun("all"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Both copies, because a newer taskui would have written both.
-	rewriteStored(t, base, dir, func(m *Manifest) { m.Version = ManifestVersion + 1 })
+	rewriteStored(t, archive, dir, func(m *Manifest) { m.Version = ManifestVersion + 1 })
 
-	if got := len(List(base)); got != 0 {
+	if got := len(archive.List()); got != 0 {
 		t.Errorf("listed %d runs from a format this build does not know", got)
 	}
 }
@@ -833,11 +833,11 @@ func TestARunRecordsTheRepositoryItsDirectoryBelongsTo(t *testing.T) {
 		t.Fatal("a fresh checkout reported no repository")
 	}
 
-	base := t.TempDir()
-	if _, err := Save(base, dir, finishedRun("all")); err != nil {
+	archive := At(t.TempDir())
+	if _, err := archive.Save(dir, finishedRun("all")); err != nil {
 		t.Fatal(err)
 	}
-	listed := List(base)
+	listed := archive.List()
 	if len(listed) != 1 || listed[0].Repo != repo {
 		t.Errorf("manifest repo = %q, want %q", listed[0].Repo, repo)
 	}
@@ -850,16 +850,16 @@ func TestARunRecordsTheRepositoryItsDirectoryBelongsTo(t *testing.T) {
 
 // Everything that changes what a re-run does, or what the log is, has to survive the trip.
 func TestALoadedRunKeepsHowItWasInvokedAndWhatItDropped(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := finishedRun("all")
 	r.Force, r.Interactive = true, true
 	r.Tasks["child"].Dropped = 4000
 	r.Duration, r.HasDuration = 3*time.Second, true
-	if _, err := Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := Load(base, List(base)[0])
+	got, err := archive.Load(archive.List()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -875,7 +875,7 @@ func TestALoadedRunKeepsHowItWasInvokedAndWhatItDropped(t *testing.T) {
 }
 
 func TestTasksThatDifferOnlyInCaseKeepTheirOwnOutput(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := run.Detached("all", run.GraphFrom(
 		run.Edge{Parent: "all", Children: []string{"Build", "build"}},
 		run.Edge{Parent: "Build"}, run.Edge{Parent: "build"},
@@ -883,11 +883,11 @@ func TestTasksThatDifferOnlyInCaseKeepTheirOwnOutput(t *testing.T) {
 	r.Feed("Build", "from upper")
 	r.Feed("build", "from lower")
 	r.Finish(0)
-	if _, err := Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := Load(base, List(base)[0])
+	got, err := archive.Load(archive.List()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -899,16 +899,16 @@ func TestTasksThatDifferOnlyInCaseKeepTheirOwnOutput(t *testing.T) {
 }
 
 func TestAnIDThatIsTakenIsNeverShared(t *testing.T) {
-	base := t.TempDir()
-	if err := os.MkdirAll(runsDir(base), 0o700); err != nil {
+	archive := At(t.TempDir())
+	if err := os.MkdirAll(archive.runsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	// Another process got there first and has not written its manifest yet — the case an
 	// existence check on the manifest, or on nothing, would hand out twice.
-	if err := os.Mkdir(RunDir(base, "100-all"), 0o700); err != nil {
+	if err := os.Mkdir(archive.RunDir("100-all"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	id, err := claimID(base, "100-all")
+	id, err := archive.claimID("100-all")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -918,12 +918,12 @@ func TestAnIDThatIsTakenIsNeverShared(t *testing.T) {
 }
 
 func TestAnAbandonedSaveIsPruned(t *testing.T) {
-	base := t.TempDir()
-	if _, err := Save(base, "/proj", finishedRun("all")); err != nil {
+	archive := At(t.TempDir())
+	if _, err := archive.Save("/proj", finishedRun("all")); err != nil {
 		t.Fatal(err)
 	}
-	abandoned := RunDir(base, "100-dead")
-	inProgress := RunDir(base, "200-live")
+	abandoned := archive.RunDir("100-dead")
+	inProgress := archive.RunDir("200-live")
 	for _, dir := range []string{abandoned, inProgress} {
 		if err := os.Mkdir(dir, 0o700); err != nil {
 			t.Fatal(err)
@@ -934,7 +934,7 @@ func TestAnAbandonedSaveIsPruned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := Prune(base, KeepRuns); err != nil {
+	if _, err := archive.Prune(KeepRuns); err != nil {
 		t.Fatal(err)
 	}
 	if exists(abandoned) {
@@ -943,8 +943,8 @@ func TestAnAbandonedSaveIsPruned(t *testing.T) {
 	if !exists(inProgress) {
 		t.Error("a save still being written by someone else must be left alone")
 	}
-	if len(List(base)) != 1 {
-		t.Errorf("the finished run should be untouched: %v", List(base))
+	if len(archive.List()) != 1 {
+		t.Errorf("the finished run should be untouched: %v", archive.List())
 	}
 }
 
@@ -976,22 +976,22 @@ func TestStatusesAreStoredByName(t *testing.T) {
 // that passed once and was stopped once was reported as flaky, and the picker showed ✗ for
 // a server that had only been shut down.
 func TestAStoppedRunIsNotAnAnswer(t *testing.T) {
-	base := t.TempDir()
-	atCommit(t, base, "/proj", "abc1234deadbeef", true, 300)
+	archive := At(t.TempDir())
+	atCommit(t, archive, "/proj", "abc1234deadbeef", true, 300)
 	stopped := run.Detached("test", run.GraphFrom(run.Edge{Parent: "test"}))
 	stopped.Feed("test", "halfway")
 	stopped.Cancel()
 	stopped.Finish(201)
-	dir, err := Save(base, "/proj", stopped)
+	dir, err := archive.Save("/proj", stopped)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rewriteStored(t, base, dir, func(m *Manifest) { m.Commit = "abc1234deadbeef" })
+	rewriteStored(t, archive, dir, func(m *Manifest) { m.Commit = "abc1234deadbeef" })
 
-	if got := Flaky(base, "/proj"); len(got) != 0 {
+	if got := archive.Flaky("/proj"); len(got) != 0 {
 		t.Errorf("a stopped run made a flake: %+v", got)
 	}
-	if o := LastOutcomes(base, "/proj")["test"]; !o.Ok {
+	if o := archive.LastOutcomes("/proj")["test"]; !o.Ok {
 		t.Errorf("the last outcome is the stopped run's: %+v", o)
 	}
 }
@@ -999,19 +999,19 @@ func TestAStoppedRunIsNotAnAnswer(t *testing.T) {
 // A record saved before its run ended — a detach — has no verdict yet. Counted as one, it
 // read as the task's latest result, and as a failure.
 func TestARunStillGoingHasNoOutcomeYet(t *testing.T) {
-	base := t.TempDir()
-	if _, err := Save(base, "/proj", agedRun("test", "test", true, 300)); err != nil {
+	archive := At(t.TempDir())
+	if _, err := archive.Save("/proj", agedRun("test", "test", true, 300)); err != nil {
 		t.Fatal(err)
 	}
 	going := run.Detached("test", run.GraphFrom(run.Edge{Parent: "test"}))
 	going.Feed("test", "still at it")
-	if _, err := Save(base, "/proj", going); err != nil {
+	if _, err := archive.Save("/proj", going); err != nil {
 		t.Fatal(err)
 	}
-	if o := LastOutcomes(base, "/proj")["test"]; !o.Ok {
+	if o := archive.LastOutcomes("/proj")["test"]; !o.Ok {
 		t.Errorf("a run that has not ended is the last outcome: %+v", o)
 	}
-	if got := Timeline(base, "/proj", "test"); len(got) != 1 {
+	if got := archive.Timeline("/proj", "test"); len(got) != 1 {
 		t.Errorf("timeline has %d points, want only the finished run", len(got))
 	}
 }
@@ -1019,15 +1019,15 @@ func TestARunStillGoingHasNoOutcomeYet(t *testing.T) {
 // The command line a run was started with is part of the question, the task it was started
 // as included: `build` inside `release` is handed release's vars.
 func TestATaskReachedFromAnotherRootIsAnotherQuestion(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	for _, r := range []*run.Run{agedRun("build", "build", true, 300), agedRun("release", "build", false, 200)} {
-		dir, err := Save(base, "/proj", r)
+		dir, err := archive.Save("/proj", r)
 		if err != nil {
 			t.Fatal(err)
 		}
-		rewriteStored(t, base, dir, func(m *Manifest) { m.Commit = "abc1234deadbeef" })
+		rewriteStored(t, archive, dir, func(m *Manifest) { m.Commit = "abc1234deadbeef" })
 	}
-	if got := Flaky(base, "/proj"); len(got) != 0 {
+	if got := archive.Flaky("/proj"); len(got) != 0 {
 		t.Errorf("two different command lines made a flake: %+v", got)
 	}
 }
@@ -1035,10 +1035,10 @@ func TestATaskReachedFromAnotherRootIsAnotherQuestion(t *testing.T) {
 // A detached run that finishes after fifty others were saved has lost its partial record to
 // the prune. Rewriting it in place failed, and the archive kept "still running" for good.
 func TestAFinishedRunIsKeptAfterItsPartialRecordWasPruned(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	long := run.Detached("deploy", run.GraphFrom(run.Edge{Parent: "deploy"}))
 	long.Feed("deploy", "step 1")
-	dir, err := Save(base, "/proj", long)
+	dir, err := archive.Save("/proj", long)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1047,10 +1047,10 @@ func TestAFinishedRunIsKeptAfterItsPartialRecordWasPruned(t *testing.T) {
 	}
 	long.Feed("deploy", "step 2")
 	long.Finish(0)
-	if _, err := Resave(base, dir, "/proj", long); err != nil {
+	if _, err := archive.Resave(dir, "/proj", long); err != nil {
 		t.Fatalf("the finished run could not be recorded: %v", err)
 	}
-	if o := LastOutcomes(base, "/proj")["deploy"]; !o.Ok {
+	if o := archive.LastOutcomes("/proj")["deploy"]; !o.Ok {
 		t.Errorf("the archive's last word is not the finished run: %+v", o)
 	}
 }
@@ -1058,14 +1058,14 @@ func TestAFinishedRunIsKeptAfterItsPartialRecordWasPruned(t *testing.T) {
 // A run saved while it is still going, as a detach saves it, is dated from when it started.
 // Dated from the save, a run started an hour ago was filed as starting at the detach.
 func TestARunSavedWhileGoingIsDatedFromItsStart(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := run.Detached("dev", run.GraphFrom(run.Edge{Parent: "dev"}))
 	r.Started = time.Now().Add(-time.Hour)
 	r.Feed("dev", "listening on :3000")
-	if _, err := Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
-	runs := List(base)
+	runs := archive.List()
 	if len(runs) != 1 {
 		t.Fatalf("%d runs stored, want 1", len(runs))
 	}

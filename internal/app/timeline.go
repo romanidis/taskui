@@ -35,12 +35,12 @@ func (a *App) OpenTimeline(task string) {
 	// another screen and is not shown here, and a series that mixes two codebases is not a
 	// series — the same task name in a different repo is a different task.
 	a.TimelineOf = task
-	a.Timeline = store.Timeline(a.stateDir, a.Root, task)
+	a.Timeline = a.archive.Timeline(a.Root, task)
 	// Both outcomes at one commit. Worth saying here above all places: this screen is where
 	// you come to decide whether a failure means something, and "it also passed at this
 	// exact revision" is the answer that stops you looking for a cause in the code.
 	a.TimelineFlakes = nil
-	for _, f := range store.Flaky(a.stateDir, a.Root) {
+	for _, f := range a.archive.Flaky(a.Root) {
 		if f.Task == task {
 			a.TimelineFlakes = append(a.TimelineFlakes, f)
 		}
@@ -140,10 +140,10 @@ func (a *App) DiffAgainstLastGreen() {
 		skip = filepath.Base(a.SavedTo)
 	}
 	before := a.Run.Started.Unix()
-	point, ok := store.LastGreen(a.stateDir, project, name, skip, before)
+	point, ok := a.archive.LastGreen(project, name, skip, before)
 	against := "when it last passed"
 	if !ok {
-		point, ok = store.Previous(a.stateDir, project, name, skip, before)
+		point, ok = a.archive.Previous(project, name, skip, before)
 		against = "the run before"
 		if !ok {
 			a.Status = "no earlier run of `" + name + "` to compare against"
@@ -153,7 +153,7 @@ func (a *App) DiffAgainstLastGreen() {
 			against = "the run before — which failed too"
 		}
 	}
-	a.showDiff(name, store.Output(a.stateDir, point), newer, against, point)
+	a.showDiff(name, a.archive.Output(point), newer, against, point)
 }
 
 // DiffTimelinePoint is `⇧D` from the timeline: what changed at the run under the cursor.
@@ -175,7 +175,7 @@ func (a *App) DiffTimelinePoint() {
 		a.Status = "that is the earliest stored run of `" + a.TimelineOf + "` — nothing before it"
 		return
 	}
-	if !store.HasOutput(a.stateDir, point.RunID) {
+	if !a.archive.HasOutput(point.RunID) {
 		a.Status = "the output of that run is no longer stored — only the last runs keep theirs"
 		return
 	}
@@ -192,15 +192,15 @@ func (a *App) DiffTimelinePoint() {
 		}
 	}
 	// Pruned is not empty: diffed against nothing, every line read as new.
-	if !store.HasOutput(a.stateDir, before.RunID) {
+	if !a.archive.HasOutput(before.RunID) {
 		a.Status = "the output of the run to compare against is no longer stored — only the last runs keep theirs"
 		return
 	}
 
 	a.showDiff(
 		a.TimelineOf,
-		store.Output(a.stateDir, before),
-		store.Output(a.stateDir, point),
+		a.archive.Output(before),
+		a.archive.Output(point),
 		against,
 		before,
 	)

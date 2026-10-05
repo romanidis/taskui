@@ -19,7 +19,7 @@ func seedArgs(t *testing.T, a *App, name string, args []string) {
 	r := run.Detached(name, run.GraphFrom(run.Edge{Parent: name}))
 	r.Args = args
 	r.Finish(0)
-	if _, err := store.Save(a.stateDir, a.Root, r); err != nil {
+	if _, err := a.archive.Save(a.Root, r); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -125,7 +125,7 @@ func TestTabCompletesPathsUnderTheProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := New(pivot.Fixture([]string{"test"}), dir)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	promptFor(t, a, "test")
 
 	typeArgs(a, "-- Task")
@@ -221,7 +221,7 @@ func TestTabCompletesTheExamplesInTheDescription(t *testing.T) {
 		Name: "backend:test",
 		Desc: "Run tests: task backend:test -- -p ingest, or task backend:test -- -p api",
 	}}, "/tmp/repo")
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	promptFor(t, a, "backend:test")
 	typeArgs(a, "")
 
@@ -277,7 +277,7 @@ func TestAVariableBeatsWhatYouRanLastTime(t *testing.T) {
 		Name: "wt:new",
 		Desc: "Create an agent worktree (NAME=add_x)",
 	}}, t.TempDir())
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	seedArgs(t, a, "wt:new", []string{"NAME=backend"})
 
 	a.BeginArgs("wt:new")

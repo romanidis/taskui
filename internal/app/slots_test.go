@@ -10,7 +10,6 @@ import (
 
 	"github.com/romanidis/taskui/internal/events"
 	"github.com/romanidis/taskui/internal/run"
-	"github.com/romanidis/taskui/internal/store"
 )
 
 type bufferSink struct{ *bytes.Buffer }
@@ -118,7 +117,7 @@ func TestADetachedRunIsArchivedWholeWhenItFinishes(t *testing.T) {
 	r.Finish(1)
 	a.archiveIfFinished(a.slot)
 
-	runs := store.List(a.StateDir())
+	runs := a.Archive().List()
 	if len(runs) != 1 {
 		t.Fatalf("history holds %d runs, want the one", len(runs))
 	}

@@ -201,7 +201,7 @@ func sampleApp() *app.App {
 
 	a := app.New(tasks, "/src/acme").WithConfig(theme.FromViper(v))
 	// Somewhere that does not exist, so nothing here reads or writes the real archive.
-	a.SetStateDir("/nonexistent/taskui-examples")
+	a.SetArchive(store.At("/nonexistent/taskui-examples"))
 
 	hour := time.Now().Add(-time.Hour).Unix()
 	a.Outcomes = map[string]store.Outcome{

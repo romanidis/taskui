@@ -335,9 +335,9 @@ type App struct {
 	// animStart is when the animation began, which Phase is counted from.
 	animStart time.Time
 
-	// stateDir is where runs are archived. A field rather than a call so tests can point
-	// it somewhere disposable.
-	stateDir string
+	// archive is where runs are kept. A field rather than a call so tests can point it
+	// somewhere disposable.
+	archive store.Archive
 
 	// events is where a host — an editor showing this terminal — is told what the runs are
 	// doing. Nil when nobody asked, which is every session started by hand.
@@ -368,24 +368,24 @@ func New(tasks []task.Task, root string) *App {
 		DiffContext:   3,
 		Width:         80,
 		Height:        24,
-		stateDir:      store.StateDir(),
+		archive:       store.Default(),
 	}
 	a.Rebuild(-1)
 	a.ReloadOutcomes()
 	return a
 }
 
-// StateDir is where this app archives its runs.
-func (a *App) StateDir() string { return a.stateDir }
+// Archive is where this app keeps its runs.
+func (a *App) Archive() store.Archive { return a.archive }
 
-// SetStateDir points the archive somewhere else, for tests.
-func (a *App) SetStateDir(dir string) {
-	a.stateDir = dir
+// SetArchive points the app at another archive, for tests.
+func (a *App) SetArchive(archive store.Archive) {
+	a.archive = archive
 	a.ReloadOutcomes()
 }
 
 func (a *App) ReloadOutcomes() {
-	a.Outcomes = store.LastOutcomes(a.stateDir, a.Root)
+	a.Outcomes = a.archive.LastOutcomes(a.Root)
 }
 
 // WithConfig applies a loaded config. Anything wrong with the file is surfaced rather than

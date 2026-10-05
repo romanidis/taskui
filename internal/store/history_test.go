@@ -9,10 +9,10 @@ import (
 )
 
 // saveMany archives n runs of distinct tasks in one project, oldest first.
-func saveMany(t *testing.T, base, project string, n int) {
+func saveMany(t *testing.T, archive Archive, project string, n int) {
 	t.Helper()
 	for i := range n {
-		if _, err := Save(base, project, agedRun("t"+string(rune('a'+i)), "task", true, n-i)); err != nil {
+		if _, err := archive.Save(project, agedRun("t"+string(rune('a'+i)), "task", true, n-i)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -22,16 +22,16 @@ func saveMany(t *testing.T, base, project string, n int) {
 // counted every project's against the same fifty. A timeline with one point in it and a
 // `--flaky` that never fires are what that cost.
 func TestOneProjectsRunsDoNotEvictAnothersHistory(t *testing.T) {
-	base := t.TempDir()
-	saveMany(t, base, "/alpha", 3)
+	archive := At(t.TempDir())
+	saveMany(t, archive, "/alpha", 3)
 	// Enough to push alpha's runs past any plausible output cap.
-	saveMany(t, base, "/beta", 4)
-	if _, err := Prune(base, 2); err != nil {
+	saveMany(t, archive, "/beta", 4)
+	if _, err := archive.Prune(2); err != nil {
 		t.Fatal(err)
 	}
 
 	alpha := 0
-	for _, m := range List(base) {
+	for _, m := range archive.List() {
 		if m.Dir == "/alpha" {
 			alpha++
 		}
@@ -44,17 +44,17 @@ func TestOneProjectsRunsDoNotEvictAnothersHistory(t *testing.T) {
 // A timeline is built from verdicts and durations, which the ledger holds, so it keeps
 // answering after the text is gone. This is the whole point of splitting the two.
 func TestATimelineOutlivesTheOutput(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	for i := range 4 {
-		if _, err := Save(base, "/proj", agedRun("run"+string(rune('a'+i)), "test", i%2 == 0, 4-i)); err != nil {
+		if _, err := archive.Save("/proj", agedRun("run"+string(rune('a'+i)), "test", i%2 == 0, 4-i)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := Prune(base, 1); err != nil {
+	if _, err := archive.Prune(1); err != nil {
 		t.Fatal(err)
 	}
 
-	if got := len(Timeline(base, "/proj", "test")); got != 4 {
+	if got := len(archive.Timeline("/proj", "test")); got != 4 {
 		t.Errorf("the timeline should still hold four points, got %d", got)
 	}
 }
@@ -63,26 +63,26 @@ func TestATimelineOutlivesTheOutput(t *testing.T) {
 // run whose lines are gone would report every line as deleted, which is worse than saying
 // there is nothing to compare with.
 func TestADiffSkipsRunsWhoseOutputIsGone(t *testing.T) {
-	base := t.TempDir()
-	if _, err := Save(base, "/proj", agedRun("old", "test", true, 9)); err != nil {
+	archive := At(t.TempDir())
+	if _, err := archive.Save("/proj", agedRun("old", "test", true, 9)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Save(base, "/proj", agedRun("mid", "test", true, 5)); err != nil {
+	if _, err := archive.Save("/proj", agedRun("mid", "test", true, 5)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Save(base, "/proj", agedRun("new", "test", false, 1)); err != nil {
+	if _, err := archive.Save("/proj", agedRun("new", "test", false, 1)); err != nil {
 		t.Fatal(err)
 	}
 	// Keeps the newest two, so `old` is remembered without its text.
-	if _, err := Prune(base, 2); err != nil {
+	if _, err := archive.Prune(2); err != nil {
 		t.Fatal(err)
 	}
 
-	green, ok := LastGreen(base, "/proj", "test", "", 0)
+	green, ok := archive.LastGreen("/proj", "test", "", 0)
 	if !ok {
 		t.Fatal("there is still a green run with output")
 	}
-	if !HasOutput(base, green.RunID) {
+	if !archive.HasOutput(green.RunID) {
 		t.Errorf("%s was picked to diff against and has no output", green.RunID)
 	}
 	if green.Run.Task != "mid" {
@@ -93,15 +93,15 @@ func TestADiffSkipsRunsWhoseOutputIsGone(t *testing.T) {
 // Reopening a run whose output was pruned says so. Rebuilding it would produce a run with
 // every task empty, which reads as "it printed nothing".
 func TestLoadingAPrunedRunSaysTheOutputIsGone(t *testing.T) {
-	base := t.TempDir()
-	saveMany(t, base, "/proj", 3)
-	if _, err := Prune(base, 1); err != nil {
+	archive := At(t.TempDir())
+	saveMany(t, archive, "/proj", 3)
+	if _, err := archive.Prune(1); err != nil {
 		t.Fatal(err)
 	}
 
-	all := List(base)
+	all := archive.List()
 	oldest := all[len(all)-1]
-	_, err := Load(base, oldest)
+	_, err := archive.Load(oldest)
 	if err == nil {
 		t.Fatal("want an error for a run with no output left")
 	}
@@ -113,30 +113,30 @@ func TestLoadingAPrunedRunSaysTheOutputIsGone(t *testing.T) {
 // An archive written before the ledger existed is absorbed by the next save rather than
 // needing a migration step of its own.
 func TestAnOlderArchiveIsAbsorbedOnTheNextSave(t *testing.T) {
-	base := t.TempDir()
-	saveMany(t, base, "/proj", 2)
+	archive := At(t.TempDir())
+	saveMany(t, archive, "/proj", 2)
 
 	// What an archive from before the ledger looks like: run directories, no history file.
-	if err := os.Remove(historyPath(base)); err != nil {
+	if err := os.Remove(archive.historyPath()); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(List(base)); got != 2 {
+	if got := len(archive.List()); got != 2 {
 		t.Fatalf("the directories alone should still list, got %d", got)
 	}
 
-	if _, err := Save(base, "/proj", agedRun("third", "task", true, 1)); err != nil {
+	if _, err := archive.Save("/proj", agedRun("third", "task", true, 1)); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(readHistory(base)); got != 3 {
+	if got := len(archive.readHistory()); got != 3 {
 		t.Errorf("the ledger should have absorbed the two older runs, holds %d", got)
 	}
 }
 
 // Merged on id, so a run that is in both places is one run.
 func TestARunInBothPlacesIsListedOnce(t *testing.T) {
-	base := t.TempDir()
-	saveMany(t, base, "/proj", 3)
-	if got := len(List(base)); got != 3 {
+	archive := At(t.TempDir())
+	saveMany(t, archive, "/proj", 3)
+	if got := len(archive.List()); got != 3 {
 		t.Errorf("listed %d", got)
 	}
 }
@@ -144,18 +144,18 @@ func TestARunInBothPlacesIsListedOnce(t *testing.T) {
 // The file is appended to by several processes at once, so a half-written last line is a
 // thing that can happen. One unreadable run is not a reason to lose the others.
 func TestATornLineDoesNotLoseTheLedger(t *testing.T) {
-	base := t.TempDir()
-	saveMany(t, base, "/proj", 3)
+	archive := At(t.TempDir())
+	saveMany(t, archive, "/proj", 3)
 
-	blob, err := os.ReadFile(historyPath(base))
+	blob, err := os.ReadFile(archive.historyPath())
 	if err != nil {
 		t.Fatal(err)
 	}
 	torn := string(blob) + `{"id":"tor`
-	if err := os.WriteFile(historyPath(base), []byte(torn), 0o600); err != nil {
+	if err := os.WriteFile(archive.historyPath(), []byte(torn), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(readHistory(base)); got != 3 {
+	if got := len(archive.readHistory()); got != 3 {
 		t.Errorf("want the three good lines, got %d", got)
 	}
 }
@@ -163,7 +163,7 @@ func TestATornLineDoesNotLoseTheLedger(t *testing.T) {
 // Compaction keeps the newest of each project rather than the newest overall, which is the
 // same mistake the global cap made.
 func TestCompactionKeepsEachProjectsNewest(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	var b strings.Builder
 	write := func(id, dir string, started int64) {
 		b.WriteString(`{"version":1,"id":"` + id + `","root":"r","dir":"` + dir +
@@ -174,15 +174,15 @@ func TestCompactionKeepsEachProjectsNewest(t *testing.T) {
 		write("beta"+itoa(int64(i)), "/beta", int64(1000+i))
 	}
 	write("alpha-1", "/alpha", 1)
-	if err := os.WriteFile(historyPath(base), []byte(b.String()), 0o600); err != nil {
+	if err := os.WriteFile(archive.historyPath(), []byte(b.String()), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := compactHistory(base); err != nil {
+	if err := archive.compactHistory(); err != nil {
 		t.Fatal(err)
 	}
 
-	kept := readHistory(base)
+	kept := archive.readHistory()
 	alpha, beta := 0, 0
 	for _, m := range kept {
 		switch m.Dir {
@@ -215,9 +215,9 @@ func itoa(n int64) string {
 // The ledger lives beside the runs rather than in a config directory: deleting the state
 // directory has always been how you remove everything taskui accumulated.
 func TestTheLedgerLivesBesideTheRuns(t *testing.T) {
-	base := t.TempDir()
-	saveMany(t, base, "/proj", 1)
-	if _, err := os.Stat(filepath.Join(base, "history.ndjson")); err != nil {
+	archive := At(t.TempDir())
+	saveMany(t, archive, "/proj", 1)
+	if _, err := os.Stat(filepath.Join(archive.dir, "history.ndjson")); err != nil {
 		t.Errorf("want the ledger in the state directory: %v", err)
 	}
 }
@@ -226,7 +226,7 @@ func TestTheLedgerLivesBesideTheRuns(t *testing.T) {
 // nothing for a rewrite to do, and every save used to do it anyway. So did a single line
 // over one project's limit.
 func TestCompactionLeavesALedgerItCannotShrinkMuchAlone(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	var b strings.Builder
 	n := int64(0)
 	for p := range 6 {
@@ -238,18 +238,18 @@ func TestCompactionLeavesALedgerItCannotShrinkMuchAlone(t *testing.T) {
 	}
 	// One over the limit: droppable, and not worth a rewrite on its own.
 	b.WriteString(`{"version":1,"id":"extra","root":"r","dir":"/p0","started_unix":0}` + "\n")
-	if err := os.WriteFile(historyPath(base), []byte(b.String()), 0o600); err != nil {
+	if err := os.WriteFile(archive.historyPath(), []byte(b.String()), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	old := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(historyPath(base), old, old); err != nil {
+	if err := os.Chtimes(archive.historyPath(), old, old); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := compactHistory(base); err != nil {
+	if err := archive.compactHistory(); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(historyPath(base))
+	info, err := os.Stat(archive.historyPath())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestCompactionLeavesALedgerItCannotShrinkMuchAlone(t *testing.T) {
 // A line a newer taskui wrote is one this build cannot read, which does not make it this
 // build's to throw away when it compacts.
 func TestCompactionKeepsWhatANewerBuildWrote(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	var b strings.Builder
 	for i := range compactAt + KeepHistory/2 {
 		b.WriteString(`{"version":1,"id":"r` + itoa(int64(i)) + `","root":"r","dir":"/beta","started_unix":` +
@@ -269,13 +269,13 @@ func TestCompactionKeepsWhatANewerBuildWrote(t *testing.T) {
 	}
 	future := `{"version":2,"id":"from-the-future","root":"r","dir":"/beta","started_unix":1}`
 	b.WriteString(future + "\n")
-	if err := os.WriteFile(historyPath(base), []byte(b.String()), 0o600); err != nil {
+	if err := os.WriteFile(archive.historyPath(), []byte(b.String()), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := compactHistory(base); err != nil {
+	if err := archive.compactHistory(); err != nil {
 		t.Fatal(err)
 	}
-	blob, err := os.ReadFile(historyPath(base))
+	blob, err := os.ReadFile(archive.historyPath())
 	if err != nil {
 		t.Fatal(err)
 	}

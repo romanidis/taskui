@@ -9,16 +9,16 @@ import (
 // Two task names that differ only in a character `safeName` flattens used to land on one
 // file, and the manifest then handed both tasks whichever of the two survived.
 func TestTasksThatFlattenToOneNameKeepTheirOwnOutput(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := run.Detached("ci", run.GraphFrom(run.Edge{Parent: "ci", Children: []string{"a:b", "a.b"}}))
 	r.Feed("a:b", "from the colon one")
 	r.Feed("a.b", "from the dot one")
 	r.Finish(0)
 
-	if _, err := Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
-	stored, err := Load(base, List(base)[0])
+	stored, err := archive.Load(archive.List()[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,17 +42,17 @@ func TestTasksThatFlattenToOneNameKeepTheirOwnOutput(t *testing.T) {
 // `search.InRun` promises `n` walks a run the way it happened. Save wrote the names
 // sorted, so every archived run came back alphabetical instead.
 func TestAStoredRunKeepsTheOrderItRanIn(t *testing.T) {
-	base := t.TempDir()
+	archive := At(t.TempDir())
 	r := run.Detached("ci", run.GraphFrom(run.Edge{Parent: "ci", Children: []string{"zebra", "alpha"}}))
 	// Ran in the order a sort would reverse.
 	r.Feed("zebra", "first")
 	r.Feed("alpha", "second")
 	r.Finish(0)
 
-	if _, err := Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
-	stored, err := Load(base, List(base)[0])
+	stored, err := archive.Load(archive.List()[0])
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/romanidis/taskui/internal/run"
-	"github.com/romanidis/taskui/internal/store"
 	"github.com/romanidis/taskui/internal/task"
 )
 
@@ -238,9 +237,9 @@ func (a *App) archiveIfFinished(s *slot) {
 	var err error
 	if partial {
 		delete(a.partial, s.Run)
-		path, err = store.Resave(a.stateDir, s.SavedTo, a.Root, s.Run)
+		path, err = a.archive.Resave(s.SavedTo, a.Root, s.Run)
 	} else {
-		path, err = store.Save(a.stateDir, a.Root, s.Run)
+		path, err = a.archive.Save(a.Root, s.Run)
 	}
 	if err != nil {
 		a.Status = fmt.Sprintf("could not save `task %s`: %v", s.Run.Task, err)

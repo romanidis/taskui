@@ -138,7 +138,7 @@ func TestQuickfixFlagReadsTheLastStoredRun(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Cleanup(func() { opts.quickfix = false; opts.searchTask = "" })
 
-	if _, err := store.Save(store.StateDir(), dir, failedRun(t, dir)); err != nil {
+	if _, err := store.Default().Save(dir, failedRun(t, dir)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -169,7 +169,7 @@ func TestQuickfixWithNoStoredRunsSaysSo(t *testing.T) {
 // although the timeline holds several — README promises "the output is no longer stored".
 func TestDiffSaysWhenTheEarlierOutputWasPruned(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	base := store.StateDir()
+	archive := store.Default()
 	for i, ok := range []bool{true, false} {
 		r := run.Detached("test", run.GraphFrom(run.Edge{Parent: "test"}))
 		r.Feed("test", "line")
@@ -181,14 +181,14 @@ func TestDiffSaysWhenTheEarlierOutputWasPruned(t *testing.T) {
 		r.Finish(exit)
 		r.Duration = time.Duration(300-i*100) * time.Second
 		r.HasDuration = true
-		if _, err := store.Save(base, "/proj", r); err != nil {
+		if _, err := archive.Save("/proj", r); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.Prune(base, 0); err != nil {
+	if _, err := archive.Prune(0); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(store.Timeline(base, "/proj", "test")); n != 2 {
+	if n := len(archive.Timeline("/proj", "test")); n != 2 {
 		t.Fatalf("timeline %d", n)
 	}
 	err := printDiff(&bytes.Buffer{}, "/proj", "test")
@@ -220,12 +220,12 @@ func TestQuickfixReadsTheRunThatFinishedLast(t *testing.T) {
 
 	// Saved in the order they finished: fmt first, then ci — whose exit event is the one
 	// that triggers the plugin's --quickfix.
-	if _, err := store.Save(store.StateDir(), dir, passing); err != nil {
+	if _, err := store.Default().Save(dir, passing); err != nil {
 		t.Fatal(err)
 	}
 	// A run is saved as it finishes, and the archive dates it to the second.
 	time.Sleep(1100 * time.Millisecond)
-	if _, err := store.Save(store.StateDir(), dir, failing); err != nil {
+	if _, err := store.Default().Save(dir, failing); err != nil {
 		t.Fatal(err)
 	}
 

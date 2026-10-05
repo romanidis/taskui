@@ -23,7 +23,7 @@ func TestListJSONCarriesWhatAPickerNeeds(t *testing.T) {
 	r := run.Detached("build", run.GraphFrom(run.Edge{Parent: "build"}))
 	r.Feed("build", "compiling")
 	r.Finish(0)
-	if _, err := store.Save(store.StateDir(), dir, r); err != nil {
+	if _, err := store.Default().Save(dir, r); err != nil {
 		t.Fatal(err)
 	}
 

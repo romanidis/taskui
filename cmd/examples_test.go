@@ -107,8 +107,8 @@ func TestAnUnknownTopicListsTheRealOnes(t *testing.T) {
 // invoke them, and a demo that showed somebody's actual failing test would be a bug.
 func TestTheSampleProjectIsSelfContained(t *testing.T) {
 	a := sampleApp()
-	if a.StateDir() == "" || !strings.Contains(a.StateDir(), "nonexistent") {
-		t.Errorf("state dir is %q — it should point at nothing", a.StateDir())
+	if dir := a.Archive().Dir(); !strings.Contains(dir, "nonexistent") {
+		t.Errorf("state dir is %q — it should point at nothing", dir)
 	}
 	if len(a.Tasks) != len(sampleTasks) {
 		t.Errorf("built %d tasks from %d", len(a.Tasks), len(sampleTasks))

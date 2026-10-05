@@ -60,7 +60,7 @@ func runHeadless(dir, target string, argv []string, quickfix bool) error {
 
 	// Store it just as the TUI would: a run is a run whichever way it was started, and
 	// `--run` output you cannot search later would be a trap.
-	path, err := store.Save(store.StateDir(), dir, r)
+	path, err := store.Default().Save(dir, r)
 	switch {
 	case err != nil && quickfix:
 		fmt.Fprintf(os.Stderr, "taskui: not saved: %v\n", err)

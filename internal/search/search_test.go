@@ -113,14 +113,14 @@ func TestFirstMatchGivesAHighlightRange(t *testing.T) {
 
 // The same query, run over the archive, must find the same thing it found live.
 func TestTheSameQueryWorksOnStoredRuns(t *testing.T) {
-	base := t.TempDir()
+	archive := store.At(t.TempDir())
 	r := runWith([][2]string{{"a", "error: boom"}, {"b", "all clear"}})
 	r.Finish(1)
-	if _, err := store.Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
 
-	results, dropped := InStore(base, mustQuery(t, "error"), 100, Scope{})
+	results, dropped := InStore(archive, mustQuery(t, "error"), 100, Scope{})
 	if dropped != 0 {
 		t.Errorf("dropped = %d", dropped)
 	}
@@ -141,14 +141,14 @@ func TestTheSameQueryWorksOnStoredRuns(t *testing.T) {
 
 // A run with no hits is absent rather than present-and-empty.
 func TestRunsWithoutHitsAreOmitted(t *testing.T) {
-	base := t.TempDir()
+	archive := store.At(t.TempDir())
 	r := runWith([][2]string{{"a", "all clear"}})
 	r.Finish(0)
-	if _, err := store.Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
 
-	results, _ := InStore(base, mustQuery(t, "error"), 100, Scope{})
+	results, _ := InStore(archive, mustQuery(t, "error"), 100, Scope{})
 	if len(results) != 0 {
 		t.Errorf("results = %v", results)
 	}
@@ -156,17 +156,17 @@ func TestRunsWithoutHitsAreOmitted(t *testing.T) {
 
 // Truncation has to be reported, or a capped result reads as a complete one.
 func TestPerRunTruncationIsCounted(t *testing.T) {
-	base := t.TempDir()
+	archive := store.At(t.TempDir())
 	r := run.Detached("all", run.GraphFrom(run.Edge{Parent: "all"}))
 	for i := range 10 {
 		r.Feed("all", fmt.Sprintf("error %d", i))
 	}
 	r.Finish(1)
-	if _, err := store.Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
 
-	results, dropped := InStore(base, mustQuery(t, "error"), 4, Scope{})
+	results, dropped := InStore(archive, mustQuery(t, "error"), 4, Scope{})
 	if len(results[0].Hits) != 4 {
 		t.Errorf("hits = %d", len(results[0].Hits))
 	}
@@ -184,7 +184,7 @@ func TestAnInvalidPatternIsAnErrorNotAPanic(t *testing.T) {
 // A single line longer than [bufio.Scanner]'s 64KB token cap must not stop the search dead —
 // a run that dumped a minified bundle would otherwise lose everything after it.
 func TestAVeryLongLineDoesNotTruncateTheSearch(t *testing.T) {
-	base := t.TempDir()
+	archive := store.At(t.TempDir())
 	r := run.Detached("a", run.GraphFrom(run.Edge{Parent: "a"}))
 	long := make([]byte, 200_000)
 	for i := range long {
@@ -193,11 +193,11 @@ func TestAVeryLongLineDoesNotTruncateTheSearch(t *testing.T) {
 	r.Feed("a", string(long))
 	r.Feed("a", "error: after the blob")
 	r.Finish(1)
-	if _, err := store.Save(base, "/proj", r); err != nil {
+	if _, err := archive.Save("/proj", r); err != nil {
 		t.Fatal(err)
 	}
 
-	results, _ := InStore(base, mustQuery(t, "after the blob"), 100, Scope{})
+	results, _ := InStore(archive, mustQuery(t, "after the blob"), 100, Scope{})
 	if len(results) != 1 || len(results[0].Hits) != 1 {
 		t.Fatalf("the line past the blob went missing: %v", results)
 	}
@@ -212,18 +212,18 @@ func TestAVeryLongLineDoesNotTruncateTheSearch(t *testing.T) {
 // know it is `backend:test` that has been failing, every hit from every other task is
 // something to scroll past.
 func TestScopingTheSearchToOneTask(t *testing.T) {
-	base := t.TempDir()
-	archive(t, base, "/proj", 0, [][2]string{
+	archive := store.At(t.TempDir())
+	storeRun(t, archive, "/proj", 0, [][2]string{
 		{"a", "FAIL: TestOrderTotal"},
 		{"b", "FAIL: broken link"},
 	})
 
-	all, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{})
+	all, _ := InStore(archive, mustQuery(t, "FAIL"), 50, Scope{})
 	if hits := countHits(all); hits != 2 {
 		t.Fatalf("unscoped found %d hits, want 2", hits)
 	}
 
-	scoped, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{Task: "a"})
+	scoped, _ := InStore(archive, mustQuery(t, "FAIL"), 50, Scope{Task: "a"})
 	if hits := countHits(scoped); hits != 1 {
 		t.Errorf("scoped found %d hits, want just the one task's", hits)
 	}
@@ -237,11 +237,11 @@ func TestScopingTheSearchToOneTask(t *testing.T) {
 }
 
 func TestScopingTheSearchByAge(t *testing.T) {
-	base := t.TempDir()
-	archive(t, base, "/proj", 3*24*time.Hour, [][2]string{{"a", "FAIL old"}})
-	archive(t, base, "/proj", time.Hour, [][2]string{{"a", "FAIL new"}})
+	archive := store.At(t.TempDir())
+	storeRun(t, archive, "/proj", 3*24*time.Hour, [][2]string{{"a", "FAIL old"}})
+	storeRun(t, archive, "/proj", time.Hour, [][2]string{{"a", "FAIL new"}})
 
-	recent, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{Since: time.Now().Add(-24 * time.Hour)})
+	recent, _ := InStore(archive, mustQuery(t, "FAIL"), 50, Scope{Since: time.Now().Add(-24 * time.Hour)})
 	if hits := countHits(recent); hits != 1 {
 		t.Fatalf("found %d hits, want only the recent one", hits)
 	}
@@ -251,11 +251,11 @@ func TestScopingTheSearchByAge(t *testing.T) {
 }
 
 func TestScopingTheSearchToOneProject(t *testing.T) {
-	base := t.TempDir()
-	archive(t, base, "/proj", 0, [][2]string{{"a", "FAIL here"}})
-	archive(t, base, "/elsewhere", 0, [][2]string{{"a", "FAIL there"}})
+	archive := store.At(t.TempDir())
+	storeRun(t, archive, "/proj", 0, [][2]string{{"a", "FAIL here"}})
+	storeRun(t, archive, "/elsewhere", 0, [][2]string{{"a", "FAIL there"}})
 
-	mine, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{Project: "/proj"})
+	mine, _ := InStore(archive, mustQuery(t, "FAIL"), 50, Scope{Project: "/proj"})
 	if hits := countHits(mine); hits != 1 {
 		t.Errorf("found %d hits, want only this project's", hits)
 	}
@@ -263,23 +263,23 @@ func TestScopingTheSearchToOneProject(t *testing.T) {
 
 // The zero Scope is what InStore has always done, and must stay that way.
 func TestAnEmptyScopeLooksAtEverything(t *testing.T) {
-	base := t.TempDir()
-	archive(t, base, "/proj", 0, [][2]string{{"a", "FAIL one"}, {"b", "FAIL two"}})
+	archive := store.At(t.TempDir())
+	storeRun(t, archive, "/proj", 0, [][2]string{{"a", "FAIL one"}, {"b", "FAIL two"}})
 
-	scoped, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{})
-	unscoped, _ := InStore(base, mustQuery(t, "FAIL"), 50, Scope{})
+	scoped, _ := InStore(archive, mustQuery(t, "FAIL"), 50, Scope{})
+	unscoped, _ := InStore(archive, mustQuery(t, "FAIL"), 50, Scope{})
 	if countHits(scoped) != countHits(unscoped) {
 		t.Errorf("scoped %d, unscoped %d", countHits(scoped), countHits(unscoped))
 	}
 }
 
-// archive stores a finished run, aged so several in one test second get distinct ids.
-func archive(t *testing.T, base, project string, ago time.Duration, lines [][2]string) {
+// storeRun stores a finished run, aged so several in one test second get distinct ids.
+func storeRun(t *testing.T, archive store.Archive, project string, ago time.Duration, lines [][2]string) {
 	t.Helper()
 	r := runWith(lines)
 	r.Finish(1)
 	r.Duration, r.HasDuration = ago, true
-	if _, err := store.Save(base, project, r); err != nil {
+	if _, err := archive.Save(project, r); err != nil {
 		t.Fatal(err)
 	}
 }

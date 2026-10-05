@@ -105,12 +105,12 @@ func listThemes(cmd *cobra.Command) error {
 
 // searchStored greps every stored run, newest first, grouped by run and task.
 func searchStored(pattern string, scope search.Scope) error {
-	base := store.StateDir()
+	archive := store.Default()
 	query, err := search.NewQuery(pattern)
 	if err != nil {
 		return err
 	}
-	results, dropped := search.InStore(base, query, 50, scope)
+	results, dropped := search.InStore(archive, query, 50, scope)
 
 	if len(results) == 0 {
 		where := ""
@@ -120,7 +120,7 @@ func searchStored(pattern string, scope search.Scope) error {
 		if !scope.Since.IsZero() {
 			where += " since " + scope.Since.Format("2006-01-02 15:04")
 		}
-		fmt.Printf("no matches for /%s/%s in %d stored runs\n", pattern, where, len(store.List(base)))
+		fmt.Printf("no matches for /%s/%s in %d stored runs\n", pattern, where, len(archive.List()))
 		return nil
 	}
 
@@ -227,7 +227,7 @@ func printGraph(out io.Writer, root, rootTask string) {
 // Tab-separated and one run per line, like `--list`, so the answer to "when did this start
 // failing" is available to a script and not only to a pair of eyes.
 func printTimeline(out io.Writer, root, taskName string) error {
-	points := store.Timeline(store.StateDir(), root, taskName)
+	points := store.Default().Timeline(root, taskName)
 	if len(points) == 0 {
 		return fmt.Errorf("no stored runs of %q in this project", taskName)
 	}
@@ -250,16 +250,16 @@ func printTimeline(out io.Writer, root, taskName string) error {
 // line numbers are on every row instead and a header that has to be cross-referenced with
 // the rows below it is a worse answer than the rows carrying it themselves.
 func printDiff(out io.Writer, root, taskName string) error {
-	base := store.StateDir()
-	points := store.Timeline(base, root, taskName)
+	archive := store.Default()
+	points := archive.Timeline(root, taskName)
 	if len(points) == 0 {
 		return fmt.Errorf("no stored runs of %q in this project", taskName)
 	}
 	newest := points[0]
-	older, ok := store.LastGreen(base, root, taskName, newest.RunID, 0)
+	older, ok := archive.LastGreen(root, taskName, newest.RunID, 0)
 	against := "when it last passed"
 	if !ok {
-		older, ok = store.Previous(base, root, taskName, newest.RunID, 0)
+		older, ok = archive.Previous(root, taskName, newest.RunID, 0)
 		against = "the run before"
 		switch {
 		case !ok && len(points) > 1:
@@ -270,7 +270,7 @@ func printDiff(out io.Writer, root, taskName string) error {
 		}
 	}
 
-	edits := diff.Lines(store.Output(base, older), store.Output(base, newest))
+	edits := diff.Lines(archive.Output(older), archive.Output(newest))
 	stat := diff.Count(edits)
 	fmt.Fprintf(out, "--- %s  (%s, %s)\n", taskName, against, app.Ago(older.WhenUnix))
 	fmt.Fprintf(out, "+++ %s  (%s)\n", taskName, app.Ago(newest.WhenUnix))
@@ -295,7 +295,7 @@ func printDiff(out io.Writer, root, taskName string) error {
 // Exits non-zero when it finds any, so it composes into a script the way a check should —
 // `taskui --flaky || echo "look into it"`.
 func printFlaky(out io.Writer, root string) error {
-	flakes := store.Flaky(store.StateDir(), root)
+	flakes := store.Default().Flaky(root)
 	if len(flakes) == 0 {
 		fmt.Fprintln(out, "-- no task has gone both ways at one commit")
 		return nil

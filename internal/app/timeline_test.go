@@ -30,7 +30,7 @@ func archived(t *testing.T, a *App, task string, ok bool, ago int, lines ...stri
 	r.Finish(exit)
 	r.Duration = time.Duration(ago) * time.Second
 	r.HasDuration = true
-	if _, err := store.Save(a.StateDir(), a.Root, r); err != nil {
+	if _, err := a.Archive().Save(a.Root, r); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -340,7 +340,7 @@ func editable(t *testing.T, line string) *App {
 	}
 
 	a := New(pivot.Fixture([]string{"lint"}), root)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	r := run.Detached("lint", run.GraphFrom(run.Edge{Parent: "lint"}))
 	r.Feed("lint", "starting")
 	r.Feed("lint", line)
@@ -593,7 +593,7 @@ func TestEInADiffFallsBackToTheDiffItself(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := New(pivot.Fixture([]string{"suite"}), root)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	archived(t, a, "suite", true, 300, "running", "PASS")
 	archived(t, a, "suite", false, 200, "running", "    beta_test.go:42: want 3, got 4", "FAIL")
 
@@ -635,7 +635,7 @@ func TestTheDiffFallbackPrefersTheLinesThatArrived(t *testing.T) {
 		}
 	}
 	a := New(pivot.Fixture([]string{"suite"}), root)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	// `old.go:1` is on a line both runs printed and comes first; `new.go:9` only arrived.
 	archived(t, a, "suite", true, 300, "note: old.go:1: fine", "PASS")
 	archived(t, a, "suite", false, 200, "note: old.go:1: fine", "boom at new.go:9", "FAIL")
@@ -695,7 +695,7 @@ func TestPressingEReadsThePathFromWhereTheTaskRan(t *testing.T) {
 		}
 	}
 	a := New(pivot.Fixture([]string{"site:build"}), root)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.Details = map[string]task.Detail{
 		"site:build": {Where: task.Where{File: filepath.Join(root, "site/Taskfile.yml"), Line: 3}},
 	}
@@ -777,7 +777,7 @@ func TestATimelineDiffRefusesAPrunedRun(t *testing.T) {
 	archived(t, a, "backend:lint", true, 300, "checking", "all good")
 	archived(t, a, "backend:lint", false, 200, "checking", "boom")
 	// Keep only the newest run's output, as 50 later runs anywhere would.
-	if _, err := store.Prune(a.StateDir(), 1); err != nil {
+	if _, err := a.Archive().Prune(1); err != nil {
 		t.Fatal(err)
 	}
 

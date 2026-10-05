@@ -66,7 +66,7 @@ type outcomeJSON struct {
 // Here there is no frame to get out of the way of, so it is waited for — and if the call
 // fails, the listing goes out without those two fields rather than not at all.
 func printTaskList(out io.Writer, root string, tasks []task.Task) error {
-	outcomes := store.LastOutcomes(store.StateDir(), root)
+	outcomes := store.Default().LastOutcomes(root)
 	details, err := task.Details(root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "taskui: %v\n", err)
@@ -100,7 +100,7 @@ func printTaskList(out io.Writer, root string, tasks []task.Task) error {
 
 // printTimelineJSON is `--timeline <task> --json`: the same points the TUI's timeline draws.
 func printTimelineJSON(out io.Writer, root, taskName string) error {
-	points := store.Timeline(store.StateDir(), root, taskName)
+	points := store.Default().Timeline(root, taskName)
 	if len(points) == 0 {
 		return fmt.Errorf("no stored runs of %q in this project", taskName)
 	}
@@ -149,7 +149,7 @@ func streamRun(out io.Writer, dir, target string, argv []string) error {
 	exit := r.ExitCode()
 	// Saved like any other run: a run is a run whichever front end started it, and one that
 	// left nothing behind could not be searched, diffed or timelined afterwards.
-	saved, err := store.Save(store.StateDir(), dir, r)
+	saved, err := store.Default().Save(dir, r)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "taskui: not saved: %v\n", err)
 	}

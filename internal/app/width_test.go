@@ -10,6 +10,7 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/romanidis/taskui/internal/run"
+	"github.com/romanidis/taskui/internal/store"
 	"github.com/romanidis/taskui/internal/task"
 	"github.com/romanidis/taskui/internal/theme"
 )
@@ -217,7 +218,7 @@ func TestATopLevelDescriptionWrapsWithoutAGuide(t *testing.T) {
 		{Name: "test", Desc: "runs the suite"},
 	}
 	a := New(tasks, "/tmp/repo")
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	g := a.Theme.Glyphs
 	for _, row := range a.RenderHeadless(70, 12) {
 		if strings.Contains(row, "style") && strings.Contains(row, g.GuideVertical) {

@@ -35,7 +35,7 @@ func viewSample(t *testing.T) *App {
 	tasks[5].Dangerous = true
 	tasks[1].Desc = "Lint all source code"
 	a := New(tasks, "/tmp/atlas")
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	return a
 }
 
@@ -46,7 +46,7 @@ func manyTasks(t *testing.T, n int) *App {
 		names = append(names, fmt.Sprintf("task%03d", i))
 	}
 	a := New(pivot.Fixture(names), "/tmp/repo")
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.SetFoldAll(true)
 	return a
 }
@@ -611,7 +611,7 @@ func TestDescriptionsWrapRatherThanTruncate(t *testing.T) {
 	tasks := pivot.Fixture([]string{"alpha"})
 	tasks[0].Desc = "A description long enough that it cannot possibly fit on one line"
 	a := New(tasks, "/tmp/repo")
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.SetFoldAll(true)
 
 	narrow := strings.Join(a.RenderHeadless(56, 10), "\n")
@@ -627,7 +627,7 @@ func TestAWrappedDescriptionMakesItsRowTaller(t *testing.T) {
 	build := func(desc string) *App {
 		tasks := []task.Task{{Name: "alpha", Desc: desc}}
 		a := New(tasks, "/tmp/repo")
-		a.SetStateDir(t.TempDir())
+		a.SetArchive(store.At(t.TempDir()))
 		a.SetFoldAll(true)
 		return a
 	}
@@ -746,7 +746,7 @@ func TestDescriptionsAllStartInTheSameColumn(t *testing.T) {
 	tasks[2].Dangerous = true
 
 	a := New(tasks, "/tmp/repo")
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.SetFoldAll(true)
 	a.Outcomes = map[string]store.Outcome{"gamma": {Ok: false, WhenUnix: 1}}
 
@@ -873,7 +873,7 @@ func TestAWrappedDescriptionCarriesTheGuideDown(t *testing.T) {
 		tasks[i].Desc = long
 	}
 	a := New(tasks, "/tmp/repo")
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.SetFoldAll(true)
 
 	lines := a.RenderHeadless(56, 12)
@@ -905,7 +905,7 @@ func TestAWrappedDescriptionStaysInItsColumn(t *testing.T) {
 	tasks := pivot.Fixture([]string{"group:one"})
 	tasks[0].Desc = "A description long enough that it has to wrap onto a second line"
 	a := New(tasks, "/tmp/repo")
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.SetFoldAll(true)
 
 	// Columns, not byte offsets: a guide glyph is three bytes and one column, and the row

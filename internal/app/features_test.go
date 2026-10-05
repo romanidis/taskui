@@ -337,7 +337,7 @@ func TestEOpensTheTasksOwnDefinition(t *testing.T) {
 	}
 
 	a := New(pivot.Fixture([]string{"backend:lint"}), root)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.Details = map[string]task.Detail{
 		"backend:lint": {Where: task.Where{File: taskfile, Line: 42}},
 	}
@@ -821,7 +821,7 @@ tasks:
 		t.Skip(err)
 	}
 	a := New(tasks, dir)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	a.StartCoverage()
 	a.AwaitCoverage(30 * time.Second)
 	t.Logf("release reaches %v", a.calls.Reachable("release"))
@@ -886,7 +886,7 @@ tasks:
 		t.Skip(err)
 	}
 	a := New(tasks, dir)
-	a.SetStateDir(t.TempDir())
+	a.SetArchive(store.At(t.TempDir()))
 	defer a.KillAll()
 
 	a.Screen = ScreenRun
