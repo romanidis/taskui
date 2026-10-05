@@ -196,3 +196,44 @@ func TestDiffSaysWhenTheEarlierOutputWasPruned(t *testing.T) {
 		t.Errorf("err = %v — there are two stored runs; their output is what is gone", err)
 	}
 }
+
+// Two slots: `ci` (slow, fails) starts first, `fmt` (quick, passes) starts after it and
+// finishes before it. When `ci`'s exit event reaches the Neovim plugin, it asks
+// `taskui <dir> --quickfix` with no task and no run id — and "the most recent run" is ranked
+// by start time, so the answer is `fmt`'s, which passed: an empty list, and the plugin
+// silently leaves the quickfix list alone for the failure it was told about.
+func TestQuickfixReadsTheRunThatFinishedLast(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Cleanup(func() { opts.quickfix = false; opts.searchTask = "" })
+
+	failing := failedRun(t, dir)
+	failing.Started = time.Now().Add(-30 * time.Second)
+	failing.Duration = 30 * time.Second
+
+	passing := run.Detached("fmt", run.GraphFrom(run.Edge{Parent: "fmt"}))
+	passing.Feed("fmt", "formatted 3 files")
+	passing.Started = time.Now().Add(-5 * time.Second)
+	passing.Finish(0)
+	// Done in two seconds: it ended three seconds ago, before ci did.
+	passing.Duration = 2 * time.Second
+
+	// Saved in the order they finished: fmt first, then ci — whose exit event is the one
+	// that triggers the plugin's --quickfix.
+	if _, err := store.Save(store.StateDir(), dir, passing); err != nil {
+		t.Fatal(err)
+	}
+	// A run is saved as it finishes, and the archive dates it to the second.
+	time.Sleep(1100 * time.Millisecond)
+	if _, err := store.Save(store.StateDir(), dir, failing); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := execute(t, "--quickfix", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "order_test.go:88:12") {
+		t.Errorf("the run that just failed is not in the list; --quickfix answered with %q", out)
+	}
+}

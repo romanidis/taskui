@@ -24,26 +24,38 @@ import (
 	"github.com/romanidis/taskui/internal/task"
 )
 
-// printQuickfix is `--quickfix`: the most recent stored run of this project, as an error
-// list. The newest run is what `--last` already means, and it is what you have just watched
-// fail.
+// printQuickfix is `--quickfix`: the stored run of this project that finished last, as an
+// error list — the one you have just watched fail.
+//
+// Finished last, not started last. With two slots, a slow `ci` started before a quick `fmt`
+// ends after it, and the Neovim plugin asks for this the moment `ci`'s exit arrives: by start
+// time the answer was `fmt`'s, which passed, and the failure it was told about never reached
+// the list.
 func printQuickfix(out io.Writer, root, only string) error {
 	base := store.StateDir()
+	var latest *store.Manifest
+	var latestEnd int64 // milliseconds
 	for _, m := range store.List(base) {
 		// The ledger remembers further back than the output is kept, and a quickfix list is
-		// built out of the text. Walk past what is only remembered to the newest run there is
-		// still something to read.
+		// built out of the text. Walk past what is only remembered to the runs there is still
+		// something to read.
 		if !store.SameDir(m.Dir, root) || !store.HasOutput(base, m.ID) {
 			continue
 		}
-		r, err := store.Load(base, m)
-		if err != nil {
-			return fmt.Errorf("reading run %s: %w", m.ID, err)
+		// List is newest-started first, so a tie keeps the later start.
+		if end := m.StartedUnix*1000 + m.DurationMs; latest == nil || end > latestEnd {
+			latest, latestEnd = &m, end
 		}
-		writeQuickfix(out, r, m.Dir, only)
-		return nil
 	}
-	return fmt.Errorf("no stored runs for this project yet")
+	if latest == nil {
+		return fmt.Errorf("no stored runs for this project yet")
+	}
+	r, err := store.Load(base, *latest)
+	if err != nil {
+		return fmt.Errorf("reading run %s: %w", latest.ID, err)
+	}
+	writeQuickfix(out, r, latest.Dir, only)
+	return nil
 }
 
 // writeQuickfix prints one run's failures and returns how many entries it wrote.
