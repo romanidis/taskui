@@ -1,8 +1,6 @@
 package app
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // ConfirmReason says why a run is waiting for a yes.
 type ConfirmReason int
@@ -45,21 +43,13 @@ type ConfirmRun struct {
 	Calls []string
 }
 
-// ConfirmRunMarked is the marked set, started at once. Asking per task would put a prompt
-// between each pair of starts, which is not a confirmation, it is an obstacle course.
-type ConfirmRunMarked struct {
-	// Names is the set, in the order it starts.
-	Names []string
-	// Dangerous is the part of it on the danger list, named in the question: the whole
-	// reason this is one question rather than several is that they are in a batch with
+// ConfirmRunSet is several tasks started at once, the marked set or the failures of the
+// run on screen, asked about as one question.
+type ConfirmRunSet struct {
+	Set RunSet
+	// Dangerous is the part of the set that reaches production, named in the question: the
+	// whole reason this is one question rather than several is that they are in a set with
 	// tasks that are not.
-	Dangerous []string
-}
-
-// ConfirmRerunFailed is the tasks that broke in the run on screen, started again at once —
-// the same question as a marked batch, about a set the run chose rather than you.
-type ConfirmRerunFailed struct {
-	Names     []string
 	Dangerous []string
 }
 
@@ -81,11 +71,10 @@ type ConfirmStopAll struct {
 	Live int
 }
 
-func (ConfirmRun) isConfirm()         {}
-func (ConfirmRunMarked) isConfirm()   {}
-func (ConfirmRerunFailed) isConfirm() {}
-func (ConfirmQuit) isConfirm()        {}
-func (ConfirmStopAll) isConfirm()     {}
+func (ConfirmRun) isConfirm()     {}
+func (ConfirmRunSet) isConfirm()  {}
+func (ConfirmQuit) isConfirm()    {}
+func (ConfirmStopAll) isConfirm() {}
 
 // confirm is the question to ask before starting inv.
 func (inv invocation) confirm(why ConfirmReason) ConfirmRun {
@@ -119,10 +108,8 @@ func (a *App) ConfirmYes() bool {
 		if err := a.start(c.invocation()); err != nil {
 			a.Status = fmt.Sprintf("could not start `task %s`: %v", c.Name, err)
 		}
-	case ConfirmRunMarked:
-		a.startMarked(c.Names)
-	case ConfirmRerunFailed:
-		a.startBatch(c.Names)
+	case ConfirmRunSet:
+		a.startRunSet(c.Set)
 	case ConfirmStopAll:
 		a.StopAll()
 	case ConfirmQuit:
@@ -135,7 +122,7 @@ func (a *App) ConfirmNo() {
 	pending := a.Confirm
 	a.Confirm = nil
 	switch pending.(type) {
-	case ConfirmRun, ConfirmRunMarked, ConfirmRerunFailed:
+	case ConfirmRun, ConfirmRunSet:
 		a.Status = "not run"
 	case ConfirmQuit, ConfirmStopAll:
 		a.Status = "left running"

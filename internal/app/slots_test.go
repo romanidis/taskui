@@ -177,7 +177,10 @@ func TestSixLiveSlotsTakeNothingNew(t *testing.T) {
 
 func TestDecliningABatchSaysItWasNotRun(t *testing.T) {
 	a := sample(t)
-	a.Confirm = ConfirmRunMarked{Names: []string{"deploy"}, Dangerous: []string{"deploy"}}
+	a.Confirm = ConfirmRunSet{
+		Set:       RunSet{Runs: []invocation{{name: "deploy"}}, Marked: true},
+		Dangerous: []string{"deploy"},
+	}
 	a.ConfirmNo()
 	if a.Status != "not run" {
 		t.Errorf("status = %q", a.Status)

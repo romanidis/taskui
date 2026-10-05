@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -536,7 +537,8 @@ func TestAMarkedSetThatCallsProductionAsksOnce(t *testing.T) {
 	a := dangerousCaller(t)
 	a.marked = map[string]bool{"build": true, "release": true}
 	a.RunMarked()
-	if c, ok := a.Confirm.(ConfirmRunMarked); !ok || !reflect.DeepEqual(c.Dangerous, []string{"release"}) {
+	c, ok := a.Confirm.(ConfirmRunSet)
+	if !ok || !c.Set.Marked || !reflect.DeepEqual(c.Dangerous, []string{"release"}) {
 		t.Errorf("confirm = %+v", a.Confirm)
 	}
 }
@@ -553,8 +555,8 @@ func TestRerunningAFailedProductionTaskAsksFirst(t *testing.T) {
 	a.Screen = ScreenRun
 
 	press(a, Char('F'))
-	c, ok := a.Confirm.(ConfirmRerunFailed)
-	if !ok || !reflect.DeepEqual(c.Dangerous, []string{"deploy:prod"}) {
+	c, ok := a.Confirm.(ConfirmRunSet)
+	if !ok || c.Set.Marked || !reflect.DeepEqual(c.Dangerous, []string{"deploy:prod"}) {
 		t.Fatalf("confirm = %+v", a.Confirm)
 	}
 	lines := a.RenderHeadless(100, 12)
@@ -831,6 +833,33 @@ tasks:
 			"`release` calls deploy:apply (matches deploy:* in .taskui-danger) but started without asking; running = %q",
 			rootOf(a),
 		)
+	}
+}
+
+// `deploy ENV=staging` failed. `⇧F` re-runs what broke — the root itself — and it used to
+// start each failure bare, so it went out as `task deploy`: the arguments `r` is careful to
+// keep were dropped, and a default ENV is whatever the Taskfile says.
+func TestRerunningFailuresKeepsTheRunsArguments(t *testing.T) {
+	a := appWith(t, []string{"deploy"})
+	r := run.Detached("deploy", run.GraphFrom(run.Edge{Parent: "deploy"}))
+	r.Args = []string{"ENV=staging"}
+	r.Feed("deploy", "boom")
+	r.ApplyFailed("deploy")
+	r.Finish(1)
+	a.OpenRunForTest(r)
+	a.Screen = ScreenRun
+
+	press(a, Char('F'))
+	defer a.KillAll()
+	if a.Confirm != nil {
+		t.Fatalf("unexpected question %+v", a.Confirm)
+	}
+	got := a.slotRun("deploy")
+	if got == nil || got == r {
+		t.Fatalf("nothing re-ran: status %q", a.Status)
+	}
+	if !slices.Equal(got.Args, []string{"ENV=staging"}) {
+		t.Errorf("⇧F re-ran `task deploy %v`, want the failed run's `ENV=staging`", got.Args)
 	}
 }
 

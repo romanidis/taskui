@@ -501,8 +501,14 @@ func TestEveryScreenRendersAtEveryAwkwardSize(t *testing.T) {
 			for _, pending := range []Confirm{
 				ConfirmRun{Name: "deploy:backend", Args: []string{"--force"}, Reason: TouchesProduction},
 				ConfirmRun{Name: "release", Reason: CallsProduction, Calls: []string{"deploy:backend", "db:migrate"}},
-				ConfirmRunMarked{Names: []string{"deploy:backend", "lint"}, Dangerous: []string{"deploy:backend"}},
-				ConfirmRerunFailed{Names: []string{"deploy:backend"}, Dangerous: []string{"deploy:backend"}},
+				ConfirmRunSet{
+					Set:       RunSet{Runs: []invocation{{name: "deploy:backend"}, {name: "lint"}}, Marked: true},
+					Dangerous: []string{"deploy:backend"},
+				},
+				ConfirmRunSet{
+					Set:       RunSet{Runs: []invocation{{name: "deploy:backend"}}},
+					Dangerous: []string{"deploy:backend"},
+				},
 				ConfirmQuit{Live: 3},
 				ConfirmStopAll{Live: 1},
 			} {

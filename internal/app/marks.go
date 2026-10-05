@@ -65,86 +65,98 @@ func (a *App) ClearMarks() {
 	a.Status = "marks cleared"
 }
 
-// RunMarked starts every marked task, each in its own slot.
+// RunMarked starts every marked task at once, each in its own slot, with whatever `F` and
+// `I` have armed.
+func (a *App) RunMarked() {
+	var runs []invocation
+	for _, name := range a.Marked() {
+		runs = append(runs, a.armed(name, nil))
+	}
+	if len(runs) > 0 {
+		a.requestRunSet(RunSet{Runs: runs, Marked: true})
+	}
+}
+
+// RunSet is several tasks started at once, each in its own slot: the marked set, or the
+// tasks that failed in the run on screen. Each goes out with its own arguments and flags.
+type RunSet struct {
+	Runs []invocation
+	// Marked says the set is the marks, which are spent once it has gone out. A run's
+	// failures leave the marks alone: they are a set you chose, and what broke in a run is
+	// not that set.
+	Marked bool
+}
+
+// String is the set the way the footer names it: "3 marked tasks", "1 failed task".
+func (s RunSet) String() string {
+	kind := "failed"
+	if s.Marked {
+		kind = "marked"
+	}
+	return fmt.Sprintf("%d %s %s", len(s.Runs), kind, plural(len(s.Runs), "task", "tasks"))
+}
+
+// requestRunSet starts a RunSet, unless none of it can start or something needs a yes first.
 //
 // Capped at the slots there are, and it says what it left behind rather than silently
-// starting the first six: a batch that quietly did less than you asked is worse than one
-// that refused.
-func (a *App) RunMarked() {
-	names := a.Marked()
-	if len(names) == 0 {
-		return
-	}
-
-	if !a.anyStartable(names) {
-		a.Status = fmt.Sprintf("every slot is taken — ⇧X closes one (%d marked)", len(names))
-		return
-	}
-
-	// Anything on the danger list turns the whole batch into one question. Asking per task
-	// would put a modal prompt between each pair of starts, which is not a confirmation, it
-	// is an obstacle course.
-	if a.Confirm == nil {
-		if dangerous := a.touchingProduction(names); len(dangerous) > 0 {
-			a.Confirm = ConfirmRunMarked{Names: names, Dangerous: dangerous}
-			return
+// starting the first six: a set that quietly did less than you asked is worse than one that
+// refused. Anything in it that touches production, itself or through something it calls,
+// turns the whole set into one question. Asking per task would put a modal prompt between
+// each pair of starts, which is not a confirmation, it is an obstacle course.
+func (a *App) requestRunSet(set RunSet) {
+	var dangerous []string
+	toStart, canStart := 0, 0
+	for _, inv := range set.Runs {
+		if a.touchesProduction(inv.name) {
+			dangerous = append(dangerous, inv.name)
+		}
+		// Only a live task is left alone: one in a finished slot reuses it.
+		if a.liveSlot(inv.name) {
+			continue
+		}
+		toStart++
+		if a.slotAvailable(inv.name) {
+			canStart++
 		}
 	}
-	a.Confirm = nil
-	a.startMarked(names)
-}
 
-// touchingProduction is the part of a batch that reaches the danger list, directly or
-// through something it calls.
-func (a *App) touchingProduction(names []string) []string {
-	var out []string
-	for _, name := range names {
-		if a.touchesProduction(name) {
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
-// anyStartable reports whether any of names is not running yet and would find a slot.
-// Only a live task is left alone: one in a finished slot reuses it.
-func (a *App) anyStartable(names []string) bool {
-	for _, name := range names {
-		if !a.liveSlot(name) && a.slotAvailable(name) {
-			return true
-		}
-	}
-	return false
-}
-
-// startMarked starts the marked set past every question, and spends the marks.
-func (a *App) startMarked(names []string) {
-	if a.startBatch(names) {
-		a.marked = nil
+	switch {
+	case toStart == 0:
+		// Said before the slots are: a set that is all going needs no slot, and "every slot
+		// is taken" sent you to close one for nothing.
+		a.Status = "those are all running already"
+	case canStart == 0:
+		a.Status = fmt.Sprintf("every slot is taken — ⇧X closes one (%s)", set)
+	case len(dangerous) > 0:
+		a.Confirm = ConfirmRunSet{Set: set, Dangerous: dangerous}
+	default:
+		a.startRunSet(set)
 	}
 }
 
-// startBatch is the part that actually runs things, past every question. It reports whether
-// it got to the end of the list.
+// startRunSet starts a RunSet past every question, and spends the marks if it was them.
 //
 // Each task is asked about as it comes rather than against a count taken up front: the
 // count kept disagreeing with what claiming a slot actually does, and "started 1 task"
 // with nothing started was the result.
-func (a *App) startBatch(names []string) bool {
+func (a *App) startRunSet(set RunSet) {
 	started, skipped := 0, 0
-	for _, name := range names {
-		if a.liveSlot(name) {
+	for _, inv := range set.Runs {
+		if a.liveSlot(inv.name) {
 			continue
 		}
-		if !a.slotAvailable(name) {
+		if !a.slotAvailable(inv.name) {
 			skipped++
 			continue
 		}
-		if err := a.StartRunWith(name, nil); err != nil {
-			a.Status = fmt.Sprintf("could not start `task %s`: %v", name, err)
-			return false
+		if err := a.start(inv); err != nil {
+			a.Status = fmt.Sprintf("could not start `task %s`: %v", inv.name, err)
+			return
 		}
 		started++
+	}
+	if set.Marked {
+		a.marked = nil
 	}
 
 	switch {
@@ -155,7 +167,6 @@ func (a *App) startBatch(names []string) bool {
 	default:
 		a.Status = fmt.Sprintf("started %d %s", started, plural(started, "task", "tasks"))
 	}
-	return true
 }
 
 // FailedTasks are the tasks of the run on screen that did not pass, in the order the run
@@ -213,18 +224,18 @@ func (a *App) RerunFailed() {
 		return
 	}
 
-	if !a.anyStartable(failed) {
-		a.Status = fmt.Sprintf("every slot is taken — ⇧X closes one (%s failed)",
-			plural(len(failed), "1 task", fmt.Sprintf("%d tasks", len(failed))))
-		return
+	// Each failure goes out the way it ran in the run it failed in, and the task that run was
+	// started as gets its arguments back. Started bare and with whatever was armed instead,
+	// `deploy ENV=staging` failing came back as `task deploy`.
+	reruns := make([]invocation, 0, len(failed))
+	for _, name := range failed {
+		var args []string
+		if name == a.Run.Root {
+			args = a.Run.Args
+		}
+		reruns = append(reruns, repeating(name, args, a.Run))
 	}
-	// The same stop a marked batch gets. A `deploy:prod` that failed inside `release` is
-	// still `deploy:prod`, and the key that restarts it is one keypress from the run it
-	// failed in. The marks are left alone: they are a set you chose, and what broke in a
-	// run is not that set.
-	if dangerous := a.touchingProduction(failed); len(dangerous) > 0 {
-		a.Confirm = ConfirmRerunFailed{Names: failed, Dangerous: dangerous}
-		return
-	}
-	a.startBatch(failed)
+	// The same production question a marked set gets. A `deploy:prod` that failed inside
+	// `release` is still `deploy:prod`, and this key is one keypress from the run it failed in.
+	a.requestRunSet(RunSet{Runs: reruns})
 }

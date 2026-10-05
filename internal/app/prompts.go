@@ -56,19 +56,10 @@ func (a *App) confirmBar() (line, bool) {
 					plural(n, "1 detached run", fmt.Sprintf("%d detached runs", n)),
 				)
 		}
-	case ConfirmRunMarked:
-		subject = fmt.Sprintf("%d marked tasks", len(c.Names))
-		if len(c.Names) == 1 {
-			subject = "1 marked task"
-		}
+	case ConfirmRunSet:
+		subject = c.Set.String()
 		// Named, because the whole reason this is one question rather than several is that
-		// the dangerous ones are in a batch with tasks that are not.
-		why = "  —  " + strings.Join(c.Dangerous, ", ") + " touches production.  "
-	case ConfirmRerunFailed:
-		subject = fmt.Sprintf("%d failed tasks", len(c.Names))
-		if len(c.Names) == 1 {
-			subject = "1 failed task"
-		}
+		// the dangerous ones are in a set with tasks that are not.
 		why = "  —  " + strings.Join(c.Dangerous, ", ") + " touches production.  "
 	case ConfirmStopAll:
 		verb, does = " stop ", " to stop"
