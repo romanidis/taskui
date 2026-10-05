@@ -26,7 +26,10 @@ type Redacting struct{ N int }
 
 // Naming carries the project's task names, ahead of the graph and the output that are
 // both spelled by them. See task.Names for why a run cannot just use what it is given.
-type Naming struct{ Names task.Names }
+type Naming struct {
+	Names  task.Names
+	Labels []task.Label
+}
 
 // LineEvent is one complete line. Task is empty when the line carried no `[name]` tag.
 type LineEvent struct {

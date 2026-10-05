@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"maps"
 	"os"
+	"regexp"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -29,6 +31,30 @@ type Project struct {
 	// directory is where the task runs unless it says otherwise, which is what a path it
 	// prints is relative to.
 	Files map[string]string
+	// Labels are the other names go-task prints a task under.
+	Labels []Label
+}
+
+// Label is a name go-task prints a task under instead of its own: its `label:`, which names
+// its command echoes and its failure, or its `prefix:`, which tags its output. Both are
+// templates, so each is a pattern — `greet-{{.WHO}}` is `greet-*`.
+//
+// Without them the two halves of one task landed on two rows: `greet` kept its output and
+// passed, a `greet-bob` nobody declared kept the commands and the failure, and the archive
+// recorded `greet` as passing when it had exited 3.
+type Label struct {
+	Pattern string
+	Task    string
+}
+
+// Labelled is the task name is a label of, if any.
+func Labelled(labels []Label, name string) (string, bool) {
+	for _, l := range labels {
+		if GlobMatch(l.Pattern, name) {
+			return l.Task, true
+		}
+	}
+	return "", false
 }
 
 // Names maps a task's name and aliases, as go-task spells them, to the name Discover lists
@@ -63,7 +89,10 @@ func ReadProject(dir string) Project {
 	var listing struct {
 		Location string `json:"location"`
 		Tasks    []struct {
-			Name     string   `json:"name"`
+			Name string `json:"name"`
+			// Task is the task's own name. Name is its `label:` when it has one, rendered
+			// with no variables set.
+			Task     string   `json:"task"`
 			Aliases  []string `json:"aliases"`
 			Location struct {
 				Taskfile string `json:"taskfile"`
@@ -72,6 +101,11 @@ func ReadProject(dir string) Project {
 	}
 	if json.Unmarshal(out, &listing) != nil {
 		return Project{}
+	}
+	for i, t := range listing.Tasks {
+		if t.Task != "" {
+			listing.Tasks[i].Name = t.Task
+		}
 	}
 
 	listed := make([]Task, 0, len(listing.Tasks))
@@ -91,13 +125,67 @@ func ReadProject(dir string) Project {
 		maps.Copy(env, topLevelEnv(f))
 	}
 	defined := map[string]string{}
+	var labels []Label
+	templates := map[string]map[string][]string{}
 	for _, t := range listing.Tasks {
-		if name := names.Canonical(t.Name); defined[name] == "" {
+		name := names.Canonical(t.Name)
+		if defined[name] == "" {
 			defined[name] = t.Location.Taskfile
 		}
+		f := t.Location.Taskfile
+		if _, read := templates[f]; !read {
+			templates[f] = labelTemplates(f)
+		}
+		for key, written := range templates[f] {
+			// The listing names a task with its include's namespace in front; the file
+			// it is written in does not.
+			if t.Name != key && !strings.HasSuffix(t.Name, ":"+key) {
+				continue
+			}
+			for _, tmpl := range written {
+				// Whatever each `{{…}}` renders to is unknown here, so it matches anything.
+				if pattern := templateAction.ReplaceAllString(tmpl, "*"); pattern != name {
+					labels = append(labels, Label{Pattern: pattern, Task: name})
+				}
+			}
+		}
 	}
-	return Project{Names: names, Env: env, Files: defined}
+	return Project{Names: names, Env: env, Files: defined, Labels: labels}
 }
+
+// labelTemplates reads each task's `label:` and `prefix:` out of one Taskfile, by the key it
+// is written under there. A task written as a bare command or a list has neither.
+func labelTemplates(file string) map[string][]string {
+	blob, err := os.ReadFile(file)
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		Tasks map[string]yaml.Node `yaml:"tasks"`
+	}
+	if yaml.Unmarshal(blob, &doc) != nil {
+		return nil
+	}
+	out := map[string][]string{}
+	for key, node := range doc.Tasks {
+		var t struct {
+			Label  string `yaml:"label"`
+			Prefix string `yaml:"prefix"`
+		}
+		if node.Kind != yaml.MappingNode || node.Decode(&t) != nil {
+			continue
+		}
+		for _, tmpl := range []string{t.Label, t.Prefix} {
+			if tmpl != "" {
+				out[key] = append(out[key], tmpl)
+			}
+		}
+	}
+	return out
+}
+
+// templateAction is one `{{…}}` in a template.
+var templateAction = regexp.MustCompile(`\{\{.*?\}\}`)
 
 // namesOf builds the resolver from go-task's own listing.
 //

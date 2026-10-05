@@ -33,7 +33,7 @@ func capture(p *process, events *queue, dir, root string, argv []string) {
 	// implying output has been checked.
 	g, summary := graph.ResolveDetailed(dir, root)
 	wg.Wait()
-	events.push(Naming{Names: project.Names})
+	events.push(Naming{Names: project.Names, Labels: project.Labels})
 	if len(g.Edges) > 0 {
 		redactor = redact.Harvest(summary, project.Env)
 		events.push(GraphReady{Graph: g})

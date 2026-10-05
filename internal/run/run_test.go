@@ -1177,3 +1177,44 @@ func TestCousinsUnderParallelDepsDoNotCloseEachOther(t *testing.T) {
 		}
 	}
 }
+
+// go-task names a labelled task's echoes and failure by its label and its output by its
+// name. Read as two tasks, `greet` kept the output and passed while a `greet-bob` nobody
+// declared kept the failure — and the archive recorded `greet`, which exited 3, as passing.
+func TestALabelledTaskIsOneTask(t *testing.T) {
+	needsGoTask(t)
+	dir := taskfile(t, "version: \"3\"\ntasks:\n  greet:\n    label: 'greet-{{.WHO}}'\n    cmds:\n"+
+		"      - echo hi {{.WHO}}\n      - exit 3\n  hello:\n    cmds:\n      - task: greet\n        vars: {WHO: bob}\n")
+	r, err := Start(dir, "hello", nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pollUntil(r, 20*time.Second, r.Finished)
+	if got := r.Tasks["greet"].Status; got != Failed {
+		t.Errorf("greet exited 3 but is %v", got)
+	}
+	if _, ok := r.Tasks["greet-bob"]; ok {
+		t.Error("the label became a task of its own")
+	}
+}
+
+// `prefix:` is the same split the other way round: the output carries the prefix.
+func TestAPrefixedTasksOutputLandsOnIt(t *testing.T) {
+	needsGoTask(t)
+	dir := taskfile(t, "version: \"3\"\ntasks:\n  c:\n    prefix: custom\n    cmds:\n      - echo c out\n")
+	r, err := Start(dir, "c", nil, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pollUntil(r, 20*time.Second, r.Finished)
+	if _, ok := r.Tasks["custom"]; ok {
+		t.Error("the prefix became a task of its own")
+	}
+	found := false
+	for _, l := range r.Tasks["c"].Lines {
+		found = found || l.Plain == "c out"
+	}
+	if !found {
+		t.Errorf("c's own output is not under c: %v", r.Tasks["c"].Lines)
+	}
+}

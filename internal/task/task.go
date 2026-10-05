@@ -472,7 +472,9 @@ func (t Task) With(d Detail) Task {
 // jsonListing is the shape of `task --list-all --json`, narrowed to what is read.
 type jsonListing struct {
 	Tasks []struct {
-		Name     string   `json:"name"`
+		Name string `json:"name"`
+		// Task is the task's own name; Name is its `label:` when it has one.
+		Task     string   `json:"task"`
 		Aliases  []string `json:"aliases"`
 		UpToDate bool     `json:"up_to_date"`
 		Location struct {
@@ -506,7 +508,13 @@ func Details(dir string) (map[string]Detail, error) {
 	for _, t := range listing.Tasks {
 		// Keyed the way Discover names them, so `dev:default` lands on `dev`; a root-level
 		// `dev` wins the collision, the same as there.
-		named, ok := canonical(Task{Name: t.Name, Aliases: t.Aliases})
+		name := t.Name
+		if t.Task != "" {
+			// A labelled task is listed by its label, and keyed by that it never found the
+			// task it describes: `e` could not open it, and its up-to-date mark never showed.
+			name = t.Task
+		}
+		named, ok := canonical(Task{Name: name, Aliases: t.Aliases})
 		if !ok {
 			continue
 		}

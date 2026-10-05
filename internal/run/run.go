@@ -98,6 +98,8 @@ type Run struct {
 	// names is how the project spells its tasks; nil for a run with no project behind it,
 	// which leaves every name as it arrived.
 	names task.Names
+	// labels are the other names go-task prints a task under: its `label:` and `prefix:`.
+	labels []task.Label
 }
 
 // Start runs `task <root>` in dir. It returns immediately; call Poll to drain.

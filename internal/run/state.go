@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/romanidis/taskui/internal/task"
 )
 
 func (r *Run) apply(event Event) {
@@ -14,6 +16,7 @@ func (r *Run) apply(event Event) {
 
 	case Naming:
 		r.names = e.Names
+		r.labels = e.Labels
 
 	case GraphReady:
 		g := e.Graph.Renamed(r.canonical)
@@ -117,6 +120,13 @@ func (r *Run) apply(event Event) {
 func (r *Run) canonical(name string) string {
 	if name == "" || r.names == nil {
 		return name
+	}
+	// A name the project does not list may be a label. Listed names win, so a label pattern
+	// can never take a real task's lines.
+	if _, listed := r.names[name]; !listed {
+		if owner, ok := task.Labelled(r.labels, name); ok {
+			name = owner
+		}
 	}
 	c := r.names.Canonical(name)
 	if c == r.names.Canonical(r.Root) {
