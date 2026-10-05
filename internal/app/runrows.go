@@ -63,21 +63,26 @@ type RunRow struct {
 	Peek bool
 }
 
-// follow keeps the view pointed at the interesting thing: whatever is running, or — once
+// Follow keeps the view pointed at the interesting thing: whatever is running, or — once
 // something breaks — the task that broke.
-func (a *App) follow() {
+func (a *App) Follow() {
 	if a.Run == nil {
 		return
 	}
 
-	// A failure wins over following, and pins the view there.
-	if name, ok := a.firstFailure(); ok {
-		if a.focusedFailure != name {
+	// A failure wins over following, and pins the view there: the first task that actually
+	// broke, rather than an aggregate that merely contains it.
+	if failed := a.FailedTasks(); len(failed) > 0 {
+		if name := failed[0]; a.focusedFailure != name {
 			a.focusedFailure = name
 			a.Following = false
 			// Whatever was merely running is no longer the point.
 			a.releaseFollowed(name)
-			a.expandTo(name)
+			// Only that task is opened in full. This used to open every ancestor too, which
+			// was the only way to see anything back when folded meant empty. Every task now
+			// peeks by default, so the chain already speaks for itself, and opening four
+			// ancestors in full to land on one leaf just buries the leaf again.
+			a.runFolds[name] = FoldFull
 			a.RebuildRunRows()
 			if !a.cursorInTask(name) {
 				a.cursorToTask(name)
@@ -145,17 +150,6 @@ func (a *App) releaseFollowed(keep string) {
 		a.runFolds[previous] = FoldPeek
 	}
 	a.followedOpen = ""
-}
-
-// expandTo opens one task's output all the way, for following and for failures.
-//
-// Only that task. This used to walk up the graph opening every ancestor too, which was the
-// only way to see anything back when folded meant empty — a parent showing nothing gave no
-// clue that the thing you cared about was underneath it. Every task now peeks by default,
-// so the chain already speaks for itself, and opening four ancestors in full to land on
-// one leaf just buries the leaf again.
-func (a *App) expandTo(name string) {
-	a.runFolds[name] = FoldFull
 }
 
 func (a *App) cursorToTask(name string) {
@@ -411,9 +405,6 @@ func (a *App) RunIsExpanded(name string) bool { return a.FoldOf(name) == FoldFul
 
 // RunExpand opens a task all the way.
 func (a *App) RunExpand(name string) { a.RunSetFold(name, FoldFull) }
-
-// Follow is the test-visible entry point to the follow logic.
-func (a *App) Follow() { a.follow() }
 
 // RunToggleFoldAll is `⇧O` in the run view: move every task to the same state at once.
 //

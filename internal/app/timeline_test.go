@@ -723,7 +723,7 @@ func TestPressingEReadsThePathFromWhereTheTaskRan(t *testing.T) {
 }
 
 // A failed task whose deps passed is still the failure. Requiring no children at all, the
-// rule for which task to open passed over it, so reopening the run opened nothing.
+// rule for which task to open passed over it, so the view went to nothing.
 func TestTheFailureToOpenIsTheOneThatBroke(t *testing.T) {
 	a := appWith(t, []string{"build", "test"})
 	r := run.Detached("test", run.GraphFrom(run.Edge{Parent: "test", Children: []string{"build"}}))
@@ -732,8 +732,9 @@ func TestTheFailureToOpenIsTheOneThatBroke(t *testing.T) {
 	r.ApplyFailed("test")
 	r.Finish(1)
 	a.OpenRunForTest(r)
-	if got, ok := a.firstFailure(); !ok || got != "test" {
-		t.Errorf("firstFailure = %q, %v; want test", got, ok)
+	a.Follow()
+	if got := a.RunRows[a.RunCursor]; !got.IsTask || got.Name != "test" || a.FoldOf("test") != FoldFull {
+		t.Errorf("cursor on %+v with test %v; want test, opened", got, a.FoldOf("test"))
 	}
 }
 

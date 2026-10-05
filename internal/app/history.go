@@ -255,10 +255,10 @@ func (a *App) OpenStoredRun() {
 	a.Status = ""
 	// Open the failure straight away: reopening a run is nearly always about the thing
 	// that broke.
-	if name, ok := a.firstFailure(); ok {
-		a.expandTo(name)
+	if failed := a.FailedTasks(); len(failed) > 0 {
+		a.runFolds[failed[0]] = FoldFull
 		a.RebuildRunRows()
-		a.cursorToTask(name)
+		a.cursorToTask(failed[0])
 	} else {
 		a.RebuildRunRows()
 	}
@@ -272,20 +272,6 @@ func (a *App) OpenStoredRun() {
 		a.FilterMatches = true
 		a.ApplySearch()
 	}
-}
-
-// firstFailure is the deepest failed task — the one that actually broke, rather than an
-// aggregate that merely contains it.
-func (a *App) firstFailure() (string, bool) {
-	if a.Run == nil {
-		return "", false
-	}
-	// The rule ⇧F uses: failed with nothing failed under it. Requiring no children at all
-	// passed over a `test` that failed after its `build` dep passed.
-	if failed := a.FailedTasks(); len(failed) > 0 {
-		return failed[0], true
-	}
-	return "", false
 }
 
 func (a *App) handleHistoryKey(k Key) bool {

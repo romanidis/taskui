@@ -85,7 +85,7 @@ func (a *App) jumpToHit() {
 		return
 	}
 	hit := a.SearchHits[a.SearchIdx]
-	a.expandTo(hit.Task)
+	a.runFolds[hit.Task] = FoldFull
 	a.RebuildRunRows()
 	for i, r := range a.RunRows {
 		if !r.IsTask && r.Task == hit.Task && r.Index == hit.Index {

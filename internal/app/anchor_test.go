@@ -28,7 +28,7 @@ func TestCursorStaysWhileAnExpandedTaskPrints(t *testing.T) {
 	for i := range 5 {
 		a.Run.Feed("test", "more "+string(rune('a'+i)))
 	}
-	a.follow()
+	a.Follow()
 	a.RebuildRunRows()
 
 	now := a.RunRows[a.RunCursor]
@@ -50,7 +50,7 @@ func TestFollowingStillMovesToWhatIsRunning(t *testing.T) {
 	a.Following = true
 
 	a.Run.Feed("test", "running")
-	a.follow()
+	a.Follow()
 	a.RebuildRunRows()
 
 	row := a.RunRows[a.RunCursor]

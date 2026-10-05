@@ -242,7 +242,7 @@ func (a *App) PollRun() bool {
 		}
 		return moved
 	}
-	a.follow()
+	a.Follow()
 	a.refreshSearch()
 	a.RebuildRunRows()
 	a.RebuildPickerRows()
