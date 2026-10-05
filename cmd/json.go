@@ -177,11 +177,7 @@ func stopOnSignal(r *run.Run) func() {
 			case <-stopping:
 				// A second ask is louder, as a second `x` is. Still registered after the
 				// first, the handler swallowed every Ctrl-C after it.
-				if r.Cancelled() {
-					r.Kill()
-				} else {
-					r.Cancel()
-				}
+				r.Stop()
 			case <-done:
 				return
 			}

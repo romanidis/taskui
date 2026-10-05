@@ -8,26 +8,18 @@ import (
 	"github.com/romanidis/taskui/internal/task"
 )
 
-// stopRun stops a run, escalating on a second ask, and says what happened.
-//
-// A free function rather than a method because every caller wants to write the answer into
-// the app's status line, and the escalation is the whole point of it being one function:
-// `x` on a wedged run should not be a key that does nothing the second time you press it —
-// but neither should the first press be a SIGKILL, so the two live together where the
-// order is obvious.
+// stopRun stops a run one step louder than last time, and says what that step was.
 func stopRun(r *run.Run) string {
-	if r.Finished() {
+	switch r.Stop() {
+	case run.StopOver:
 		return "that run has already finished"
-	}
-	if r.Killed() {
+	case run.StopNothingLouder:
 		return fmt.Sprintf("`%s` has had SIGKILL — nothing louder to send, waiting on the OS", r.Task)
-	}
-	if r.Cancelled() {
-		r.Kill()
+	case run.StopKilled:
 		return fmt.Sprintf("killed `%s` — SIGKILL to the process group", r.Task)
+	default:
+		return fmt.Sprintf("stopping `%s` — again to kill it outright", r.Task)
 	}
-	r.Cancel()
-	return fmt.Sprintf("stopping `%s` — again to kill it outright", r.Task)
 }
 
 // StartRun kicks off `task <name> <args>` with whatever `F` and `I` have armed, past every

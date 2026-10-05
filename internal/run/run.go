@@ -346,6 +346,42 @@ func (r *Run) Cancel() {
 	r.proc.stop()
 }
 
+// StopStep is what a request to stop a run did.
+type StopStep int
+
+const (
+	// StopAsked sent the polite signals to the process group.
+	StopAsked StopStep = iota
+	// StopKilled sent SIGKILL, the run having been asked once already and still going.
+	StopKilled
+	// StopNothingLouder did nothing: SIGKILL has gone out, and there is nothing left to send.
+	StopNothingLouder
+	// StopOver did nothing: the run has already ended.
+	StopOver
+)
+
+// Stop stops the run one step louder than the last time it was asked: Cancel the first time,
+// Kill the second, and nothing once there is nothing louder or nothing left. Safe from any
+// goroutine, so a signal handler can escalate the same way a key does.
+//
+// The escalation is the point of this being one call. A stop key on a wedged run should not
+// do nothing the second time — but neither should the first press be a SIGKILL, which runs
+// no cleanup handler and leaves a compose stack's containers up.
+func (r *Run) Stop() StopStep {
+	switch {
+	case r.over():
+		return StopOver
+	case r.Killed():
+		return StopNothingLouder
+	case r.Cancelled():
+		r.Kill()
+		return StopKilled
+	default:
+		r.Cancel()
+		return StopAsked
+	}
+}
+
 // Kill insists, and stops waiting about it.
 //
 // SIGTERM and SIGHUP can both be caught, and plenty of things catch them: a shell script
