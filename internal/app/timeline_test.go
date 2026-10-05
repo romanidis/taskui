@@ -768,6 +768,30 @@ func TestAKeptHistorySearchStillNarrowsTheList(t *testing.T) {
 	}
 }
 
+// README: "⇧D on a run old enough to have been dropped says the output is no longer stored
+// rather than diffing against nothing." DiffTimelinePoint never asks HasOutput, so a pruned
+// baseline diffs as "every line added".
+func TestATimelineDiffRefusesAPrunedRun(t *testing.T) {
+	a := sample(t)
+	archived(t, a, "backend:lint", true, 300, "checking", "all good")
+	archived(t, a, "backend:lint", false, 200, "checking", "boom")
+	// Keep only the newest run's output, as 50 later runs anywhere would.
+	if _, err := store.Prune(a.StateDir(), 1); err != nil {
+		t.Fatal(err)
+	}
+
+	parkOn(t, a, "backend:lint")
+	press(a, Char('H'))
+	if len(a.Timeline) != 2 {
+		t.Fatalf("timeline has %d points", len(a.Timeline))
+	}
+	press(a, Char('D'))
+	if a.Screen == ScreenDiff {
+		t.Errorf("diffed against a run whose output is gone: against %q, stat %+v, status %q",
+			a.DiffAgainstWhat, a.DiffStat, a.Status)
+	}
+}
+
 // A live run that has finished is saved at once, but its Run keeps StoredID() == "", so
 // ⇧D's LastGreen(skip="") finds the run itself as the newest green and diffs it against itself.
 func TestAFinishedLiveRunIsNotDiffedAgainstItself(t *testing.T) {

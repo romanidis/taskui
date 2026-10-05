@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/store"
@@ -161,5 +162,37 @@ func TestQuickfixWithNoStoredRunsSaysSo(t *testing.T) {
 	if _, err := execute(t, "--quickfix", dir); err == nil ||
 		!strings.Contains(err.Error(), "no stored runs") {
 		t.Errorf("error = %v", err)
+	}
+}
+
+// `--diff` on a task whose runs have all had their output pruned says "only one stored run"
+// although the timeline holds several — README promises "the output is no longer stored".
+func TestDiffSaysWhenTheEarlierOutputWasPruned(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	base := store.StateDir()
+	for i, ok := range []bool{true, false} {
+		r := run.Detached("test", run.GraphFrom(run.Edge{Parent: "test"}))
+		r.Feed("test", "line")
+		exit := 0
+		if !ok {
+			r.ApplyFailed("test")
+			exit = 1
+		}
+		r.Finish(exit)
+		r.Duration = time.Duration(300-i*100) * time.Second
+		r.HasDuration = true
+		if _, err := store.Save(base, "/proj", r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.Prune(base, 0); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(store.Timeline(base, "/proj", "test")); n != 2 {
+		t.Fatalf("timeline %d", n)
+	}
+	err := printDiff(&bytes.Buffer{}, "/proj", "test")
+	if err == nil || strings.Contains(err.Error(), "only one stored run") {
+		t.Errorf("err = %v — there are two stored runs; their output is what is gone", err)
 	}
 }

@@ -261,7 +261,11 @@ func printDiff(out io.Writer, root, taskName string) error {
 	if !ok {
 		older, ok = store.Previous(base, root, taskName, newest.RunID, 0)
 		against = "the run before"
-		if !ok {
+		switch {
+		case !ok && len(points) > 1:
+			return fmt.Errorf("the earlier runs of %q are remembered but their output is no longer "+
+				"stored — only the last %d runs keep theirs", taskName, store.KeepRuns)
+		case !ok:
 			return fmt.Errorf("only one stored run of %q — nothing to compare it against", taskName)
 		}
 	}

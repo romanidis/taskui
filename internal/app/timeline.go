@@ -175,6 +175,10 @@ func (a *App) DiffTimelinePoint() {
 		a.Status = "that is the earliest stored run of `" + a.TimelineOf + "` — nothing before it"
 		return
 	}
+	if !store.HasOutput(a.stateDir, point.RunID) {
+		a.Status = "the output of that run is no longer stored — only the last runs keep theirs"
+		return
+	}
 
 	before, against := a.Timeline[a.TimelineCursor+1], "the run before"
 	for _, earlier := range a.Timeline[a.TimelineCursor+1:] {
@@ -186,6 +190,11 @@ func (a *App) DiffTimelinePoint() {
 			}
 			break
 		}
+	}
+	// Pruned is not empty: diffed against nothing, every line read as new.
+	if !store.HasOutput(a.stateDir, before.RunID) {
+		a.Status = "the output of the run to compare against is no longer stored — only the last runs keep theirs"
+		return
 	}
 
 	a.showDiff(
