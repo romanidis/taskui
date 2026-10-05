@@ -349,3 +349,20 @@ func TestNoConfigFileIsNotAnError(t *testing.T) {
 		t.Errorf("errReadingConfig = %v", errReadingConfig)
 	}
 }
+
+// A flag that only steers another is refused without it, rather than ignored: `--args`
+// beside `--list` passed its arguments to nothing and exited 0.
+func TestACompanionFlagAloneIsRefused(t *testing.T) {
+	t.Cleanup(func() { opts.args, opts.keys, opts.phase, opts.colour, opts.list = "", "", 0, false, false })
+	for _, args := range [][]string{
+		{"--list", "--args", "FOO=1"},
+		{"--list", "--keys", "p"},
+		{"--list", "--phase", "3"},
+		{"--list", "--colour"},
+	} {
+		opts.args, opts.keys, opts.phase, opts.colour, opts.list = "", "", 0, false, false
+		if _, err := execute(t, args...); err == nil {
+			t.Errorf("%v was accepted", args)
+		}
+	}
+}

@@ -35,7 +35,7 @@ func listed(tasks []task.Task, name string) bool {
 // is worse than saying so.
 // formsOK rejects the flags that only mean something beside another one, given without it.
 func formsOK() error {
-	for _, check := range []func() error{jsonFormOK, matrixFormOK, narrowingFormOK} {
+	for _, check := range []func() error{jsonFormOK, matrixFormOK, narrowingFormOK, companionsOK} {
 		if err := check(); err != nil {
 			return err
 		}
@@ -52,6 +52,23 @@ func narrowingFormOK() error {
 	case opts.searchTask != "" && opts.searchFor == "" && !opts.quickfix:
 		return errors.New("--task narrows --search or --quickfix; on its own there is nothing " +
 			"for it to narrow")
+	}
+	return nil
+}
+
+// companionsOK rejects the flags that only steer another one, given without it. Each was
+// ignored on its own, so `--args` beside `--list` exited 0 having passed the arguments to
+// nothing — the same unnoticed typo `--since` and `--task` used to let through.
+func companionsOK() error {
+	switch {
+	case opts.args != "" && opts.runTask == "":
+		return errors.New("--args are the arguments for --run; on their own there is nothing to pass them to")
+	case opts.screenshot == "" && opts.keys != "":
+		return errors.New("--keys are played before a --screenshot; on their own nothing sees them")
+	case opts.screenshot == "" && opts.phase != 0:
+		return errors.New("--phase picks the frame a --screenshot is taken at; on its own there is no frame")
+	case opts.screenshot == "" && opts.colour:
+		return errors.New("--colour keeps the colour in a --screenshot; on its own there is nothing to keep it in")
 	}
 	return nil
 }
