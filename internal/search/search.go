@@ -131,16 +131,6 @@ type Scope struct {
 	Since time.Time
 }
 
-func (s Scope) keeps(m store.Manifest) bool {
-	if s.Project != "" && !store.SameDir(m.Dir, s.Project) {
-		return false
-	}
-	if !s.Since.IsZero() && time.Unix(m.StartedUnix, 0).Before(s.Since) {
-		return false
-	}
-	return true
-}
-
 // InStore searches the stored runs that scope keeps, newest first.
 //
 // maxPerRun caps how much of a single noisy run can crowd out the others; the count of
@@ -154,10 +144,15 @@ func InStore(base string, q *Query, maxPerRun int, scope Scope) ([]RunHits, int)
 	dropped := 0
 
 	for _, manifest := range store.List(base) {
+		switch {
+		case scope.Project != "" && !store.SameDir(manifest.Dir, scope.Project):
+			continue
+		case !scope.Since.IsZero() && time.Unix(manifest.StartedUnix, 0).Before(scope.Since):
+			continue
 		// Remembered but pruned: the ledger keeps a run long after its text is gone, and
 		// there is nothing here to grep. Skipping early saves opening files that are not
 		// there, once per task of every evicted run.
-		if !scope.keeps(manifest) || !store.HasOutput(base, manifest.ID) {
+		case !store.HasOutput(base, manifest.ID):
 			continue
 		}
 		dir := store.RunDir(base, manifest.ID)

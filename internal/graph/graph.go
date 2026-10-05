@@ -418,7 +418,7 @@ func Resolve(dir, root string) Graph {
 // graphs share — every aggregate's walk summarised `backend:lint` again — and the tasks of
 // one Taskfile share most of theirs.
 func ResolveAll(dir string, roots []string) Graph {
-	g, _ := resolveParallel(roots, summarising(dir))
+	g, _ := resolveParallel(roots, func(task string) string { return summaryOf(dir, task) })
 	return g
 }
 
@@ -431,14 +431,7 @@ func ResolveAll(dir string, roots []string) Graph {
 // summary never mentions it. It is returned rather than stored so the caller is forced
 // to decide what happens to it; it must not be persisted or displayed.
 func ResolveDetailed(dir, root string) (Graph, string) {
-	return resolveParallel([]string{root}, summarising(dir))
-}
-
-// summarising fetches a task's `--summary` from dir. A parameter of the walk rather than
-// called by it, so a test can hand the real walk a Taskfile's worth of summaries without
-// go-task installed.
-func summarising(dir string) func(string) string {
-	return func(task string) string { return summaryOf(dir, task) }
+	return resolveParallel([]string{root}, func(task string) string { return summaryOf(dir, task) })
 }
 
 // lanes is enough to hide the latency without spawning a process per task in a wide graph.
@@ -454,6 +447,9 @@ const lanes = 8
 // Tasks are memoised and revisits short-circuit, so a diamond (`all` reaching `lint` and
 // `check`, both reaching `backend:*`) costs one call per node, and a cycle terminates
 // instead of spinning.
+//
+// fetch gets a task's `--summary`. A parameter of the walk rather than called by it, so a
+// test can hand the real walk a Taskfile's worth of summaries without go-task installed.
 func resolveParallel(roots []string, fetch func(string) string) (Graph, string) {
 	g := New()
 	var summaries strings.Builder
