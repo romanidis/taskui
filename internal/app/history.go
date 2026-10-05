@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/romanidis/taskui/internal/keys"
-	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/search"
 	"github.com/romanidis/taskui/internal/store"
 )
@@ -277,11 +276,10 @@ func (a *App) firstFailure() (string, bool) {
 	if a.Run == nil {
 		return "", false
 	}
-	for _, n := range a.Run.Order {
-		t, ok := a.Run.Tasks[n]
-		if ok && t.Status == run.Failed && len(a.Run.Graph.Children(n)) == 0 {
-			return n, true
-		}
+	// The rule ⇧F uses: failed with nothing failed under it. Requiring no children at all
+	// passed over a `test` that failed after its `build` dep passed.
+	if failed := a.FailedTasks(); len(failed) > 0 {
+		return failed[0], true
 	}
 	return "", false
 }

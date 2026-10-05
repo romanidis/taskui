@@ -721,3 +721,18 @@ func TestPressingEReadsThePathFromWhereTheTaskRan(t *testing.T) {
 		t.Errorf("opened %s, want %s", editor.Args[len(editor.Args)-1], want)
 	}
 }
+
+// A failed task whose deps passed is still the failure. Requiring no children at all, the
+// rule for which task to open passed over it, so reopening the run opened nothing.
+func TestTheFailureToOpenIsTheOneThatBroke(t *testing.T) {
+	a := appWith(t, []string{"build", "test"})
+	r := run.Detached("test", run.GraphFrom(run.Edge{Parent: "test", Children: []string{"build"}}))
+	r.Feed("build", "go build ./...")
+	r.Feed("test", "--- FAIL: TestOrder")
+	r.ApplyFailed("test")
+	r.Finish(1)
+	a.OpenRunForTest(r)
+	if got, ok := a.firstFailure(); !ok || got != "test" {
+		t.Errorf("firstFailure = %q, %v; want test", got, ok)
+	}
+}
