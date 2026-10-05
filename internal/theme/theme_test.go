@@ -310,3 +310,13 @@ func TestAnUnknownOrderIsReported(t *testing.T) {
 		t.Errorf("problems = %v", c.Problems)
 	}
 }
+
+// A binding a keymap change took away is answered with where it went. "Not an action" reads
+// like a typo in a config file that has not changed.
+func TestARetiredKeySaysWhereItWent(t *testing.T) {
+	problems := applyKeys(keys.NewKeymap(), map[string]string{"force": "F"})
+	if len(problems) != 1 || !strings.Contains(problems[0], "no longer a key") ||
+		!strings.Contains(problems[0], "args prompt") {
+		t.Errorf("problems = %q", problems)
+	}
+}

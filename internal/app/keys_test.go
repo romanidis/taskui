@@ -1017,8 +1017,8 @@ func TestITypesAtANormalRunRatherThanRestartingIt(t *testing.T) {
 	if !a.SendingInput {
 		t.Error("input mode should have opened")
 	}
-	if a.InteractiveNext {
-		t.Error("nothing should have been re-run")
+	if a.Confirm != nil {
+		t.Errorf("nothing should have been re-run: %+v", a.Confirm)
 	}
 	if rootOf(a) != "backend:lint" {
 		t.Error("the same run should still be there")
@@ -1034,9 +1034,6 @@ func TestShiftIReRunsInteractively(t *testing.T) {
 	press(a, Char('I'))
 	defer a.KillAll()
 
-	if !a.InteractiveNext {
-		t.Error("should be armed for interactive")
-	}
 	if a.SendingInput {
 		t.Error("and not typing at the old one")
 	}

@@ -138,12 +138,21 @@ func (a *App) argsPrompt() (line, bool) {
 	t := a.Theme
 	runes := []rune(a.ArgsInput)
 	at := clamp(a.ArgsCursor, 0, len(runes))
+	// The command as it will go out, `--force` included, so what the toggles did is on the
+	// line rather than in a mode you have to remember you set.
+	command := "task " + a.ArgsTarget + " "
+	if a.ArgsForce {
+		command += "--force "
+	}
 	l := line{
 		plain(" "),
-		styled("task "+a.ArgsTarget+" ", fg(t.Colors.Accent)),
+		styled(command, fg(t.Colors.Accent)),
 		plain(string(runes[:at])),
 		styled(t.Glyphs.Cursor, fg(t.Colors.Accent)),
 		plain(string(runes[at:])),
+	}
+	if a.ArgsInteractive {
+		l = append(l, styled("   interactive", fg(t.Colors.Interactive)))
 	}
 	// While ⇥ is cycling, the alternatives take the line the hint would have had: the hint
 	// says what an argument looks like, and the candidates say what it could be — and when
@@ -158,17 +167,18 @@ func (a *App) argsPrompt() (line, bool) {
 	// Said out loud, and only while it is true: a line you did not type is a line you have
 	// to be told about, or the first `⏎` runs last week's command believing it is empty.
 	// It stops being said the moment you change a character of it.
-	if a.argsFromHistory && a.ArgsInput == a.argsPrefill {
-		return append(l, styled("   last run   ⏎ runs it again", fg(t.Colors.Notice))), true
-	}
+	switch hint, ok := a.ArgsHint(); {
+	case a.argsFromHistory && a.ArgsInput == a.argsPrefill:
+		l = append(l, styled("   last run   ⏎ runs it again", fg(t.Colors.Notice)))
 	// A hint, not a default: the descriptions trail off into prose often enough that
 	// pre-filling would hand you a subtly wrong command.
-	if hint, ok := a.ArgsHint(); ok {
+	case ok:
 		l = append(l, styled("   e.g. "+hint, fg(t.Colors.Dim)))
-	} else {
+	default:
 		l = append(l, styled("   ⏎ run   esc cancel   ⇥ complete", fg(t.Colors.Dim)))
 	}
-	return l, true
+	// Last, so a long hint pushes it off a narrow line before it pushes off the hint.
+	return append(l, styled("   ^f force   ^t interactive", fg(t.Colors.Dim))), true
 }
 
 // argsCandidateStrip is where ⇥ goes next, in the order it will get there.

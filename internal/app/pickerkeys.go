@@ -102,14 +102,6 @@ func (a *App) handlePickerKey(k Key) bool {
 			a.Status = "nothing to run here — space folds it"
 		}
 
-	// Let the next run ask questions.
-	case act() == keys.Interactive:
-		a.ToggleInteractive()
-
-	// Ignore go-task's up-to-date checks on the next run.
-	case act() == keys.Force:
-		a.ToggleForce()
-
 	// Re-run whenever the source changes — the marked set if there is one, which is the
 	// half of this that only the picker can offer, because marks are made here.
 	case act() == keys.Watch:

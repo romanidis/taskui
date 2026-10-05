@@ -493,7 +493,7 @@ func TestATaskThatCallsAProductionTaskAsksFirst(t *testing.T) {
 	if footer := lines[len(lines)-1]; !strings.Contains(footer, "calls deploy:prod") {
 		t.Errorf("the question does not say which: %q", footer)
 	}
-	if _, ok := a.productionQuestion(a.armed("build", nil)); ok {
+	if _, ok := a.productionQuestion(run.Invocation{Task: "build"}); ok {
 		t.Error("`build` calls nothing on the list and should not be asked about")
 	}
 }
@@ -551,13 +551,32 @@ func TestRerunningAFailedProductionTaskAsksFirst(t *testing.T) {
 	}
 }
 
-// `F` in the picker arms --force. The two are different actions on different screens, which
-// is what per-screen keymaps are for — but the run view must not have quietly inherited it.
-func TestFInThePickerStillArmsForce(t *testing.T) {
+// Force and interactive are chosen for one start, in the prompt that composes it. Armed
+// from the picker they stayed armed for every run after, and nothing but a word in a header
+// said so.
+func TestForceInTheArgsPromptForcesThatStartAndNoOther(t *testing.T) {
 	a := sample(t)
+	a.BeginArgs("build")
+	press(a, Ctrl('f'))
+	press(a, Ctrl('t'))
+	if !a.ArgsForce || !a.ArgsInteractive {
+		t.Fatalf("toggles = force %v, interactive %v", a.ArgsForce, a.ArgsInteractive)
+	}
+	inv := run.Invocation{Task: "build", Force: a.ArgsForce, Interactive: a.ArgsInteractive}
+	a.CancelArgs()
+	if a.ArgsForce || a.ArgsInteractive {
+		t.Error("closing the prompt kept its toggles for the next one")
+	}
+	if !inv.Force || !inv.Interactive {
+		t.Errorf("the start the prompt composed = %+v", inv)
+	}
+
+	// The keys that used to arm them do nothing in the picker now.
 	press(a, Char('F'))
-	if !a.ForceNext {
-		t.Error("F in the picker should arm --force")
+	press(a, Char('i'))
+	a.BeginArgs("build")
+	if a.ArgsForce || a.ArgsInteractive {
+		t.Error("a fresh prompt from the list started forced or interactive")
 	}
 }
 

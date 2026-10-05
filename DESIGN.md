@@ -228,9 +228,9 @@ from that point: go-task exposes no resume, and pretending otherwise would be a 
 
 `⇧R` is the same re-run with `--force`. Plain `r` inherits the flags the run was started
 with, so a task go-task considers up to date declines to run and hands back a tick that
-proves nothing — and the picker's `F` is behind an `esc`, away from the output you are
-working against. `⇧R` is what you wanted the second time you pressed `r`. The override only
-adds: `r` on a run that was already forced stays forced.
+proves nothing. `⇧R` is what you wanted the second time you pressed `r`. The override only
+adds: `r` on a run that was already forced stays forced. It forces that re-run and nothing
+after it.
 
 `esc` leaves the run view without stopping the run — it carries on, and the picker header
 says so. `x` stops it.
@@ -996,10 +996,10 @@ v2 gets written. They should stay in a 0.x until somebody else has tried them.
 all. Measured — the prompt does not appear under `prefixed`, does appear under
 `interleaved`.
 
-So `i` in the picker arms interactive mode for the next run, which goes out with
-`--output interleaved`. The prompt then surfaces, and `i` in the run view forwards
-keystrokes to the task's terminal — `y`, `⏎`, arrows, `^C`, `^D` — with `esc` to stop
-typing.
+So a start can go out interactively, with `--output interleaved`: `^t` in the args prompt
+for a task started from the list, `⇧I` to re-run one from the run view. The prompt then
+surfaces, and `i` in the run view forwards keystrokes to the task's terminal — `y`, `⏎`,
+arrows, `^C`, `^D` — with `esc` to stop typing.
 
 `i` works on an *ordinary* run too. go-task wraps stdout and stderr for prefixing but
 leaves stdin alone, so keystrokes reach the child either way — verified against a real
@@ -1023,6 +1023,13 @@ announcements, so lines are attributed to whichever task last spoke: correct for
 sequential run, wrong under parallel `deps:`. Interactive tasks are inherently sequential,
 so the trade is worth making — but only when asked for, which is why it is a toggle rather
 than the default.
+
+It is a toggle on one start, not a mode. It used to be armed from the picker with `i`, and
+`⇧I` armed it too, and it stayed armed for every run after: one `⇧I` put every later run in
+interleaved mode, misattributing their output under parallel deps and archiving it that
+way, with a word in the header the only sign. `--force` was the same, on `⇧F` and `⇧R`. Both
+are now chosen in the prompt that composes the start, and the prompt line shows the
+command with them in it.
 
 Two things make this discoverable rather than something you have to know. A task sitting
 on an unterminated line gets a `?` bar quoting the question. And a *non-interactive* run

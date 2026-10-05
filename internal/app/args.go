@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/romanidis/taskui/internal/graph"
+	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/shellwords"
 	"github.com/romanidis/taskui/internal/task"
 )
@@ -15,10 +16,18 @@ import (
 // `requires: { vars: [NAME] }` is a declaration, not prose, so `NAME=` can be filled in
 // with confidence — and only the key, never the example value, which would be handing you
 // someone else's argument. The caret lands after the last `=`.
+//
+// It is also where a start is forced or made interactive, for that one start. From a run it
+// starts out the way the run went, as `r` would re-run it; from the list it starts plain.
 func (a *App) BeginArgs(name string) {
 	a.EnteringArgs = true
 	a.ArgsTarget = name
 	a.Status = ""
+	a.ArgsForce, a.ArgsInteractive = false, false
+	if a.Screen == ScreenRun && a.Run != nil {
+		again := a.Run.Rerun(name)
+		a.ArgsForce, a.ArgsInteractive = again.Force, again.Interactive
+	}
 	// What ⇥ completes belongs to the task the prompt is aimed at, and this may be the
 	// second task it has been aimed at.
 	a.argsPast = nil
@@ -61,6 +70,8 @@ func (a *App) CancelArgs() {
 	a.ArgsTarget = ""
 	a.ArgsInput = ""
 	a.ArgsCursor = 0
+	a.ArgsForce = false
+	a.ArgsInteractive = false
 	a.argsPrefill = ""
 	a.argsFromHistory = false
 	a.argsVars = nil
@@ -74,11 +85,13 @@ func (a *App) ConfirmArgs() {
 	if name == "" {
 		return
 	}
-	args := shellwords.Split(a.ArgsInput)
+	inv := run.Invocation{
+		Task: name, Args: shellwords.Split(a.ArgsInput), Force: a.ArgsForce, Interactive: a.ArgsInteractive,
+	}
 	a.CancelArgs()
 	// Through restart, as `r` and `⇧I` go: on a task that is still running, a plain request
 	// only focused it, and the arguments just typed were dropped without a word.
-	a.restart(a.armed(name, args))
+	a.restart(inv)
 }
 
 // ArgsHint is the usage hint for whatever the args prompt is aimed at.
@@ -112,6 +125,10 @@ func (a *App) handleArgsKey(k Key) {
 		a.CancelArgs()
 	case k.kind == keyEnter:
 		a.ConfirmArgs()
+	case k.isCtrl('f'):
+		a.ArgsForce = !a.ArgsForce
+	case k.isCtrl('t'):
+		a.ArgsInteractive = !a.ArgsInteractive
 	case k.kind == keyBackspace && a.ArgsCursor > 0:
 		runes := []rune(a.ArgsInput)
 		a.ArgsCursor--

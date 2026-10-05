@@ -125,9 +125,10 @@ func (a *App) promptTakes(k Key) bool {
 	// is the one that closes its stdin.
 	case a.SendingInput:
 		return true
-	// A line editor: this is where the caret goes.
+	// A line editor: this is where the caret goes, and ^f ^t are how the start goes out.
 	case a.EnteringArgs:
-		return k.kind == keyLeft || k.kind == keyRight || k.kind == keyHome || k.kind == keyEnd
+		return k.kind == keyLeft || k.kind == keyRight || k.kind == keyHome || k.kind == keyEnd ||
+			k.isCtrl('f') || k.isCtrl('t')
 	// ↑ and ↓ step through what the query matched, which is the whole point of typing it.
 	case a.Searching, a.HistorySearching, a.Jumping:
 		return k.kind == keyUp || k.kind == keyDown

@@ -30,8 +30,6 @@ const (
 	Filter
 	History
 	ResumeRun
-	Interactive
-	Force
 	Help
 	Quit
 	Search
@@ -200,8 +198,6 @@ var defaults = []binding{
 	{Filter, '/', "filter"},
 	{History, 'h', "history"},
 	{ResumeRun, 'v', "view-run"},
-	{Interactive, 'i', "interactive"},
-	{Force, 'F', "force"},
 	{Help, '?', "help"},
 	{Quit, 'q', "quit"},
 	{Search, '/', "search"},
@@ -248,8 +244,6 @@ var pickerActions = []Action{
 	Mark,
 	ClearMarks,
 	ResumeRun,
-	Interactive,
-	Force,
 	Watch,
 	Fold,
 	FoldAll,
@@ -330,6 +324,15 @@ func ActionName(action Action) string {
 		}
 	}
 	return ""
+}
+
+// Retired says where a binding went, for the config names that were actions once. A config
+// still naming one is told that rather than that it was never an action, which reads like a
+// typo in a file that has not changed.
+var Retired = map[string]string{
+	"force": "`--force` is a toggle in the args prompt now, for that one start: `a`, then ^f",
+	"interactive": "interactive is a toggle in the args prompt now, for that one start: " +
+		"`a`, then ^t",
 }
 
 func ActionByName(name string) (Action, bool) {
@@ -680,8 +683,6 @@ var Picker = Section{
 		f("{args}", "run it with arguments", "args"),
 		// No footer label: arming a modifier for the next run is secondary to running one, and
 		// the footer is the one place where everything competes for the same line.
-		b("{interactive}", "arm interactive mode for the next run — again to disarm"),
-		b("{force}", "arm --force: ignore go-task's up-to-date checks — again to disarm"),
 		b("{watch}", "watch: re-run the marked set, or this task, whenever the source changes"),
 		f("{filter}", "filter the list down to matching tasks", "filter"),
 		f("{jump}", "jump to a task, leaving the list intact", "jump"),
@@ -830,6 +831,7 @@ var Prompts = Section{
 	Note:  "while a prompt is open, these take over",
 	Bindings: []Binding{
 		b("arguments", "⇥ ⇧⇥ complete · ← → Home End Delete edit · ⏎ run · esc cancel"),
+		b("…and how it runs", "^f --force, ignoring go-task's up-to-date checks · ^t interactive, so it can ask"),
 		b("search / filter", "⏎ keep the query · esc clear · ↑ ↓ step through matches"),
 		b("…while one is open", "the letters are the query; ^d ^u ^f ^b still page what is behind it"),
 		b("find (on this screen)", "opened with {jump} · ⏎ keeps what is left · esc clears, then esc closes"),

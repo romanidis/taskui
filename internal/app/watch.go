@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/romanidis/taskui/internal/run"
 	"github.com/romanidis/taskui/internal/watch"
 )
 
@@ -119,8 +120,8 @@ func (a *App) PollWatch() bool {
 			continue
 		}
 
-		// The way it last ran, if it has; otherwise the way `F` and `I` are armed.
-		inv := a.armed(name, nil)
+		// The way it last ran, if it has; otherwise plainly.
+		inv := run.Invocation{Task: name}
 		if r := a.slotRun(name); r != nil {
 			inv = r.Invocation
 		}

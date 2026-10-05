@@ -316,8 +316,8 @@ run looks hung:
   input   keys go to the task   sent: y⏎   buffered: ⏎ sends a newline, output may lag
 ```
 
-`⇧I` re-runs interleaved so prompts are visible from the start, and `i` in the *picker*
-arms that for the next run.
+`⇧I` re-runs interleaved so prompts are visible from the start. To start a task that way
+from the list, `a` opens its args prompt and `^t` makes that start interactive.
 
 ---
 
@@ -328,8 +328,9 @@ arms that for the next run.
       1   task: Task "backend:check" is up to date
 ```
 
-That is go-task's `sources:` fingerprinting, not an error. `⇧F` arms `--force`; the header
-shows `force`, and `⏎` and `r` both ignore the cache until you turn it off.
+That is go-task's `sources:` fingerprinting, not an error. `⇧R` re-runs it with `--force`.
+From the list, `a` opens the args prompt and `^f` forces that start; the prompt line shows
+`--force` in the command it will run.
 
 ---
 

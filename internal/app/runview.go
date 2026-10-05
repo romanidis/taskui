@@ -55,13 +55,6 @@ func (a *App) runHeader() line {
 	if label := a.WatchLabel(); label != "" {
 		l = append(l, styled("   watching "+label, fg(t.Colors.Interactive)))
 	}
-	// Armed here, spent anywhere: `⇧R` leaves `--force` on for whatever you run next,
-	// including a different task from the picker. Named "force next" rather than "force"
-	// because the subject line beside it already carries this run's own `--force`, and the
-	// two are different runs — this one is history, that one has not happened yet.
-	if a.ForceNext {
-		l = append(l, styled("   force next", fg(t.Colors.Notice)))
-	}
 	switch {
 	case r.Cancelled():
 		// Cancelled and still going is not the same state as cancelled and gone, and it is

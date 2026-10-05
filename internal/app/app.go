@@ -293,6 +293,12 @@ type App struct {
 	// if the caret lands after the `=`.
 	ArgsCursor int
 	ArgsTarget string
+	// ArgsForce and ArgsInteractive are how the start the prompt is composing goes out:
+	// `--force`, and interleaved so a prompt can be answered. Toggled in the prompt, for
+	// that one start. They used to be armed from the picker and stayed armed for every run
+	// after, so one `⇧I` turned every later run interleaved without saying so again.
+	ArgsForce       bool
+	ArgsInteractive bool
 	// argsVars is what the target task declares it requires, kept from the lookup that
 	// pre-filled the prompt so ⇥ can complete against it without spending a second one.
 	argsVars []string
@@ -319,12 +325,6 @@ type App struct {
 	// Deliberately a mode: half the run view's keys are single letters, and `y` meaning
 	// both "yes" and "move the cursor" would be intolerable.
 	SendingInput bool
-	// InteractiveNext is sticky: the next run goes out interleaved so the task can ask
-	// questions.
-	InteractiveNext bool
-	// ForceNext is sticky: the next run passes `--force`, so go-task's up-to-date checks
-	// do not skip it.
-	ForceNext bool
 
 	// Cross-run search over the archive, from the history list.
 	HistorySearching bool

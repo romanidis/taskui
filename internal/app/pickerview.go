@@ -32,17 +32,6 @@ func (a *App) pickerHeader() line {
 		state = append(state, styled("   by "+a.OrderLabel(), fg(t.Colors.Mode)))
 	}
 
-	// The armed modifiers show whether or not a filter is running. They are state you are
-	// holding rather than something that just happened, they change what the next `⏎` does,
-	// and a filter is exactly the moment you would otherwise have no way of seeing that
-	// force is still on — you filter, run, and wonder why the checks were skipped.
-	if a.InteractiveNext {
-		state = append(state, styled("   interactive", fg(t.Colors.Interactive)))
-	}
-	if a.ForceNext {
-		state = append(state, styled("   force", fg(t.Colors.Notice)))
-	}
-
 	// Leaving the run view does not stop anything; say so, or it is easy to forget — and
 	// with several slots open the picker is the only screen that would not otherwise
 	// mention the ones you are not looking at. A filter is a view of the list rather than a

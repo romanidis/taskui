@@ -66,24 +66,6 @@ func find(lines []string, want string) (string, bool) {
 	return "", false
 }
 
-// Force is armed until you disarm it, and it used to vanish from the header the moment you
-// started filtering — which is exactly when you cannot tell whether the next `⏎` will skip
-// go-task's up-to-date checks.
-func TestTheArmedModifiersStayVisibleUnderAFilter(t *testing.T) {
-	a := viewSample(t)
-	a.ToggleForce()
-	a.ToggleInteractive()
-	for _, query := range []string{"", "a"} {
-		a.Query = query
-		header := a.RenderHeadless(100, 12)[0]
-		for _, want := range []string{"force", "interactive"} {
-			if !strings.Contains(header, want) {
-				t.Errorf("query %q: header %q is missing %q", query, header, want)
-			}
-		}
-	}
-}
-
 // A filter is a view of the list, not a change to what the program is doing — so a run you
 // cannot see is still named under one, by count.
 func TestWhatIsRunningSurvivesAFilter(t *testing.T) {
@@ -101,24 +83,30 @@ func TestWhatIsRunningSurvivesAFilter(t *testing.T) {
 	}
 }
 
-// `⇧R` arms --force from the run view, and it stays armed for whatever you start next —
-// including a different task from the picker. The screen that armed it has to say so.
-func TestTheRunViewSaysForceIsArmedForTheNextRun(t *testing.T) {
+// What the toggles did is on the line, as part of the command it will run, rather than a
+// mode you have to remember you set.
+func TestTheArgsPromptShowsHowTheStartGoesOut(t *testing.T) {
 	a := viewSample(t)
-	r := run.Detached("atlas:build", run.GraphFrom(run.Edge{Parent: "atlas:build"}))
-	r.Finish(0)
-	a.OpenRunForTest(r)
-	a.Screen = ScreenRun
-
-	if header := a.RenderHeadless(100, 12)[0]; strings.Contains(header, "force") {
-		t.Errorf("header %q says force before anything armed it", header)
+	a.BeginArgs("atlas:build")
+	prompt := func() string {
+		l, _ := a.argsPrompt()
+		var b strings.Builder
+		for _, s := range l {
+			b.WriteString(s.text)
+		}
+		return b.String()
 	}
-	a.ForceRerunSelected()
-	if !a.ForceNext {
-		t.Fatal("⇧R should have armed force")
+	if got := prompt(); strings.Contains(got, "--force") || strings.Contains(got, "interactive   ") {
+		t.Errorf("prompt %q shows a toggle nobody set", got)
 	}
-	if header := a.RenderHeadless(100, 12)[0]; !strings.Contains(header, "force next") {
-		t.Errorf("header %q does not say force is armed", header)
+	press(a, Ctrl('f'))
+	press(a, Ctrl('t'))
+	got := prompt()
+	if !strings.Contains(got, "task atlas:build --force ") {
+		t.Errorf("prompt %q does not show --force in the command", got)
+	}
+	if !strings.Contains(got, "   interactive") {
+		t.Errorf("prompt %q does not say it will run interactively", got)
 	}
 }
 

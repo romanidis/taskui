@@ -65,12 +65,11 @@ func (a *App) ClearMarks() {
 	a.Status = "marks cleared"
 }
 
-// RunMarked starts every marked task at once, each in its own slot, with whatever `F` and
-// `I` have armed.
+// RunMarked starts every marked task at once, each in its own slot.
 func (a *App) RunMarked() {
 	var runs []run.Invocation
 	for _, name := range a.Marked() {
-		runs = append(runs, a.armed(name, nil))
+		runs = append(runs, run.Invocation{Task: name})
 	}
 	if len(runs) > 0 {
 		a.requestRunSet(RunSet{Runs: runs, Marked: true})

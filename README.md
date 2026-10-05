@@ -276,8 +276,6 @@ In the picker:
 | `m` | mark a task to run alongside others |
 | `⇧M` | clear every mark |
 | `a` | run it with arguments |
-| `i` | arm interactive mode for the next run — again to disarm |
-| `⇧F` | arm --force: ignore go-task's up-to-date checks — again to disarm |
 | `⇧W` | watch: re-run the marked set, or this task, whenever the source changes |
 | `/` | filter the list down to matching tasks |
 | `f` | jump to a task, leaving the list intact |

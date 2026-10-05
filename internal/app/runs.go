@@ -22,10 +22,9 @@ func stopRun(r *run.Run) string {
 	}
 }
 
-// StartRun kicks off `task <name> <args>` with whatever `F` and `I` have armed, past every
-// question, and switches to the run view.
+// StartRun kicks off `task <name> <args>`, past every question, and switches to the run view.
 func (a *App) StartRun(name string, args []string) error {
-	return a.start(a.armed(name, args))
+	return a.start(run.Invocation{Task: name, Args: args})
 }
 
 // ResumeRun returns to a run already in progress.
@@ -65,12 +64,7 @@ func (a *App) ResumeRun() bool {
 // means "show me it" rather than "start a second one" — one slot per task name, so a
 // second copy would have nowhere to live even if it were wanted.
 func (a *App) RequestRun(name string, args []string) {
-	a.requestRun(a.armed(name, args))
-}
-
-// armed is a start with whatever `F` and `I` have armed.
-func (a *App) armed(name string, args []string) run.Invocation {
-	return run.Invocation{Task: name, Args: args, Interactive: a.InteractiveNext, Force: a.ForceNext}
+	a.requestRun(run.Invocation{Task: name, Args: args})
 }
 
 func (a *App) requestRun(inv run.Invocation) {
@@ -255,24 +249,6 @@ func (a *App) archiveIfFinished(s *slot) {
 	}
 }
 
-func (a *App) ToggleForce() {
-	a.ForceNext = !a.ForceNext
-	if a.ForceNext {
-		a.Status = "force: the next run ignores up-to-date checks — again to turn it off"
-	} else {
-		a.Status = "force off"
-	}
-}
-
-func (a *App) ToggleInteractive() {
-	a.InteractiveNext = !a.InteractiveNext
-	if a.InteractiveNext {
-		a.Status = "interactive: the next run can be typed at, but output is attributed by command"
-	} else {
-		a.Status = "interactive off"
-	}
-}
-
 // CancelRun stops the run on screen, escalating if it has already been asked once.
 func (a *App) CancelRun() {
 	if a.Run == nil {
@@ -370,14 +346,9 @@ func (a *App) RerunSelected() { a.rerunSelectedWith(false) }
 //
 // The tight loop when you are fixing one broken step is `r`, and `r` inherits the original
 // run's flags — so a task go-task considers up to date declines to run again and you get a
-// green tick that proves nothing. Reaching for the picker's `F` means leaving the output
-// you are working against. This is the same key with the checks off, which is what you
-// wanted the second time you pressed `r`.
-//
-// It also arms force for what you start next, and the header says so: having needed the
-// checks off once, the next thing you start from the picker usually needs them off too.
+// green tick that proves nothing. This is the same key with the checks off, which is what
+// you wanted the second time you pressed `r`. It forces this re-run and nothing after it.
 func (a *App) ForceRerunSelected() {
-	a.ForceNext = true
 	a.rerunSelectedWith(true)
 }
 
@@ -388,7 +359,7 @@ func (a *App) rerunSelectedWith(force bool) {
 	if !ok {
 		return
 	}
-	inv := a.armed(name, nil)
+	inv := run.Invocation{Task: name}
 	if a.Run != nil {
 		inv = a.Run.Rerun(name)
 		inv.Force = inv.Force || force
@@ -419,9 +390,6 @@ func (a *App) InteractiveRerun() {
 	}
 	inv := a.Run.Invocation
 	inv.Interactive = true
-	// Armed as well, as `⇧R` arms force: a task that needed its prompt seen once will
-	// need it again.
-	a.InteractiveNext = true
 	a.restart(inv)
 }
 

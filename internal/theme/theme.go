@@ -699,6 +699,10 @@ func applyKeys(keymap *keys.Keymap, table map[string]string) []string {
 	for _, name := range names {
 		value := table[name]
 		action, ok := keys.ActionByName(name)
+		if why, retired := keys.Retired[name]; !ok && retired {
+			problems = append(problems, fmt.Sprintf("keys: `%s` is no longer a key — %s", name, why))
+			continue
+		}
 		if !ok {
 			problems = append(problems, fmt.Sprintf("keys: `%s` is not an action", name))
 			continue
