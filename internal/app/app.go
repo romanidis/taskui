@@ -419,13 +419,13 @@ func (a *App) WithConfig(config theme.Config) *App {
 // Ordering is the configured order with the archive attached, which is what `recent` and
 // `failed` are actually sorted on.
 //
-// Attached here rather than stored, because the last outcome of every task changes whenever
-// a run finishes and a closure captured once cannot go stale.
+// Attached on every rebuild rather than stored, because the last outcome of every task
+// changes whenever a run finishes.
 func (a *App) Ordering() pivot.Order {
 	order := a.Order
-	order.Ran = func(name string) (pivot.Outcome, bool) {
-		outcome, ok := a.Outcomes[name]
-		return pivot.Outcome{Ok: outcome.Ok, WhenUnix: outcome.WhenUnix}, ok
+	order.Outcomes = make(map[string]pivot.Outcome, len(a.Outcomes))
+	for name, outcome := range a.Outcomes {
+		order.Outcomes[name] = pivot.Outcome{Ok: outcome.Ok, WhenUnix: outcome.WhenUnix}
 	}
 	return order
 }

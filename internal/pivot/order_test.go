@@ -24,14 +24,6 @@ func want(t *testing.T, got, expected string) {
 	}
 }
 
-// ran answers the archive lookup from a table of task name to how it went and when.
-func ran(table map[string]Outcome) func(string) (Outcome, bool) {
-	return func(name string) (Outcome, bool) {
-		outcome, ok := table[name]
-		return outcome, ok
-	}
-}
-
 // --- what the default is ----------------------------------------------------------------
 
 // The rule that has always been there, now that it is one comparator rather than three:
@@ -108,21 +100,21 @@ func TestAKnownLocationOutranksAnUnknownOne(t *testing.T) {
 
 func TestRecentPutsTheLastThingYouRanOnTop(t *testing.T) {
 	tasks := Fixture([]string{"build", "lint", "test"})
-	order := Order{By: ByRecent, Ran: ran(map[string]Outcome{
+	order := Order{By: ByRecent, Outcomes: map[string]Outcome{
 		"build": {Ok: true, WhenUnix: 100},
 		"test":  {Ok: true, WhenUnix: 300},
-	})}
+	}}
 	// `lint` has never run, so it sorts below both and keeps its alphabetical place there.
 	want(t, ordered(tasks, order), "test\nbuild\nlint\n")
 }
 
 func TestFailedPutsWhatIsBrokenOnTop(t *testing.T) {
 	tasks := Fixture([]string{"build", "lint", "test"})
-	order := Order{By: ByFailed, Ran: ran(map[string]Outcome{
+	order := Order{By: ByFailed, Outcomes: map[string]Outcome{
 		"build": {Ok: true, WhenUnix: 300},
 		"lint":  {Ok: false, WhenUnix: 100},
 		"test":  {Ok: false, WhenUnix: 200},
-	})}
+	}}
 	// Broken first, and within it the most recent failure — the one you are here about.
 	want(t, ordered(tasks, order), "test\nlint\nbuild\n")
 }
@@ -131,9 +123,9 @@ func TestFailedPutsWhatIsBrokenOnTop(t *testing.T) {
 // you want to know about a fold is whether there is anything in there worth opening.
 func TestAGroupCarriesTheStateOfWhatIsInside(t *testing.T) {
 	tasks := Fixture([]string{"a:one", "b:two"})
-	order := Order{By: ByFailed, Interleave: true, Ran: ran(map[string]Outcome{
+	order := Order{By: ByFailed, Interleave: true, Outcomes: map[string]Outcome{
 		"b:two": {Ok: false, WhenUnix: 100},
-	})}
+	}}
 	want(t, ordered(tasks, order), "b/\n  two\na/\n  one\n")
 }
 
@@ -149,9 +141,9 @@ func TestRecentWithoutAnArchiveIsAlphabetical(t *testing.T) {
 // over you.
 func TestAnOrderYouNamedOutranksTheHoist(t *testing.T) {
 	tasks := Fixture([]string{"clean", "fmt", "backend:lint", "backend:test"})
-	order := Order{By: ByRecent, Interleave: true, Ran: ran(map[string]Outcome{
+	order := Order{By: ByRecent, Interleave: true, Outcomes: map[string]Outcome{
 		"backend:test": {Ok: true, WhenUnix: 9999},
-	})}
+	}}
 	want(t, ordered(tasks, order), "backend/\n  test\n  lint\nclean\nfmt\n")
 
 	// …and with no opinion of your own the hoist is back, because then the pivot's reading is
@@ -164,9 +156,9 @@ func TestAnOrderYouNamedOutranksTheHoist(t *testing.T) {
 // sort above groups.
 func TestWhatThePivotCannotPlaceStaysAtTheBottomUnderAnyOrder(t *testing.T) {
 	tasks := Fixture([]string{"a:build", "b:build", "wt:ls"})
-	order := Order{By: ByRecent, Ran: ran(map[string]Outcome{
+	order := Order{By: ByRecent, Outcomes: map[string]Outcome{
 		"wt:ls": {Ok: true, WhenUnix: 9999},
-	})}
+	}}
 	all := []int{0, 1, 2}
 	want(t, drawTree(Build(Verb(), tasks, all, order)),
 		"build/\n  a:build\n  b:build\nwt:ls\n")

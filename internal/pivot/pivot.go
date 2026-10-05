@@ -146,7 +146,10 @@ func Build(p Pivot, tasks []task.Task, visible []int, ord Order) *Tree {
 		build = buildDomain
 	}
 	tree := build(tasks, visible)
-	ord.finish(tree, tasks, p.Natural)
+	for _, r := range tree.Roots {
+		ord.gather(tree, tasks, r)
+	}
+	ord.sort(tree, p.Natural)
 	return tree
 }
 

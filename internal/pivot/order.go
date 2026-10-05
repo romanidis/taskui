@@ -104,9 +104,9 @@ type Order struct {
 	// rises with anything it contains, so pinning `backend:test` also lifts `backend` to the
 	// top of the roots — a pin you have to go looking for is not a pin.
 	Pins []string
-	// Ran says how a task went last time. A nil func — or a task the archive has never seen
-	// — makes `recent` and `failed` fall through to the name rather than inventing an order.
-	Ran func(name string) (Outcome, bool)
+	// Outcomes is how each task went last time. A task the archive has never seen makes
+	// `recent` and `failed` fall through to the name rather than inventing an order.
+	Outcomes map[string]Outcome
 }
 
 // Rank is the coarse bucket a node sits in, for the few rows whose position is part of what
@@ -114,7 +114,7 @@ type Order struct {
 // a task the grouping could not place closes any tree that has one, and a verb group's own
 // aggregate sits directly above its fan-out.
 //
-// It outranks the key you are sorting on, with one exception — see `ranks`, where the hoists
+// It outranks the key you are sorting on, with one exception — see `less`, where the hoists
 // give way to an order you asked for by name and the sink does not.
 const (
 	RankFirst  = -1
@@ -141,14 +141,6 @@ type Facets struct {
 	Pin int
 }
 
-// finish fills in the counts and facets and then sorts the whole tree.
-func (o Order) finish(tree *Tree, tasks []task.Task, natural By) {
-	for _, r := range tree.Roots {
-		o.gather(tree, tasks, r)
-	}
-	o.sort(tree, natural)
-}
-
 // gather walks a subtree filling in Count and Facets, and returns what it found so the
 // parent can fold it into its own.
 func (o Order) gather(tree *Tree, tasks []task.Task, idx int) (int, Facets) {
@@ -159,11 +151,9 @@ func (o Order) gather(tree *Tree, tasks []task.Task, idx int) (int, Facets) {
 		count = 1
 		t := tasks[ti]
 		facets.Where = t.Where
-		if o.Ran != nil {
-			if outcome, seen := o.Ran(t.Name); seen {
-				facets.Newest = outcome.WhenUnix
-				facets.Broken = !outcome.Ok
-			}
+		if outcome, seen := o.Outcomes[t.Name]; seen {
+			facets.Newest = outcome.WhenUnix
+			facets.Broken = !outcome.Ok
 		}
 		facets.Pin = o.pinOf(t.Name)
 	} else {
@@ -243,7 +233,27 @@ func (o Order) less(a, b Node, by By) bool {
 	if a.Facets.Pin != b.Facets.Pin {
 		return a.Facets.Pin < b.Facets.Pin
 	}
-	if ra, rb := o.ranks(a, b); ra != rb {
+	// Then the pivot's ranks, with the hoists dropped when you have named an order of your
+	// own.
+	//
+	// A hoist is the pivot saying "read this first", and that is worth outranking a sort key
+	// only while you are reading the pivot the way it means to be read. Name `recent` and the
+	// question you are asking is *what did I just run* — a question the hoist has no view on
+	// and was silently answering anyway. With the unnamespaced tasks floated one at a time
+	// rather than pooled under one `(root)` header, it answered it a dozen rows deep: `recent`
+	// could not put `backend:test` on top of a Taskfile with twelve root tasks, however
+	// recently you had run it.
+	//
+	// The sink stays, and the asymmetry is the point. `RankLast` is not a claim about recency
+	// that a better answer could displace; it is the grouping admitting it had nothing to say
+	// about these rows. Dropping it would not merely un-sink them — leaves sort above groups,
+	// so the tasks the pivot could not place would land at the *top*, which is the opposite of
+	// what the rank means.
+	ra, rb := a.Rank, b.Rank
+	if o.By != ByNatural {
+		ra, rb = max(ra, RankNormal), max(rb, RankNormal)
+	}
+	if ra != rb {
 		return ra < rb
 	}
 	if !o.Interleave && a.IsGroup() != b.IsGroup() {
@@ -258,29 +268,6 @@ func (o Order) less(a, b Node, by By) bool {
 		return a.Label < b.Label
 	}
 	return a.Key < b.Key
-}
-
-// ranks is the two rows' Ranks, with the hoists dropped when you have named an order of
-// your own.
-//
-// A hoist is the pivot saying "read this first", and that is worth outranking a sort key
-// only while you are reading the pivot the way it means to be read. Name `recent` and the
-// question you are asking is *what did I just run* — a question the hoist has no view on and
-// was silently answering anyway. With the unnamespaced tasks floated one at a time rather
-// than pooled under one `(root)` header, it answered it a dozen rows deep: `recent` could
-// not put `backend:test` on top of a Taskfile with twelve root tasks, however recently you
-// had run it.
-//
-// The sink stays, and the asymmetry is the point. `RankLast` is not a claim about recency
-// that a better answer could displace; it is the grouping admitting it had nothing to say
-// about these rows. Dropping it would not merely un-sink them — leaves sort above groups, so
-// the tasks the pivot could not place would land at the *top*, which is the opposite of what
-// the rank means.
-func (o Order) ranks(a, b Node) (int, int) {
-	if o.By == ByNatural {
-		return a.Rank, b.Rank
-	}
-	return max(a.Rank, RankNormal), max(b.Rank, RankNormal)
 }
 
 // compare answers the ordering's own question, or says it has no answer and leaves the two
