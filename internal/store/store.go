@@ -726,6 +726,34 @@ func (a Archive) List() []Manifest {
 	return out
 }
 
+// Runs is the runs made in project, newest first. A run made in a directory under it counts:
+// go-task runs a subdirectory's tasks from the Taskfile above it.
+func (a Archive) Runs(project string) []Manifest {
+	var out []Manifest
+	for _, m := range a.List() {
+		if SameDir(m.Dir, project) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// RepoRuns is the runs made in any checkout of repo — the git directory every worktree of one
+// repository shares — and in project itself, newest first. With no repo it is project's own.
+//
+// A run made in project counts whatever it recorded: manifests written before `Repo` existed
+// have none, and answering "not the same repo" for a run made in this very directory would
+// lose history the narrow list always showed.
+func (a Archive) RepoRuns(project, repo string) []Manifest {
+	var out []Manifest
+	for _, m := range a.List() {
+		if SameDir(m.Dir, project) || (repo != "" && m.Repo == repo) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // scanRuns reads the manifest out of every run directory.
 func (a Archive) scanRuns() []Manifest {
 	entries, err := os.ReadDir(a.runsDir())
@@ -878,11 +906,12 @@ func (p Point) Ok() bool { return p.Status == run.Ok }
 // run — a task go-task decided was up to date has no verdict to draw — and a Running one is
 // in a record saved before its run ended, a detach, which says nothing yet about how it went.
 func (a Archive) points(project string) []Point {
+	runs := a.List()
+	if project != "" {
+		runs = a.Runs(project)
+	}
 	var out []Point
-	for _, m := range a.List() {
-		if project != "" && !SameDir(m.Dir, project) {
-			continue
-		}
+	for _, m := range runs {
 		for _, e := range m.Tasks {
 			if e.Status != run.Ok && e.Status != run.Failed {
 				continue

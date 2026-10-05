@@ -39,17 +39,14 @@ func (s HistoryScope) String() string {
 
 // OpenLastRun opens the most recent stored run for this project, as `--last` does.
 func (a *App) OpenLastRun() bool {
-	here := a.Root
-	for _, m := range a.archive.List() {
-		if !store.SameDir(m.Dir, here) {
-			continue
-		}
-		a.History = []store.Manifest{m}
-		a.HistoryCursor = 0
-		a.OpenStoredRun()
-		return true
+	runs := a.archive.Runs(a.Root)
+	if len(runs) == 0 {
+		return false
 	}
-	return false
+	a.History = runs[:1]
+	a.HistoryCursor = 0
+	a.OpenStoredRun()
+	return true
 }
 
 // OpenHistory loads the archive and switches to it.
@@ -68,29 +65,14 @@ func (a *App) OpenHistory() {
 }
 
 func (a *App) reloadHistory() {
-	all := a.archive.List()
-	if a.HistoryScope == ScopeEverywhere {
-		a.History = all
-		return
+	switch a.HistoryScope {
+	case ScopeEverywhere:
+		a.History = a.archive.List()
+	case ScopeRepo:
+		a.History = a.archive.RepoRuns(a.Root, a.repoDir())
+	default:
+		a.History = a.archive.Runs(a.Root)
 	}
-	a.History = nil
-	for _, m := range all {
-		if a.inHistoryScope(m) {
-			a.History = append(a.History, m)
-		}
-	}
-}
-
-// inHistoryScope is whether a stored run belongs in the list at the current scope.
-//
-// The repository rung falls back to the directory when either side has no repo recorded:
-// manifests written before `Repo` existed have none, and answering "not the same repo" for
-// a run made in this very directory would lose history the narrow scope always showed.
-func (a *App) inHistoryScope(m store.Manifest) bool {
-	if store.SameDir(m.Dir, a.Root) {
-		return true
-	}
-	return a.HistoryScope == ScopeRepo && a.repoDir() != "" && m.Repo == a.repoDir()
 }
 
 func (a *App) repoDir() string {
@@ -176,12 +158,8 @@ func (a *App) nextHistoryScope() HistoryScope {
 	case ScopeProject:
 		// The repository rung only shows something new when the archive holds runs from this
 		// repository made somewhere other than here: another worktree.
-		if repo := a.repoDir(); repo != "" {
-			for _, m := range a.archive.List() {
-				if m.Repo == repo && !store.SameDir(m.Dir, a.Root) {
-					return ScopeRepo
-				}
-			}
+		if repo := a.repoDir(); repo != "" && len(a.archive.RepoRuns(a.Root, repo)) > len(a.archive.Runs(a.Root)) {
+			return ScopeRepo
 		}
 		return ScopeEverywhere
 	case ScopeRepo:

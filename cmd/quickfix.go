@@ -36,11 +36,11 @@ func printQuickfix(out io.Writer, root, only string) error {
 	archive := store.Default()
 	var latest *store.Manifest
 	var latestEnd int64 // milliseconds
-	for _, m := range archive.List() {
+	for _, m := range archive.Runs(root) {
 		// The ledger remembers further back than the output is kept, and a quickfix list is
 		// built out of the text. Walk past what is only remembered to the runs there is still
 		// something to read.
-		if !store.SameDir(m.Dir, root) || !archive.HasOutput(m.ID) {
+		if !archive.HasOutput(m.ID) {
 			continue
 		}
 		// List is newest-started first, so a tie keeps the later start.

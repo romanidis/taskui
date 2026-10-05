@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -459,6 +460,53 @@ func TestATimelineIsScopedToItsProject(t *testing.T) {
 	}
 	if got := archive.Timeline("", "test"); len(got) != 1 {
 		t.Errorf("an empty project should mean every project, got %d", len(got))
+	}
+}
+
+// A worktree is a different directory holding the same project, so the archive keyed by
+// directory loses every task's history the day you branch. The repository's runs are what get
+// it back, and they must not also drag in the repositories you were not asking about.
+func TestRepoRunsReachOtherWorktreesAndNothingElse(t *testing.T) {
+	archive := At(t.TempDir())
+	made := func(dir, repo string, ago int) string {
+		path, err := archive.Save(dir, agedRun("all", "test", true, ago))
+		if err != nil {
+			t.Fatal(err)
+		}
+		rewriteStored(t, archive, path, func(m *Manifest) { m.Repo = repo })
+		return filepath.Base(path)
+	}
+	here := made("/main", "/main/.git", 30)
+	worktree := made("/main/.worktrees/backend", "/main/.git", 20)
+	made("/other", "/other/.git", 10)
+
+	ids := func(runs []Manifest) []string {
+		var out []string
+		for _, m := range runs {
+			out = append(out, m.ID)
+		}
+		return out
+	}
+	if got := ids(archive.Runs("/main")); !slices.Equal(got, []string{here}) {
+		t.Errorf("this project's runs = %v, want only %s", got, here)
+	}
+	if got := ids(archive.RepoRuns("/main", "/main/.git")); !slices.Equal(got, []string{worktree, here}) {
+		t.Errorf("the repository's runs = %v, want the worktree's %s and this one's %s", got, worktree, here)
+	}
+	if got := ids(archive.RepoRuns("/main", "")); !slices.Equal(got, []string{here}) {
+		t.Errorf("outside a checkout the repository's runs = %v, want this project's", got)
+	}
+}
+
+// An old manifest has no repository recorded. Answering "not this repo" for a run made in
+// this very directory would lose history the narrow list always showed.
+func TestARunWithNoRecordedRepoIsStillThisDirectorys(t *testing.T) {
+	archive := At(t.TempDir())
+	if _, err := archive.Save("/main", agedRun("all", "test", true, 10)); err != nil {
+		t.Fatal(err)
+	}
+	if got := archive.RepoRuns("/main", "/main/.git"); len(got) != 1 {
+		t.Errorf("a run from before Repo existed dropped out of its own directory's history: %+v", got)
 	}
 }
 

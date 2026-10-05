@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/romanidis/taskui/internal/store"
 )
 
 // Completion for the args prompt.
@@ -169,8 +167,8 @@ func (a *App) argsHistory() [][]string {
 		return a.argsPast
 	}
 	a.argsPastRead = true
-	for _, m := range a.archive.List() {
-		if store.SameDir(m.Dir, a.Root) && m.Root == a.ArgsTarget && len(m.Args) > 0 {
+	for _, m := range a.archive.Runs(a.Root) {
+		if m.Root == a.ArgsTarget && len(m.Args) > 0 {
 			a.argsPast = append(a.argsPast, m.Args)
 		}
 	}
