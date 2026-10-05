@@ -239,3 +239,27 @@ func TestAHostThatStopsReadingDoesNotHoldTheSender(t *testing.T) {
 		t.Fatal("sending to a host that stopped reading blocked the sender")
 	}
 }
+
+// The same question asked again after it was answered is a second prompt. Remembered for
+// good, the host heard about the first and never the second.
+func TestTheSameQuestionAskedTwiceIsAnnouncedTwice(t *testing.T) {
+	r := run.Detached("ask", run.GraphFrom(run.Edge{Parent: "ask"}))
+	d := newDeltas()
+	prompts := 0
+	count := func() {
+		for _, e := range sent(t, r, d) {
+			if e["type"] == "prompt" {
+				prompts++
+			}
+		}
+	}
+	r.Apply(run.Partial{Text: "Proceed? (y/n) "})
+	count()
+	r.Apply(run.LineEvent{Raw: "Proceed? (y/n) y"})
+	count()
+	r.Apply(run.Partial{Text: "Proceed? (y/n) "})
+	count()
+	if prompts != 2 {
+		t.Errorf("%d prompt events, want 2", prompts)
+	}
+}

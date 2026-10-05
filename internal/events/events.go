@@ -274,7 +274,12 @@ func (d *Deltas) Flush(s *Sink, r *run.Run) {
 		}
 	}
 
-	if text, waiting := r.PendingPrompt(); waiting && text != d.prompt {
+	// Forgotten once answered: the same question asked again is a second prompt, and the
+	// host that was told about the first has no other way to hear about it.
+	switch text, waiting := r.PendingPrompt(); {
+	case !waiting:
+		d.prompt = ""
+	case text != d.prompt:
 		d.prompt = text
 		s.Send(Prompt{Type: "prompt", Root: r.Root, Text: text})
 	}
