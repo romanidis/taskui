@@ -111,7 +111,9 @@ func (a *App) ConfirmArgs() {
 	}
 	args := shellwords.Split(a.ArgsInput)
 	a.CancelArgs()
-	a.RequestRun(name, args)
+	// Through restart, as `r` and `⇧I` go: on a task that is still running, a plain request
+	// only focused it, and the arguments just typed were dropped without a word.
+	a.restart(a.armed(name, args))
 }
 
 // ArgsHint is the usage hint for whatever the args prompt is aimed at.

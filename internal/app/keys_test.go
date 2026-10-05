@@ -1322,3 +1322,27 @@ func TestAJumpPrefersTheTaskItNames(t *testing.T) {
 		t.Errorf("jump to `build` landed on %q", got)
 	}
 }
+
+// `a` in the run view is "re-run it with different arguments". On a task whose run is
+// still going, the prompt's ⏎ goes through RequestRun, which only focuses the live run:
+// the typed arguments vanish with no question and no status — the bug restart() was
+// written to fix for `r` and `⇧I`.
+func TestArgsOnARunningTaskAskToRestartIt(t *testing.T) {
+	a := appAt(t, "backend:lint")
+	live := run.Detached("backend:lint", run.GraphFrom(run.Edge{Parent: "backend:lint"}))
+	a.OpenRunForTest(live)
+	a.Screen = ScreenRun
+
+	press(a, Char('a'))
+	if !a.EnteringArgs {
+		t.Fatal("the args prompt did not open")
+	}
+	for _, c := range "-- -run TestX" {
+		press(a, Char(c))
+	}
+	press(a, Enter())
+
+	if a.Confirm == nil && a.Status == "" && a.Run == live {
+		t.Errorf("⏎ in the args prompt did nothing: no restart question, no status, args %q lost", "-- -run TestX")
+	}
+}
