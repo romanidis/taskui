@@ -185,7 +185,7 @@ func begin[T any](work func() (T, bool)) pending[T] {
 }
 
 // running reports whether there is a result still to take.
-func (p pending[T]) running() bool { return p.ch != nil }
+func (p *pending[T]) running() bool { return p.ch != nil }
 
 // take is the result if it has landed, and never waits: it is called from the poll loop,
 // which must not wait for anything. Once it has landed nothing is pending, answer or not.
