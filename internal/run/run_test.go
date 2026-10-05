@@ -1289,3 +1289,16 @@ func TestTheCulpritsAreTheTasksThatBrokeNotTheOnesBlamed(t *testing.T) {
 		t.Errorf("culprits = %v, want lint and test", got)
 	}
 }
+
+// A re-run goes out the way the run did. The task it was started as gets its arguments back;
+// a task it reached was never given them, and handing them over would change what it does.
+func TestARerunGivesTheArgumentsBackOnlyToTheTaskInvoked(t *testing.T) {
+	inv := Invocation{Task: "deploy", Args: []string{"ENV=staging"}, Force: true, Interactive: true}
+	if got := inv.Rerun("deploy"); !reflect.DeepEqual(got, inv) {
+		t.Errorf("rerun of the task invoked = %+v, want %+v", got, inv)
+	}
+	want := Invocation{Task: "deploy:check", Force: true, Interactive: true}
+	if got := inv.Rerun("deploy:check"); !reflect.DeepEqual(got, want) {
+		t.Errorf("rerun of a task it reached = %+v, want %+v", got, want)
+	}
+}

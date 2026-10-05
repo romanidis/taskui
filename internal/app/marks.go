@@ -193,16 +193,11 @@ func (a *App) RerunFailed() {
 		return
 	}
 
-	// Each failure goes out the way it ran in the run it failed in, and the task that run was
-	// started as gets its arguments back. Started bare and with whatever was armed instead,
-	// `deploy ENV=staging` failing came back as `task deploy`.
+	// Each failure goes out the way it ran in the run it failed in. Started bare and with
+	// whatever was armed instead, `deploy ENV=staging` failing came back as `task deploy`.
 	reruns := make([]run.Invocation, 0, len(failed))
 	for _, name := range failed {
-		rerun := run.Invocation{Task: name, Force: a.Run.Force, Interactive: a.Run.Interactive}
-		if name == a.Run.Task {
-			rerun.Args = a.Run.Args
-		}
-		reruns = append(reruns, rerun)
+		reruns = append(reruns, a.Run.Rerun(name))
 	}
 	// The same production question a marked set gets. A `deploy:prod` that failed inside
 	// `release` is still `deploy:prod`, and this key is one keypress from the run it failed in.

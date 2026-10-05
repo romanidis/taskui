@@ -400,16 +400,10 @@ func (a *App) rerunSelectedWith(force bool) {
 	if !ok {
 		return
 	}
-	var args []string
-	// Only the root was invoked with these args; a child was not.
-	if a.Run != nil && a.Run.Task == name {
-		args = a.Run.Args
-	}
-	// Re-run it the way it was run: non-interactively it would hang again, and without
-	// `--force` a cached task would simply decline.
-	inv := a.armed(name, args)
+	inv := a.armed(name, nil)
 	if a.Run != nil {
-		inv = run.Invocation{Task: name, Args: args, Force: a.Run.Force || force, Interactive: a.Run.Interactive}
+		inv = a.Run.Rerun(name)
+		inv.Force = inv.Force || force
 	}
 	a.restart(inv)
 }

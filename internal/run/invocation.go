@@ -42,6 +42,18 @@ func (inv Invocation) Command() string {
 	return "task " + inv.Task + force + " " + shellwords.Join(inv.Args)
 }
 
+// Rerun is task started again the way this invocation ran: with its force, so a task go-task
+// thinks is up to date does not decline, and its interactivity, so one waiting on a prompt
+// does not hang again. Only the task invoked gets the arguments back — a task it reached was
+// never given them.
+func (inv Invocation) Rerun(task string) Invocation {
+	again := Invocation{Task: task, Force: inv.Force, Interactive: inv.Interactive}
+	if task == inv.Task {
+		again.Args = inv.Args
+	}
+	return again
+}
+
 // argv is what go-task is invoked with: the output mode, the task, then the flags.
 func (inv Invocation) argv() []string {
 	mode := "prefixed"
