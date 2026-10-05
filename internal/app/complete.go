@@ -64,10 +64,6 @@ func (a *App) CompleteArgs(delta int) {
 		n := len(a.argsComp.cands)
 		a.argsComp.idx = (a.argsComp.idx + delta + n) % n
 	}
-	a.applyArgsCompletion()
-}
-
-func (a *App) applyArgsCompletion() {
 	c := a.argsComp
 	pick := c.cands[c.idx]
 	a.ArgsInput = c.head + pick + c.tail
@@ -89,84 +85,74 @@ func (a *App) argsWordAtCursor() (string, string, string) {
 	return string(runes[:start]), string(runes[start:at]), string(runes[at:])
 }
 
-// argsCandidates is what ⇥ offers for one word.
+// argsCandidates is what ⇥ offers for one word, in the order the sources are worth it.
 func (a *App) argsCandidates(word string) []string {
-	// Past the `=` the key is settled and only its value is in question, so the name is
-	// held aside and put back on whatever comes out.
-	if key, value, ok := strings.Cut(word, "="); ok {
-		var out []string
-		for _, v := range dedupe(concat(a.pastValues(key, value), a.pathsMatching(value))) {
-			out = append(out, key+"="+v)
-		}
-		return cap50(out)
-	}
-	return cap50(dedupe(concat(
-		a.varCandidates(word),
-		a.pastArgs(word),
-		a.hintCandidates(word),
-		a.pathsMatching(word),
-	)))
-}
-
-// hintCandidates is the examples the description spells out, whole.
-//
-// They come last of the three that are about *this* task because they are the author's
-// guess where the other two are declarations and decisions — but they are the only source
-// that works on a Taskfile you have never run, which is the first time you need one.
-func (a *App) hintCandidates(prefix string) []string {
 	var out []string
+	seen := map[string]bool{}
+	// The first of each is kept, so the order the sources come in survives, up to the cap.
+	offer := func(cand string) {
+		if !seen[cand] && len(out) < maxArgCandidates {
+			seen[cand] = true
+			out = append(out, cand)
+		}
+	}
+
+	// Past the `=` the key is settled and only its value is in question: the values this
+	// variable was run with before, newest first, then paths.
+	if key, value, ok := strings.Cut(word, "="); ok {
+		for _, args := range a.argsHistory() {
+			for _, arg := range args {
+				if k, v, ok := strings.Cut(arg, "="); ok && k == key && strings.HasPrefix(v, value) {
+					offer(key + "=" + v)
+				}
+			}
+		}
+		for _, p := range a.pathsMatching(value) {
+			offer(key + "=" + p)
+		}
+		return out
+	}
+
+	// The variables the task asks for, as `NAME=`. Taken from what BeginArgs already looked
+	// up: the prompt spends one `--summary` opening, and asking again on every ⇥ would spend
+	// it forty times over for an answer that cannot have changed.
+	var vars []string
+	for _, v := range a.argsVars {
+		if strings.HasPrefix(v, word) {
+			vars = append(vars, v+"=")
+		}
+	}
+	sort.Strings(vars)
+	for _, v := range vars {
+		offer(v)
+	}
+
+	// Every argument this task was run with before, newest run first.
+	for _, args := range a.argsHistory() {
+		for _, arg := range args {
+			if strings.HasPrefix(arg, word) {
+				offer(arg)
+			}
+		}
+	}
+
+	// The examples the description spells out, whole. They come last of the three that are
+	// about *this* task because they are the author's guess where the other two are
+	// declarations and decisions — but they are the only source that works on a Taskfile you
+	// have never run, which is the first time you need one.
 	for _, t := range a.Tasks {
 		if t.Name != a.ArgsTarget {
 			continue
 		}
 		for _, hint := range t.ArgsHints() {
-			if strings.HasPrefix(hint, prefix) {
-				out = append(out, hint)
+			if strings.HasPrefix(hint, word) {
+				offer(hint)
 			}
 		}
 	}
-	return out
-}
 
-// varCandidates is the variables the task asks for, as `NAME=`.
-//
-// Taken from what BeginArgs already looked up: the prompt spends one `--summary` opening,
-// and asking again on every ⇥ would spend it forty times over for an answer that cannot
-// have changed.
-func (a *App) varCandidates(prefix string) []string {
-	var out []string
-	for _, v := range a.argsVars {
-		if strings.HasPrefix(v, prefix) {
-			out = append(out, v+"=")
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// pastArgs is every argument this task has been run with before, newest run first.
-func (a *App) pastArgs(prefix string) []string {
-	var out []string
-	for _, args := range a.argsHistory() {
-		for _, arg := range args {
-			if strings.HasPrefix(arg, prefix) {
-				out = append(out, arg)
-			}
-		}
-	}
-	return out
-}
-
-// pastValues is the values this task has been run with for one variable, newest first.
-func (a *App) pastValues(key, prefix string) []string {
-	var out []string
-	for _, args := range a.argsHistory() {
-		for _, arg := range args {
-			k, v, ok := strings.Cut(arg, "=")
-			if ok && k == key && strings.HasPrefix(v, prefix) {
-				out = append(out, v)
-			}
-		}
+	for _, p := range a.pathsMatching(word) {
+		offer(p)
 	}
 	return out
 }
@@ -220,32 +206,4 @@ func (a *App) pathsMatching(prefix string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func concat(lists ...[]string) []string {
-	var out []string
-	for _, l := range lists {
-		out = append(out, l...)
-	}
-	return out
-}
-
-// dedupe keeps the first of each, so the order the sources were offered in survives.
-func dedupe(in []string) []string {
-	seen := make(map[string]bool, len(in))
-	out := in[:0]
-	for _, s := range in {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-func cap50(in []string) []string {
-	if len(in) > maxArgCandidates {
-		return in[:maxArgCandidates]
-	}
-	return in
 }
