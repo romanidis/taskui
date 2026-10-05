@@ -1552,3 +1552,20 @@ func TestTheDetailPanelSaysWhatThePreviewSays(t *testing.T) {
 		}
 	}
 }
+
+// The header names the task that broke. go-task's own closing line says it at length at the
+// foot of that task's output, and is drawn quietly now that the header carries it.
+func TestTheRunHeaderNamesTheTaskThatBroke(t *testing.T) {
+	a := appWith(t, []string{"all", "fmt", "lint", "test"})
+	r := run.Detached("all", run.GraphFrom(run.Edge{Parent: "all", Children: []string{"fmt", "lint", "test"}}))
+	r.Feed("lint", "boom")
+	r.ApplyFailed("lint")
+	r.Feed("test", "boom too")
+	r.ApplyFailed("test")
+	r.Finish(1)
+	a.OpenRunForTest(r)
+	a.Screen = ScreenRun
+	if header := a.RenderHeadless(100, 10)[0]; !strings.Contains(header, "in lint +1") {
+		t.Errorf("header = %q, want it to say where the run broke", header)
+	}
+}

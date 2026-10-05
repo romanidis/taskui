@@ -98,6 +98,16 @@ func (a *App) runHeader() line {
 	}
 	state = append(state, statusChip(status, t), styled("   "+duration(r.Elapsed()), fg(t.Colors.Dim)))
 	if r.Outcome() == run.Failed {
+		// Which task broke. go-task says so too, in a line at the foot of that task's
+		// output that was the longest and loudest on the screen; it is drawn quietly now
+		// that the header carries the part of it worth reading.
+		if culprits := r.Culprits(); len(culprits) > 0 {
+			where := "   in " + culprits[0]
+			if more := len(culprits) - 1; more > 0 {
+				where += fmt.Sprintf(" +%d", more)
+			}
+			state = append(state, styled(where, fg(t.Colors.StatusFailed)))
+		}
 		state = append(state, styled(fmt.Sprintf("   exit %d", r.Exit), fg(t.Colors.StatusFailed)))
 	}
 	return a.header(r.Command(), state)
@@ -264,8 +274,11 @@ func (a *App) runRowLines(r *run.Run, row RunRow, gutter string, width int) []li
 	switch {
 	case isCommand:
 		base = fg(t.Colors.Command)
+	// Real output, so it stays, as it arrived — but it repeats what the ✗ beside the task
+	// and the header already say, and at the length of a nested chain of task names it was
+	// the loudest line on the screen.
 	case isFailure(text):
-		base = fg(t.Colors.StatusFailed)
+		base = fg(t.Colors.Dim)
 	}
 
 	// One captured line can become several visual rows; the number and the marker belong
