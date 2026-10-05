@@ -248,7 +248,7 @@ func (d *Deltas) Flush(s *Sink, r *run.Run) {
 		// that has started is announced before its output and one that has finished after
 		// it, which is the order the two actually happen in — a consumer never sees `Ok`
 		// followed by more lines from the same task.
-		if changed && !settled(now.status) {
+		if changed && !now.status.Settled() {
 			announce()
 			changed = false
 		}
@@ -301,8 +301,3 @@ func (d *Deltas) Finish(s *Sink, r *run.Run, saved string) {
 
 // Done reports whether this run's closing event has gone out.
 func (d *Deltas) Done() bool { return d.closed }
-
-// settled reports whether a status is one a task does not come back from.
-func settled(s run.Status) bool {
-	return s == run.Ok || s == run.Failed || s == run.Skipped
-}

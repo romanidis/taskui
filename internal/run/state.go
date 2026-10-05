@@ -158,13 +158,7 @@ func (r *Run) touch(name string) {
 	// commands are all `task:` invocations never produces a line tagged with its own name —
 	// every line belongs to a child — so it would otherwise look as though it never ran.
 	// Ordered from the root down so Order reads top-down.
-	var chain []string
-	for _, t := range r.Graph.Reachable(r.Root) {
-		if ancestors[t] {
-			chain = append(chain, t)
-		}
-	}
-	chain = append(chain, name)
+	chain := append(r.pathTo(name, ancestors), name)
 
 	for _, task := range chain {
 		// The graph is built from the invoked root, but go-task can report a task we never
@@ -184,6 +178,46 @@ func (r *Run) touch(name string) {
 	}
 	r.active = name
 	r.hasActive = true
+}
+
+// pathTo is the chain of tasks name is running under, root first.
+//
+// One chain, not every ancestor. A task two others share — `build` under both `lint` and
+// `test` — has two above it, and opening both put `test` Running the moment `lint` started
+// building; `lint`'s own output then closed it as finished, ✓ in microseconds, before it
+// had run anything — and a run that failed before reaching it still called it a pass. The
+// chain taken is the first in invocation order with nothing on it finished: the one go-task
+// can still be inside. With none, every ancestor, as there is nothing better to go on.
+func (r *Run) pathTo(name string, ancestors map[string]bool) []string {
+	var path []string
+	onPath := map[string]bool{}
+	var walk func(node string) bool
+	walk = func(node string) bool {
+		if node == name {
+			return true
+		}
+		if t := r.Tasks[node]; !ancestors[node] || onPath[node] || (t != nil && t.Status.Settled()) {
+			return false
+		}
+		onPath[node] = true
+		path = append(path, node)
+		if slices.ContainsFunc(r.Graph.Edges[node], walk) {
+			return true
+		}
+		path = path[:len(path)-1]
+		delete(onPath, node)
+		return false
+	}
+	if walk(r.Root) {
+		return path
+	}
+	var all []string
+	for _, t := range r.Graph.Reachable(r.Root) {
+		if ancestors[t] {
+			all = append(all, t)
+		}
+	}
+	return all
 }
 
 // adoptStray puts a task that ran but that the graph never reached under the root.

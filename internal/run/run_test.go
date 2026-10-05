@@ -1130,6 +1130,32 @@ func TestARunsOutcomeFollowsItsExit(t *testing.T) {
 	}
 }
 
+// A task two others share opens only the chain go-task can be inside. Opening every task
+// above it put `test` Running the moment `build`'s dep spoke, and `build`'s own output then
+// closed it ✓ — so a run that failed in `build` recorded `test`, which never ran, as passing.
+func TestASharedDepDoesNotOpenEveryTaskAboveIt(t *testing.T) {
+	g := GraphFrom(
+		Edge{Parent: "all", Children: []string{"build", "test"}},
+		Edge{Parent: "build", Children: []string{"generate"}},
+		Edge{Parent: "test", Children: []string{"generate"}},
+		Edge{Parent: "generate"},
+	)
+	g.Deps["build"] = []string{"generate"}
+	g.Deps["test"] = []string{"generate"}
+
+	r := Detached("all", g)
+	r.Feed("generate", "generating")
+	if got := r.Tasks["test"].Status; got != Pending {
+		t.Errorf("test = %v before it has run anything, want Pending", got)
+	}
+	r.Feed("build", "compile error")
+	r.ApplyFailed("build")
+	r.Finish(201)
+	if got := r.Tasks["test"].Status; got != Skipped {
+		t.Errorf("test = %v in a run that failed before reaching it, want Skipped", got)
+	}
+}
+
 // Two tasks beneath two parallel deps interleave exactly as the deps do. Read as "the other
 // one finished", each line from one build marked the other ✓ while it was still printing.
 func TestCousinsUnderParallelDepsDoNotCloseEachOther(t *testing.T) {

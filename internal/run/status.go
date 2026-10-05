@@ -28,6 +28,10 @@ func (s Status) Glyph() string {
 	}
 }
 
+// Settled reports whether a task in this status has finished, one way or another: a status
+// it does not come back from.
+func (s Status) Settled() bool { return s == Ok || s == Failed || s == Skipped }
+
 // String is the name persisted in a manifest, and parsed back by the store.
 func (s Status) String() string {
 	switch s {
