@@ -175,6 +175,14 @@ func (r *Run) Culprits() []string {
 	return out
 }
 
+// Elapsed is the run's clock: the final figure once it has stopped, a ticking one until then.
+func (r *Run) Elapsed() time.Duration {
+	if r.HasDuration {
+		return r.Duration
+	}
+	return time.Since(r.Started)
+}
+
 // ExitCode is the run's exit status, or -1 while it has none.
 func (r *Run) ExitCode() int {
 	if r.HasExit {

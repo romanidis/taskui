@@ -226,18 +226,12 @@ func (a *App) show(s *slot) {
 
 // Slots lists every open run, in slot-bar order.
 func (a *App) Slots() []SlotInfo {
-	describe := func(r *run.Run, seq uint64, focused bool) SlotInfo {
-		status := r.Outcome()
-		elapsed := time.Since(r.Started)
-		if r.HasDuration {
-			elapsed = r.Duration
-		}
-		return SlotInfo{Seq: seq, Root: r.Task, Status: status, Elapsed: elapsed, Focused: focused}
-	}
 	open := a.openSlots()
 	out := make([]SlotInfo, 0, len(open))
 	for _, s := range open {
-		out = append(out, describe(s.Run, s.Seq, s == a.slot))
+		out = append(out, SlotInfo{
+			Seq: s.Seq, Root: s.Run.Task, Status: s.Run.Outcome(), Elapsed: s.Run.Elapsed(), Focused: s == a.slot,
+		})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
 	return out
@@ -373,5 +367,5 @@ func (a *App) RunningFor(name string) (time.Duration, bool) {
 	if r == nil || r.Finished() {
 		return 0, false
 	}
-	return time.Since(r.Started), true
+	return r.Elapsed(), true
 }

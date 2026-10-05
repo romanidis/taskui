@@ -81,7 +81,7 @@ func (a *App) ProfileTotal() time.Duration {
 	if a.Run == nil {
 		return 0
 	}
-	return elapsedOf(a.Run)
+	return a.Run.Elapsed()
 }
 
 // OpenProfile shows it.

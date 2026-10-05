@@ -5,8 +5,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/romanidis/taskui/internal/run"
 )
 
 func padRight(s string, width int) string {
@@ -44,15 +42,6 @@ func baseName(path string) string {
 }
 
 func millis(ms int64) time.Duration { return time.Duration(ms) * time.Millisecond }
-
-// elapsedOf is a run's clock: the final figure once it has stopped, a ticking one until
-// then.
-func elapsedOf(r *run.Run) time.Duration {
-	if r.HasDuration {
-		return r.Duration
-	}
-	return time.Since(r.Started)
-}
 
 // withoutLastRune is s with its last character taken off: backspace, for the five prompts
 // that only ever type at their end. The args prompt has a caret and edits in place.

@@ -103,7 +103,7 @@ func (a *App) runHeader() line {
 	if len(state) > 0 {
 		state = append(state, plain("   "))
 	}
-	state = append(state, statusChip(status, t), styled("   "+duration(elapsedOf(r)), fg(t.Colors.Dim)))
+	state = append(state, statusChip(status, t), styled("   "+duration(r.Elapsed()), fg(t.Colors.Dim)))
 	if r.Outcome() == run.Failed {
 		state = append(state, styled(fmt.Sprintf("   exit %d", r.Exit), fg(t.Colors.StatusFailed)))
 	}

@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/romanidis/taskui/internal/keys"
 	"github.com/romanidis/taskui/internal/pivot"
@@ -226,17 +225,12 @@ func (a *App) slotBadge(name string) ([]span, bool) {
 	if !r.Finished() {
 		return []span{
 			styled(t.Glyphs.StatusRunning+" ", fgBold(t.Colors.StatusRunning)),
-			styled(duration(time.Since(r.Started)), fg(t.Colors.Dim)),
+			styled(duration(r.Elapsed()), fg(t.Colors.Dim)),
 		}, true
 	}
-	status := r.Outcome()
-	took := time.Since(r.Started)
-	if r.HasDuration {
-		took = r.Duration
-	}
 	return []span{
-		statusMark(status, t),
-		styled(duration(took), fg(t.Colors.Dim)),
+		statusMark(r.Outcome(), t),
+		styled(duration(r.Elapsed()), fg(t.Colors.Dim)),
 	}, true
 }
 
