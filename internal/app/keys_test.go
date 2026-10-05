@@ -1429,3 +1429,45 @@ func TestTabInTheRunsSearchShowsOnlyTheMatches(t *testing.T) {
 		t.Error("⇥ again did not go back to finding")
 	}
 }
+
+// --- the palette ------------------------------------------------------------------------
+
+// `:` lists what this screen can do, narrowed by every word typed, and ⏎ does the one chosen
+// by pressing its key — so it does exactly what the key does. "timeline" finds `⇧H`, whose
+// description never says the word.
+func TestThePaletteFindsAnActionByNameAndDoesIt(t *testing.T) {
+	a := appAt(t, "backend:lint")
+	a.Screen = ScreenPicker
+	press(a, Char(':'))
+	if !a.Palette {
+		t.Fatal("`:` did not open the palette")
+	}
+	for _, c := range "timeline" {
+		press(a, Char(c))
+	}
+	entries := a.paletteEntries()
+	if len(entries) != 1 || entries[0].press != Char('H') {
+		t.Fatalf("entries = %+v, want only the timeline", entries)
+	}
+	press(a, Enter())
+	if a.Palette || a.Screen != ScreenTimeline {
+		t.Errorf("palette %v, screen %v: ⏎ should have done it", a.Palette, a.Screen)
+	}
+}
+
+// In the picker the palette offers what applies to the row the cursor is on, as the footer
+// does: nothing about a run on a task with none open.
+func TestThePaletteOffersWhatAppliesToTheRow(t *testing.T) {
+	a := appWith(t, []string{"build", "lint"})
+	a.Rebuild(0)
+	a.OpenPalette()
+	for _, e := range a.paletteEntries() {
+		if e.press == Char('x') || e.press == Char('v') {
+			t.Errorf("offered %q on a task with no run", e.what)
+		}
+	}
+	press(a, Esc())
+	if a.Palette {
+		t.Error("esc did not close it")
+	}
+}

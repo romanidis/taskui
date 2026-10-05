@@ -187,6 +187,11 @@ type App struct {
 	helpReturn Screen
 	inHelp     bool
 	HelpOffset int
+	// Palette is the `:` list of what this screen can do taking the keys, narrowed by
+	// PaletteQuery, with PaletteCursor on the one ⏎ will do.
+	Palette       bool
+	PaletteQuery  string
+	PaletteCursor int
 	// HelpFinding is the find prompt on the `?` screen taking the keys; HelpQuery is what
 	// it narrows the keymap to, and outlives the prompt so `⏎` can leave you reading the
 	// handful of bindings you were looking for.

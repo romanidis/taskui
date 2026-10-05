@@ -62,6 +62,9 @@ func (a *App) HandleKey(k Key) bool {
 	if a.Confirm != nil {
 		return a.handleConfirmKey(k)
 	}
+	if a.Palette {
+		return a.handlePaletteKey(k)
+	}
 	// Before the per-screen handlers, not after: the run screen returns early, and with
 	// this below it `gg` and `G` reached every screen except the one with the most rows to
 	// move through. The prompt guards inside it keep a run's own `i` and `/` intact.
@@ -154,6 +157,9 @@ func (a *App) handleCommonKey(k Key) (bool, bool) {
 		return true, a.quit()
 	case a.action(k, a.Screen) == keys.Help:
 		a.ToggleHelp()
+		return true, false
+	case a.action(k, a.Screen) == keys.Palette:
+		a.OpenPalette()
 		return true, false
 	}
 	return false, false

@@ -14,7 +14,7 @@ previous runs.
  └ migrate        Apply pending migrations                                   ⚠
  ▸ deploy                                                               ⚠    9
  ─────────────────────────────────────────────────────────────────────────────
- space fold   ⇧O all   / filter   h history                             ? keys
+ space fold   ⇧O all   / filter   h history                 : actions   ? keys
 ```
 
 ## What it is
@@ -220,6 +220,10 @@ taskui examples               # worked examples, rendered at your terminal's wid
 by the real renderer at your terminal's width and in your theme, so nothing in it can go
 stale. `taskui examples <topic>` prints just one.
 
+`:` on any screen lists what that screen can do, by what it does, and does the one you pick:
+type a word of it — `timeline`, `detach`, `stop` — and press ⏎. It offers what applies where
+you are, so in the list it is the keys for the row under the cursor.
+
 `man taskui` covers the options, the commands, the keys and the files — its reference
 sections are generated from the same flag set and keymap table the program uses, and a test
 fails if they drift. `?` from any screen lists every
@@ -291,6 +295,7 @@ In the picker:
 | `h` | past runs |
 | `x` | stop this task's run, wherever it is — again to kill it |
 | `⇧K` | stop every run, staying here |
+| `:` | every action on this screen by name — type to narrow it, ⏎ to do it |
 | `?` | this screen |
 | `esc` | back out of a filter, a jump, a panel — it does not quit |
 | `q` | quit — always asks first |
@@ -334,6 +339,7 @@ In a run:
 | `1…9` | switch straight to that slot |
 | `⇧X` | close the slot — only once its run has stopped |
 | `⇧A` | detach: let this run outlive taskui, output stops here |
+| `:` | every action on this screen by name — type to narrow it, ⏎ to do it |
 | `?` | this screen |
 | `esc` | back to the picker — every run keeps going |
 | `q` | quit, stopping every run — asks first |
@@ -352,6 +358,7 @@ On a timeline (`⇧H`):
 | `gg` `G` | first / last row — so do Home and End |
 | `⏎` | open that run |
 | `⇧D` | what changed at this run — against the last one that went differently |
+| `:` | every action on this screen by name — type to narrow it, ⏎ to do it |
 | `?` | this screen |
 | `esc` | back to wherever you opened this from |
 | `q` | quit |
@@ -370,6 +377,7 @@ In a diff:
 | `gg` `G` | first / last row — so do Home and End |
 | `[` `]` | less / more unchanged context |
 | `e` | open the file:line under the cursor in $EDITOR |
+| `:` | every action on this screen by name — type to narrow it, ⏎ to do it |
 | `?` | this screen |
 | `esc` | back to the run, or to the timeline |
 | `q` | quit |
@@ -388,6 +396,7 @@ In a profile (`⇧T`):
 | `gg` `G` | first / last row — so do Home and End |
 | `⏎` | go to that task in the run |
 | `e` | open its definition in $EDITOR |
+| `:` | every action on this screen by name — type to narrow it, ⏎ to do it |
 | `?` | this screen |
 | `esc` | back to the run |
 | `q` | quit |

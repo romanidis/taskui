@@ -114,6 +114,13 @@ func (a *App) frame() string {
 		footer = a.profileFooter()
 	}
 
+	// The palette takes the body and the footer of whatever screen it was opened on, and
+	// leaves the header saying which screen that is.
+	if a.Palette {
+		body = a.drawPalette(width, bodyH)
+		footer = a.paletteFooter()
+	}
+
 	if headerH == 1 {
 		out = append(out, header.render(width, false, a.Theme.Colors.Selection))
 	}

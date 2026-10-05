@@ -97,6 +97,12 @@ func (a *App) hintBar(section *keys.Section) line {
 	if hasHelp {
 		tail = help.Display() + " keys"
 	}
+	// The palette beside it, the other way to the keys the line has no room for: `?` lists
+	// all of them, `:` the ones that do something here.
+	palette, hasPalette := a.Keymap.KeyOf(keys.Palette)
+	if hasPalette {
+		tail = palette.Display() + " actions" + strings.Repeat(" ", hintGap) + tail
+	}
 	tailW := cells(tail)
 	row := keys.Row(0)
 	if a.Screen == ScreenPicker {
@@ -116,6 +122,12 @@ func (a *App) hintBar(section *keys.Section) line {
 		used += cells(b.Keys) + 1 + cells(b.Footer)
 	}
 	l = append(l, plain(strings.Repeat(" ", max(hintGap, a.Width-used-tailW-1))))
+	if hasPalette {
+		l = append(l, styled(palette.Display(), fg(t.Colors.Accent)), styled(" actions", fg(t.Colors.Dim)))
+		if hasHelp {
+			l = append(l, plain(strings.Repeat(" ", hintGap)))
+		}
+	}
 	if !hasHelp {
 		return l
 	}

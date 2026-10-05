@@ -58,6 +58,7 @@ const (
 	Detach
 	RerunFailed
 	Order
+	Palette
 )
 
 // Mods is what was held down with a key.
@@ -223,6 +224,7 @@ var defaults = []binding{
 	{Detach, 'A', "detach"},
 	{RerunFailed, 'F', "rerun-failed"},
 	{Order, 'S', "sort"},
+	{Palette, ':', "palette"},
 }
 
 var pickerActions = []Action{
@@ -244,6 +246,7 @@ var pickerActions = []Action{
 	// only screen that can reach a run without first loading its buffer to look at it.
 	Stop,
 	StopAll,
+	Palette,
 	Help,
 	Quit,
 }
@@ -275,29 +278,30 @@ var runActions = []Action{
 	Diff,
 	Profile,
 	Detach,
+	Palette,
 	Help,
 	Quit,
 }
 
-var historyActions = []Action{Search, AllProjects, Help, Quit}
+var historyActions = []Action{Search, AllProjects, Palette, Help, Quit}
 
 // The timeline is a list of one task's runs, and the diff is what changed between two of
 // them — so `D` belongs there as much as it does in the run view.
-var timelineActions = []Action{Diff, Help, Quit}
+var timelineActions = []Action{Diff, Palette, Help, Quit}
 
-var profileActions = []Action{Edit, Help, Quit}
+var profileActions = []Action{Edit, Palette, Help, Quit}
 
 // The diff view can reach an editor too: a `file:line` in a line that just appeared is
 // the most direct answer the tool has to "what broke".
-var diffActions = []Action{Edit, ContextMore, ContextLess, Help, Quit}
+var diffActions = []Action{Edit, ContextMore, ContextLess, Palette, Help, Quit}
 
 // The detail panel reads what a task will run, which is the moment you want to run it, run
 // it differently, or go and change it. The detail key closes it again, as it opened it.
-var detailActions = []Action{Args, Edit, Detail, Help, Quit}
+var detailActions = []Action{Args, Edit, Detail, Palette, Help, Quit}
 
 // The `?` screen has three keys of its own, and they are the same three actions they are
 // everywhere else — search finds a binding here exactly as it finds a task in the picker.
-var helpActions = []Action{Search, Help, Quit}
+var helpActions = []Action{Search, Palette, Help, Quit}
 
 func defaultKey(action Action) rune {
 	for _, d := range defaults {
@@ -716,6 +720,7 @@ var Picker = Section{
 		f("{history}", "past runs", "history").on(OnGroup|OnTask),
 		f("{stop}", "stop this task's run, wherever it is — again to kill it", "stop").on(OnRun),
 		b("{stop-all}", "stop every run, staying here"),
+		b("{palette}", "every action on this screen by name — type to narrow it, ⏎ to do it"),
 		b("{help}", "this screen"),
 		b("esc", "back out of a filter, a jump, a panel — it does not quit"),
 		b("{quit}", "quit — always asks first"),
@@ -762,6 +767,7 @@ var Run = Section{
 		b("1…9", "switch straight to that slot"),
 		b("{close-slot}", "close the slot — only once its run has stopped"),
 		b("{detach}", "detach: let this run outlive taskui, output stops here"),
+		b("{palette}", "every action on this screen by name — type to narrow it, ⏎ to do it"),
 		b("{help}", "this screen"),
 		f("esc", "back to the picker — every run keeps going", "back"),
 		b("{quit}", "quit, stopping every run — asks first"),
@@ -775,6 +781,7 @@ var HistorySection = Section{
 		f("⏎", "reopen the run", "open"),
 		f("{search}", "search across every stored run", "search runs"),
 		f("{all-projects}", "widen: this repo's other worktrees, then every project", "widen"),
+		b("{palette}", "every action on this screen by name — type to narrow it, ⏎ to do it"),
 		b("{help}", "this screen"),
 		f("esc", "back to the picker", "back"),
 		b("{quit}", "quit"),
@@ -787,6 +794,7 @@ var TimelineSection = Section{
 	Bindings: moves(
 		f("⏎", "open that run", "open"),
 		f("{diff}", "what changed at this run — against the last one that went differently", "diff"),
+		b("{palette}", "every action on this screen by name — type to narrow it, ⏎ to do it"),
 		b("{help}", "this screen"),
 		f("esc", "back to wherever you opened this from", "back"),
 		b("{quit}", "quit"),
@@ -799,6 +807,7 @@ var DiffSection = Section{
 	Bindings: moves(
 		f("{context-less} {context-more}", "less / more unchanged context", "context"),
 		f("{edit}", "open the file:line under the cursor in $EDITOR", "edit"),
+		b("{palette}", "every action on this screen by name — type to narrow it, ⏎ to do it"),
 		b("{help}", "this screen"),
 		f("esc", "back to the run, or to the timeline", "back"),
 		b("{quit}", "quit"),
@@ -811,6 +820,7 @@ var ProfileSection = Section{
 	Bindings: moves(
 		f("⏎", "go to that task in the run", "go to"),
 		f("{edit}", "open its definition in $EDITOR", "edit"),
+		b("{palette}", "every action on this screen by name — type to narrow it, ⏎ to do it"),
 		b("{help}", "this screen"),
 		f("esc", "back to the run", "back"),
 		b("{quit}", "quit"),
@@ -825,6 +835,7 @@ var DetailSection = Section{
 		f("{args}", "run it with arguments", "args"),
 		f("{edit}", "open this task's own definition in $EDITOR", "edit"),
 		f("{detail} esc", "back to the picker", "back"),
+		b("{palette}", "every action on this screen by name — type to narrow it, ⏎ to do it"),
 		b("{help}", "this screen"),
 		b("{quit}", "quit"),
 	),
@@ -841,6 +852,7 @@ var HelpSection = Section{
 	Bindings: scrolls(
 		f("{search}", "find a binding — ⏎ keeps what is left, esc clears the query", "find"),
 		f("esc {help}", "close, and go back to where you were", "close"),
+		b("{palette}", "every action on this screen by name — type to narrow it, ⏎ to do it"),
 		// The one screen where quit earns the space: it is what a first-time reader opened
 		// this to find out, and there is no `? keys` here to point them anywhere else.
 		f("{quit}", "quit — always asks first", "quit"),

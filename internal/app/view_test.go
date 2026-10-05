@@ -638,7 +638,7 @@ func TestTheFooterNeverEndsMidBinding(t *testing.T) {
 		if !strings.HasSuffix(footer, "? keys") {
 			t.Errorf("%d wide: footer %q loses the pointer to the full keymap", w, footer)
 		}
-		whole := map[string]bool{"? keys": true}
+		whole := map[string]bool{"? keys": true, ": actions": true}
 		for _, hint := range keys.FooterHints(&keys.Picker, a.Keymap, 0) {
 			whole[hint.Keys+" "+hint.Footer] = true
 		}
