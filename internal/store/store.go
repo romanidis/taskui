@@ -359,6 +359,11 @@ func Save(base, projectDir string, r *run.Run) (string, error) {
 func Resave(base, dir, projectDir string, r *run.Run) (string, error) {
 	id := filepath.Base(dir)
 	blob, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		// Pruned while it ran: fifty other runs saved in the meantime took the partial
+		// record. Failing here kept the archive's last word on it as still running, for good.
+		return Save(base, projectDir, r)
+	}
 	if err != nil {
 		return "", err
 	}

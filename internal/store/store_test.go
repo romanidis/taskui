@@ -972,6 +972,29 @@ func TestStatusesAreStoredByName(t *testing.T) {
 	}
 }
 
+// A detached run that finishes after fifty others were saved has lost its partial record to
+// the prune. Rewriting it in place failed, and the archive kept "still running" for good.
+func TestAFinishedRunIsKeptAfterItsPartialRecordWasPruned(t *testing.T) {
+	base := t.TempDir()
+	long := run.Detached("deploy", run.GraphFrom(run.Edge{Parent: "deploy"}))
+	long.Feed("deploy", "step 1")
+	dir, err := Save(base, "/proj", long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	long.Feed("deploy", "step 2")
+	long.Finish(0)
+	if _, err := Resave(base, dir, "/proj", long); err != nil {
+		t.Fatalf("the finished run could not be recorded: %v", err)
+	}
+	if o := LastOutcomes(base, "/proj")["deploy"]; !o.Ok {
+		t.Errorf("the archive's last word is not the finished run: %+v", o)
+	}
+}
+
 // A run saved while it is still going, as a detach saves it, is dated from when it started.
 // Dated from the save, a run started an hour ago was filed as starting at the detach.
 func TestARunSavedWhileGoingIsDatedFromItsStart(t *testing.T) {
