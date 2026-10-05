@@ -876,13 +876,15 @@ func Timeline(base, project, task string) []Point {
 // LastGreen is the most recent stored run in which this task succeeded.
 //
 // `skip` is a run id to ignore, so a diff of a stored run against the archive does not find
-// itself.
+// itself, and `before` the time the run being compared started: a run is compared with what
+// came before it, and ⇧D on an old failure found the pass that came after it instead. Zero
+// means no bound.
 // Runs whose output has been pruned are passed over rather than returned: a timeline shows
 // them because a verdict and a duration are all it draws, but a diff needs the text, and
 // comparing against a run whose lines are gone reports every line as deleted.
-func LastGreen(base, project, task, skip string) (Point, bool) {
+func LastGreen(base, project, task, skip string, before int64) (Point, bool) {
 	for _, p := range Timeline(base, project, task) {
-		if p.Ok() && p.RunID != skip && HasOutput(base, p.RunID) {
+		if p.Ok() && p.RunID != skip && (before == 0 || p.WhenUnix <= before) && HasOutput(base, p.RunID) {
 			return p, true
 		}
 	}
@@ -892,9 +894,9 @@ func LastGreen(base, project, task, skip string) (Point, bool) {
 // Previous is the most recent stored appearance at all, green or not — the comparison you
 // want when the task has never passed and "what changed since last time" is still a real
 // question.
-func Previous(base, project, task, skip string) (Point, bool) {
+func Previous(base, project, task, skip string, before int64) (Point, bool) {
 	for _, p := range Timeline(base, project, task) {
-		if p.RunID != skip && HasOutput(base, p.RunID) {
+		if p.RunID != skip && (before == 0 || p.WhenUnix <= before) && HasOutput(base, p.RunID) {
 			return p, true
 		}
 	}

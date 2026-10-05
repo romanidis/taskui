@@ -767,3 +767,71 @@ func TestAKeptHistorySearchStillNarrowsTheList(t *testing.T) {
 		t.Error("a run the search never matched opened filtered to it")
 	}
 }
+
+// A live run that has finished is saved at once, but its Run keeps StoredID() == "", so
+// ⇧D's LastGreen(skip="") finds the run itself as the newest green and diffs it against itself.
+func TestAFinishedLiveRunIsNotDiffedAgainstItself(t *testing.T) {
+	a := sample(t)
+	archived(t, a, "backend:lint", true, 300, "checking", "old output")
+
+	r := oneTaskRun("backend:lint") // feeds "output"
+	a.OpenRunForTest(r)
+	a.Screen = ScreenRun
+	r.Feed("backend:lint", "new output")
+	r.Finish(0)
+	a.saveIfFinished()
+	if a.SavedTo == "" {
+		t.Fatal("not saved")
+	}
+	press(a, Char('D'))
+	if a.Screen != ScreenDiff {
+		t.Fatalf("screen = %v status %q", a.Screen, a.Status)
+	}
+	if a.DiffStat.Added == 0 && a.DiffStat.Removed == 0 {
+		t.Errorf("diffed the run against itself: against %s (run %s), status %q",
+			a.DiffAgainstWhat, a.DiffAgainst.RunID, a.Status)
+	}
+}
+
+// Same with a task that never passed: Previous(skip="") returns the run just saved.
+func TestAFinishedLiveRunThatNeverPassedIsNotDiffedAgainstItself(t *testing.T) {
+	a := sample(t)
+	archived(t, a, "backend:lint", false, 300, "boom one")
+
+	r := oneTaskRun("backend:lint")
+	a.OpenRunForTest(r)
+	a.Screen = ScreenRun
+	r.Feed("backend:lint", "boom two")
+	r.ApplyFailed("backend:lint")
+	r.Finish(1)
+	a.saveIfFinished()
+	press(a, Char('D'))
+	if a.Screen != ScreenDiff {
+		t.Fatalf("screen = %v status %q", a.Screen, a.Status)
+	}
+	if a.DiffStat.Added == 0 && a.DiffStat.Removed == 0 {
+		t.Errorf("diffed the run against itself: against %q (run %s), status %q",
+			a.DiffAgainstWhat, a.DiffAgainst.RunID, a.Status)
+	}
+}
+
+// Opening an OLD failure from the timeline and pressing ⇧D compares it with a NEWER green run.
+func TestAnOldRunIsDiffedAgainstWhatCameBefore(t *testing.T) {
+	a := sample(t)
+	archived(t, a, "backend:lint", true, 400, "pass A")
+	archived(t, a, "backend:lint", false, 300, "fail B")
+	archived(t, a, "backend:lint", true, 200, "pass C")
+
+	parkOn(t, a, "backend:lint")
+	press(a, Char('H'))
+	press(a, Char('j')) // the failure, in the middle
+	press(a, Enter())
+	press(a, Char('D'))
+	if a.Screen != ScreenDiff {
+		t.Fatalf("screen = %v status %q", a.Screen, a.Status)
+	}
+	if a.DiffAgainst.WhenUnix > a.Run.Started.Unix() {
+		t.Errorf("%q is a run from AFTER the one being viewed: base %s at %d, viewed run started %d",
+			a.DiffAgainstWhat, a.DiffAgainst.RunID, a.DiffAgainst.WhenUnix, a.Run.Started.Unix())
+	}
+}

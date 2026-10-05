@@ -459,7 +459,7 @@ func TestLastGreenSkipsTheFailuresAndItself(t *testing.T) {
 	}
 	newest := ids[2]
 
-	green, ok := LastGreen(base, "/proj", "test", "")
+	green, ok := LastGreen(base, "/proj", "test", "", 0)
 	if !ok {
 		t.Fatal("no green run found")
 	}
@@ -475,7 +475,7 @@ func TestLastGreenSkipsTheFailuresAndItself(t *testing.T) {
 
 	// Previous, unlike LastGreen, does not care how it went — and skipping itself is what
 	// keeps a stored run from diffing against its own output.
-	prev, ok := Previous(base, "/proj", "test", newest)
+	prev, ok := Previous(base, "/proj", "test", newest, 0)
 	if !ok {
 		t.Fatal("no previous run")
 	}
@@ -489,10 +489,10 @@ func TestLastGreenOfATaskThatNeverPassed(t *testing.T) {
 	if _, err := Save(base, "/proj", agedRun("all", "test", false, 60)); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := LastGreen(base, "/proj", "test", ""); ok {
+	if _, ok := LastGreen(base, "/proj", "test", "", 0); ok {
 		t.Error("found a green run that does not exist")
 	}
-	if _, ok := Previous(base, "/proj", "test", ""); !ok {
+	if _, ok := Previous(base, "/proj", "test", "", 0); !ok {
 		t.Error("but there is a previous run, and it should be offered")
 	}
 }

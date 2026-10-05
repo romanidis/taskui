@@ -256,10 +256,10 @@ func printDiff(out io.Writer, root, taskName string) error {
 		return fmt.Errorf("no stored runs of %q in this project", taskName)
 	}
 	newest := points[0]
-	older, ok := store.LastGreen(base, root, taskName, newest.RunID)
+	older, ok := store.LastGreen(base, root, taskName, newest.RunID, 0)
 	against := "when it last passed"
 	if !ok {
-		older, ok = store.Previous(base, root, taskName, newest.RunID)
+		older, ok = store.Previous(base, root, taskName, newest.RunID, 0)
 		against = "the run before"
 		if !ok {
 			return fmt.Errorf("only one stored run of %q — nothing to compare it against", taskName)

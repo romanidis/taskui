@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/romanidis/taskui/internal/diff"
@@ -132,11 +133,17 @@ func (a *App) DiffAgainstLastGreen() {
 	}
 
 	project := a.Root
+	// A live run that has finished is in the archive already, under the id it was saved to
+	// rather than one it was loaded from — and not skipping it compared the run with itself.
 	skip := a.Run.StoredID()
-	point, ok := store.LastGreen(a.stateDir, project, name, skip)
+	if skip == "" && a.SavedTo != "" {
+		skip = filepath.Base(a.SavedTo)
+	}
+	before := a.Run.Started.Unix()
+	point, ok := store.LastGreen(a.stateDir, project, name, skip, before)
 	against := "when it last passed"
 	if !ok {
-		point, ok = store.Previous(a.stateDir, project, name, skip)
+		point, ok = store.Previous(a.stateDir, project, name, skip, before)
 		against = "the run before"
 		if !ok {
 			a.Status = "no earlier run of `" + name + "` to compare against"
