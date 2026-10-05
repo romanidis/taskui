@@ -500,12 +500,26 @@ func (a *App) markBar() (line, bool) {
 		return nil, false
 	}
 	t := a.Theme
-	return line{
+	l := line{
 		plain(" "),
 		styled(t.Glyphs.Marked+" ", fgBold(t.Colors.Marked)),
 		styled(fmt.Sprintf("%d marked", n), fgBold(t.Colors.Marked)),
-		styled("   ⏎ run them   m unmark   ⇧M clear", fg(t.Colors.Dim)),
-	}, true
+	}
+	// What the last key did, in place of the hints: ⏎ on a set with no free slot refuses,
+	// and a refusal the bar covered up made the key look as if it did nothing.
+	if a.Status != "" {
+		return append(l, styled("   "+a.Status, fg(t.Colors.Dim))), true
+	}
+	hints := "   ⏎ run them"
+	// Spelled from the keymap, as every other hint is: a rebound mark key left this
+	// advertising `m`.
+	if c, ok := a.Keymap.KeyOf(keys.Mark); ok {
+		hints += "   " + c.Display() + " unmark"
+	}
+	if c, ok := a.Keymap.KeyOf(keys.ClearMarks); ok {
+		hints += "   " + c.Display() + " clear"
+	}
+	return append(l, styled(hints, fg(t.Colors.Dim))), true
 }
 
 func (a *App) pickerFooter() line {
@@ -532,11 +546,6 @@ func (a *App) pickerFooter() line {
 	if l, ok := a.argsPrompt(); ok {
 		return l
 	}
-	// After the prompts, before the status: a prompt owns the footer while it is open, and
-	// a status message is transient where a set of marks is a state you are holding.
-	if l, ok := a.markBar(); ok {
-		return l
-	}
 	if a.Filtering {
 		return line{
 			plain(" "),
@@ -545,6 +554,12 @@ func (a *App) pickerFooter() line {
 			styled(t.Glyphs.Cursor, fg(t.Colors.Search)),
 			styled("   ⏎ accept   esc clear", fg(t.Colors.Dim)),
 		}
+	}
+	// After the prompts, before the status: a prompt owns the footer while it is open — the
+	// filter included, or the bar went on advertising `⏎ run them` while ⏎ accepted the
+	// filter — and a set of marks is a state you are holding.
+	if l, ok := a.markBar(); ok {
+		return l
 	}
 	// No pivot hint here any more: the header's `domain·verb` names both sides and which
 	// one you are in, which is more than this line ever said.

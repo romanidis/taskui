@@ -1524,6 +1524,55 @@ func TestTheSearchPromptIsNotHiddenBehindTheTasksQuestion(t *testing.T) {
 	}
 }
 
+// With a mark held, `/` opens the filter — but the footer keeps showing the mark bar, which
+// advertises `⏎ run them` and `m unmark` while ⏎ accepts the filter and `m` is typed into it.
+func TestTheFilterPromptIsNotHiddenBehindTheMarkBar(t *testing.T) {
+	a := appAt(t, "backend:lint")
+	press(a, Char('m'))
+	press(a, Char('/'))
+	press(a, Char('l'))
+	if !a.Filtering || a.Query != "l" {
+		t.Fatalf("filter did not open: filtering=%v query=%q", a.Filtering, a.Query)
+	}
+	footer := footerOf(a)
+	if strings.Contains(footer, "run them") || !strings.Contains(footer, "accept") {
+		t.Errorf("filter prompt not shown while filtering; footer = %q", footer)
+	}
+}
+
+// ⏎ on a marked set with every slot live sets a status that the mark bar then hides, so the
+// key appears to do nothing at all.
+func TestARefusalIsNotHiddenBehindTheMarkBar(t *testing.T) {
+	a := appAt(t, "backend:lint")
+	for _, name := range []string{"s1", "s2", "s3", "s4", "s5", "s6"} {
+		a.OpenRunForTest(run.Detached(name, run.GraphFrom(run.Edge{Parent: name})))
+	}
+	a.Screen = ScreenPicker
+	press(a, Char('m'))
+	press(a, Enter())
+	if !strings.Contains(a.Status, "every slot is taken") {
+		t.Fatalf("status = %q", a.Status)
+	}
+	if footer := footerOf(a); !strings.Contains(footer, "every slot is taken") {
+		t.Errorf("the refusal is never shown; footer = %q", footer)
+	}
+}
+
+// The mark bar spells its keys literally, so a rebound mark key leaves it advertising `m`.
+func TestTheMarkBarSpellsReboundKeys(t *testing.T) {
+	a := appAt(t, "backend:lint")
+	a.Keymap.Rebind(keys.Mark, keys.Plain('z'))
+	a.Keymap.Rebind(keys.ClearMarks, keys.Plain('Z'))
+	press(a, Char('z'))
+	if len(a.Marked()) != 1 {
+		t.Fatalf("rebound mark key did not mark: %v", a.Marked())
+	}
+	footer := footerOf(a)
+	if strings.Contains(footer, "m unmark") || strings.Contains(footer, "⇧M clear") {
+		t.Errorf("footer still names the default keys: %q", footer)
+	}
+}
+
 // A literal tab in a multi-line command — a `<<-EOF` heredoc, which go-task's --summary
 // prints verbatim — is measured as zero cells and drawn by lipgloss as four spaces.
 func TestATabInADetailCommandKeepsTheRowItsWidth(t *testing.T) {

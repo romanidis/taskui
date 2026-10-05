@@ -28,7 +28,12 @@ func (a *App) ToggleMark() {
 	} else {
 		a.marked[name] = true
 	}
-	a.Status = a.markSummary()
+	// The bar says how many and what the keys are while any are held; this only has
+	// something to say when it goes away.
+	a.Status = ""
+	if len(a.marked) == 0 {
+		a.Status = "no tasks marked"
+	}
 }
 
 func (a *App) selectedLabel() string {
@@ -58,14 +63,6 @@ func (a *App) ClearMarks() {
 	}
 	a.marked = nil
 	a.Status = "marks cleared"
-}
-
-func (a *App) markSummary() string {
-	n := len(a.marked)
-	if n == 0 {
-		return "no tasks marked"
-	}
-	return fmt.Sprintf("%d marked — ⏎ runs them, ⇧M clears", n)
 }
 
 // RunMarked starts every marked task, each in its own slot.
