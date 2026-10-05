@@ -68,9 +68,7 @@ func (a *App) YankTaskOutput() {
 	var lines []string
 	if a.Run != nil {
 		if t, ok := a.Run.Tasks[name]; ok {
-			for _, l := range t.Lines {
-				lines = append(lines, l.Plain)
-			}
+			lines = t.Output()
 		}
 	}
 	a.Copy(strings.Join(lines, "\n"), name+" output")

@@ -79,6 +79,16 @@ type TaskRun struct {
 	settled  bool
 }
 
+// Output is what the task printed, a line at a time, stripped of escapes: the live
+// counterpart of what the archive reads back.
+func (t *TaskRun) Output() []string {
+	out := make([]string, 0, len(t.Lines))
+	for _, l := range t.Lines {
+		out = append(out, l.Plain)
+	}
+	return out
+}
+
 // Elapsed is time on the clock: the final figure once the task has finished, and a ticking
 // one while it is still going. Showing nothing until a task completes means the only live
 // timing on screen is the total, which is the least useful of them — during a slow build

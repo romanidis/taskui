@@ -117,11 +117,9 @@ func (a *App) DiffAgainstLastGreen() {
 	if a.Run == nil {
 		return
 	}
-	newer := make([]string, 0, 64)
+	var newer []string
 	if t, found := a.Run.Tasks[name]; found {
-		for _, l := range t.Lines {
-			newer = append(newer, l.Plain)
-		}
+		newer = t.Output()
 	}
 	if len(newer) == 0 {
 		a.Status = "`" + name + "` printed nothing in this run"
