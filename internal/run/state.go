@@ -246,7 +246,7 @@ func (r *Run) pathTo(name string, ancestors map[string]bool) []string {
 // Only once a graph has arrived. Before that, or with none, every task would be a stray,
 // and the run is in the flat mode that has no nesting to graft onto.
 func (r *Run) adoptStray(name string) {
-	if len(r.Graph.Edges) == 0 || name == r.Task {
+	if !r.GraphResolved() || name == r.Task {
 		return
 	}
 	if _, known := r.Tasks[name]; known {

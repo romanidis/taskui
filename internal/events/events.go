@@ -223,7 +223,7 @@ func (d *Deltas) Flush(s *Sink, r *run.Run) {
 	if s == nil || r == nil {
 		return
 	}
-	if !d.graph && len(r.Graph.Edges) > 0 {
+	if !d.graph && r.GraphResolved() {
 		d.graph = true
 		s.Send(Graph{Type: "graph", Root: r.Task, Edges: r.Graph.Edges})
 	}

@@ -264,6 +264,21 @@ func (r *Run) SendInput(bytes []byte) bool {
 	return true
 }
 
+// GraphResolved reports whether the run knows what calls what yet. Resolving it is the first
+// thing a run does, and one that could not be resolved runs flat, with no nesting at all.
+func (r *Run) GraphResolved() bool { return len(r.Graph.Edges) > 0 }
+
+// quietFor is how long a run may print nothing before it is said to be possibly stuck.
+const quietFor = 15 * time.Second
+
+// PossiblyStuck reports a run that has gone quiet while it should be working. Under
+// `--output prefixed` a task blocked on a prompt produces nothing at all, so silence is the
+// only clue there is: otherwise it reads as an unusually slow build. An interactive run shows
+// its prompts, and a run still resolving its graph has not started anything to be quiet.
+func (r *Run) PossiblyStuck() bool {
+	return !r.Finished() && !r.Interactive && r.GraphResolved() && r.SilentFor() > quietFor
+}
+
 // SilentFor is how long the task has produced nothing.
 //
 // A run under `--output prefixed` that is blocked on a prompt looks exactly like one that

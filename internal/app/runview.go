@@ -78,7 +78,7 @@ func (a *App) runHeader() line {
 		l = append(l, styled(text, fg(t.Colors.StatusFailed)))
 	case r.IsStored():
 		l = append(l, styled("   from history", fg(t.Colors.Stored)))
-	case len(r.Graph.Edges) == 0:
+	case !r.GraphResolved():
 		l = append(l, styled("   resolving graph…", fg(t.Colors.Dim)))
 	case a.Following && !r.Finished():
 		l = append(l, styled("   following", fg(t.Colors.Notice)))
@@ -581,9 +581,7 @@ func (a *App) runFooter() line {
 		return append(l, styled("   ⏎ keep   esc clear", fg(t.Colors.Dim)))
 	}
 
-	// Under `prefixed` a blocked task emits nothing at all, so this is the only warning
-	// available — otherwise it reads as an unusually slow build.
-	if a.PossiblyStuck() {
+	if a.Run != nil && a.Run.PossiblyStuck() {
 		return line{
 			styled("  …  ", onBg(t.Colors.WarningFg, t.Colors.WarningBg)),
 			styled(" no output for a while", fg(t.Colors.Notice)),

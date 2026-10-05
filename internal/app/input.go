@@ -1,9 +1,5 @@
 package app
 
-import (
-	"time"
-)
-
 func (a *App) BeginInput() {
 	if !a.RunInFlight() {
 		a.Status = "nothing is running to type at"
@@ -25,17 +21,6 @@ func (a *App) SendInput(bytes []byte) {
 		a.Status = "that keystroke went nowhere — the task has finished or closed its input"
 		a.SendingInput = false
 	}
-}
-
-// PossiblyStuck reports a non-interactive run that has gone quiet. Under `--output
-// prefixed` a task blocked on a prompt produces nothing, so silence is the only clue there
-// is.
-func (a *App) PossiblyStuck() bool {
-	return a.Run != nil &&
-		!a.Run.Finished() &&
-		!a.Run.Interactive &&
-		len(a.Run.Graph.Edges) > 0 &&
-		a.Run.SilentFor() > 15*time.Second
 }
 
 // AwaitingInput reports whether the task is sitting on an unanswered question.

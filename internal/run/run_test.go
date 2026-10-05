@@ -1302,3 +1302,30 @@ func TestARerunGivesTheArgumentsBackOnlyToTheTaskInvoked(t *testing.T) {
 		t.Errorf("rerun of a task it reached = %+v, want %+v", got, want)
 	}
 }
+
+// Silence is the only clue a prefixed run gives that it is blocked on a prompt — but only
+// from a run that should be working: one showing its own prompts, one still resolving its
+// graph, and one that has ended are all quiet for a reason.
+func TestAQuietRunIsPossiblyStuckOnlyWhenItShouldBeWorking(t *testing.T) {
+	r := Detached("deploy", GraphFrom(Edge{Parent: "deploy"}))
+	r.lastOutput = time.Now().Add(-time.Minute)
+	if !r.PossiblyStuck() {
+		t.Error("a minute of silence from a run that should be working went unremarked")
+	}
+	r.Interactive = true
+	if r.PossiblyStuck() {
+		t.Error("an interactive run shows its prompts, and was called stuck")
+	}
+	r.Interactive = false
+
+	resolving := Detached("deploy", GraphFrom())
+	resolving.lastOutput = r.lastOutput
+	if resolving.PossiblyStuck() {
+		t.Error("a run still resolving its graph was called stuck")
+	}
+
+	r.Finish(0)
+	if r.PossiblyStuck() {
+		t.Error("a finished run was called stuck")
+	}
+}
